@@ -17,6 +17,7 @@
 - Артефакты процесса: Markdown, передача между агентами только через репозиторий.
 - Автотесты пишутся только по одобренным ревью кейсам; красный тест на корректном коде = баг-репорт, не правка теста.
 - Правила конвейера формализованы как спеки OpenSpec в самом ai-factory (openspec/specs/{pipeline,artifacts,qa-pipeline}); agents/*.md и contracts/*.md подчинены спекам. CLI: openspec validate --all --strict.
+- Детерминизм флоу: AGENTS.md (входной файл агента) + scripts/flow_check.py (state-machine проверка порядка артефактов, exit 1 при нарушении) + CI (.github/workflows/flow.yml: openspec strict + flow_check на каждый push). Скиллы установлены в ~/.hermes/skills/ai-factory, роли собираются бандлами /af-*.
 
 ## Статус
 
@@ -26,6 +27,8 @@
 - [x] Инструкция СА-агента + внедрение OpenSpec и SDD
 - [x] QA-контур: 4 инструкции + контракты 3–6
 - [x] Контракты передачи артефактов (contracts/artifact_contract.md)
+- [x] AGENTS.md + исполняемые ворота флоу (scripts/flow_check.py + CI flow.yml)
+- [ ] Установить flow_check + flow.yml в ekotov-wiki при старте QA
 - [ ] requirements.md для wiki (БА-ассистент + Заказчик)
 - [ ] OpenSpec-пакет + sdd.md для wiki (СА-агент)
 - [ ] Инструкции: разработчик, код-ревьюер, release-инженер

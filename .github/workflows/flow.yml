@@ -1,0 +1,31 @@
+name: flow
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  flow:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install OpenSpec CLI
+        run: npm install -g @fission-ai/openspec@latest
+
+      - name: Validate specs (strict)
+        run: openspec validate --all --strict
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Flow check
+        run: python3 scripts/flow_check.py .
