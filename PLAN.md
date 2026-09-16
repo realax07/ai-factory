@@ -33,16 +33,19 @@
 - [ ] QA-цикл на wiki: чеклисты → кейсы → ревью → автотесты
 - [ ] Внедрение
 
-## Инструкции агентов
+## Роли и скиллы
 
-| Файл | Роль | Статус |
-|---|---|---|
-| agents/ba_agent.md | Бизнес-аналитик (ассистент по требованиям) | активен |
-| agents/sa_agent.md | Системный аналитик (requirements → OpenSpec + SDD) | активен |
-| agents/qa_checklist_agent.md | QA: аналитик требований и чеклистов | активен |
-| agents/qa_case_author_agent.md | QA: автор тест-кейсов | активен |
-| agents/qa_case_reviewer_agent.md | QA: ревьюер тест-кейсов | активен |
-| agents/qa_automation_agent.md | QA: автоматизатор (pytest/requests/playwright) | активен |
+Системные промпты (роль, режим запуска, скиллы, вход-выход, границы, эскалация): [agents/README.md](agents/README.md)
 
+| Промпт | Роль | Режим | Скилл |
+|---|---|---|---|
+| agents/ba_agent.md | Бизнес-аналитик | plan | requirements-elaboration |
+| agents/sa_agent.md | Системный аналитик | auto-edit | openspec-authoring |
+| agents/qa_checklist_agent.md | QA: аналитик чеклистов | auto-edit | test-case-design |
+| agents/qa_case_author_agent.md | QA: автор тест-кейсов | auto-edit | test-case-design |
+| agents/qa_case_reviewer_agent.md | QA: ревьюер тест-кейсов | auto-edit | case-review |
+| agents/qa_automation_agent.md | QA: автоматизатор | auto-edit | test-automation |
+
+Скиллы (процедуры по best practices, гайд Anthropic): [skills/](skills/).
 Контракты передачи артефактов: [contracts/artifact_contract.md](contracts/artifact_contract.md) (контракты 1–6).
-Реестр агентов и конвенции: [agents/README.md](agents/README.md)
+Спеки конвейера (источник правды): [openspec/specs/](openspec/specs/).
