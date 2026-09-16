@@ -32,3 +32,5 @@
 |---|---|---|
 | agents/ba_primary_agent.md | Первичный бизнес-аналитик | резерв |
 | agents/ba_detail_agent.md | Детализирующий бизнес-аналитик | резерв |
+
+Реестр агентов и конвенции: [agents/README.md](agents/README.md)
