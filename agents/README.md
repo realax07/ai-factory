@@ -16,6 +16,10 @@
 |---|---|---|---|
 | Бизнес-аналитик | [ba_agent.md](ba_agent.md) | Помощник Заказчика: формулирование и структурирование ТЗ → `requirements.md` | активен |
 | Системный аналитик | [sa_agent.md](sa_agent.md) | ТЗ → OpenSpec (specs + change-пакет) + SDD | активен |
+| QA: аналитик чеклистов | [qa_checklist_agent.md](qa_checklist_agent.md) | Спека → чеклист проверок с трассировкой | активен |
+| QA: автор тест-кейсов | [qa_case_author_agent.md](qa_case_author_agent.md) | Чеклист → тест-кейсы в `test-model/new/` | активен |
+| QA: ревьюер тест-кейсов | [qa_case_reviewer_agent.md](qa_case_reviewer_agent.md) | Ревью кейсов, цикл доработки, перенос в `approved/` | активен |
+| QA: автоматизатор | [qa_automation_agent.md](qa_automation_agent.md) | Кейсы → автотесты (pytest, requests, playwright) | активен |
 
 ## Контракты артефактов
 
