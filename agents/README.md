@@ -21,14 +21,16 @@
 
 ## Реестр
 
-| Агент | Системный промпт | Режим | Скилл |
-|---|---|---|---|
-| Бизнес-аналитик | [ba_agent.md](ba_agent.md) | plan | requirements-elaboration |
-| Системный аналитик | [sa_agent.md](sa_agent.md) | auto-edit | openspec-authoring |
-| QA: аналитик чеклистов | [qa_checklist_agent.md](qa_checklist_agent.md) | auto-edit | test-case-design |
-| QA: автор тест-кейсов | [qa_case_author_agent.md](qa_case_author_agent.md) | auto-edit | test-case-design |
-| QA: ревьюер тест-кейсов | [qa_case_reviewer_agent.md](qa_case_reviewer_agent.md) | auto-edit | case-review |
-| QA: автоматизатор | [qa_automation_agent.md](qa_automation_agent.md) | auto-edit | test-automation |
+| Агент | Системный промпт | Режим | Скилл | Бандл |
+|---|---|---|---|---|
+| Бизнес-аналитик | [ba_agent.md](ba_agent.md) | plan | requirements-elaboration | `/af-ba` |
+| Системный аналитик | [sa_agent.md](sa_agent.md) | auto-edit | openspec-authoring, requirements-elaboration | `/af-sa` |
+| QA: аналитик чеклистов | [qa_checklist_agent.md](qa_checklist_agent.md) | auto-edit | test-case-design, openspec-authoring | `/af-qa-checklist` |
+| QA: автор тест-кейсов | [qa_case_author_agent.md](qa_case_author_agent.md) | auto-edit | test-case-design | `/af-qa-author` |
+| QA: ревьюер тест-кейсов | [qa_case_reviewer_agent.md](qa_case_reviewer_agent.md) | auto-edit | case-review, test-case-design | `/af-qa-reviewer` |
+| QA: автоматизатор | [qa_automation_agent.md](qa_automation_agent.md) | auto-edit | test-automation, test-case-design | `/af-qa-automation` |
+
+Скиллы установлены в `~/.hermes/skills/ai-factory/` (единое хранилище Hermes), бандлы собирают их по ролям: `/af-ba`, `/af-sa`, `/af-qa-checklist`, `/af-qa-author`, `/af-qa-reviewer`, `/af-qa-automation`. Инструкция бандла задает роль и режим запуска (см. hermes bundles list).
 
 ## Поток конвейера
 
