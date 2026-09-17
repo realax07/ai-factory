@@ -50,5 +50,6 @@
 | agents/qa_automation_agent.md | QA: автоматизатор | auto-edit | test-automation |
 
 Скиллы (процедуры по best practices, гайд Anthropic): [skills/](skills/).
-Контракты передачи артефактов: [contracts/artifact_contract.md](contracts/artifact_contract.md) (контракты 1–6).
+Контракты передачи артефактов: [contracts/artifact_contract.md](contracts/artifact_contract.md) (контракты 1–7).
 Спеки конвейера (источник правды): [openspec/specs/](openspec/specs/).
+Бэклог тюнинга конвейера (уроки пилота): [BACKLOG.md](BACKLOG.md)
