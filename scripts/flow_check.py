@@ -29,7 +29,44 @@ def check(repo: Path) -> int:
     # --- Этап 2: change-пакет требует requirements.md (контракт 1) ---
     req = repo / "requirements.md"
     active_changes = []
+    archived_changes = []
     ch_dir = openspec / "changes"
+    arch_dir = ch_dir / "archive" if ch_dir.is_dir() else None
+    if arch_dir is not None and arch_dir.is_dir():
+        for d in sorted(p for p in arch_dir.iterdir() if p.is_dir()):
+            archived_changes.append(d)
+
+    # --- Контракт 7: archived change должен быть слит в master-spec ---
+    if specs_dir_check := (openspec / "specs"):
+        for d in archived_changes:
+            master_text = "\n".join(
+                sf.read_text(encoding="utf-8") for sf in specs_dir_check.rglob("spec.md")
+            )
+            delta_specs = d / "specs"
+            if not delta_specs.is_dir():
+                continue
+            missing = []
+            for ds in sorted(delta_specs.rglob("spec.md")):
+                for m in re.finditer(
+                    r"^### Requirement:\s*(.+)$", ds.read_text(encoding="utf-8"), re.M
+                ):
+                    title = m.group(1).strip()
+                    removed = re.search(
+                        r"##\s*REMOVED Requirements.*?(?=^##\s|\Z)",
+                        ds.read_text(encoding="utf-8"),
+                        re.M | re.S,
+                    )
+                    if removed and f"### Requirement: {title}" in removed.group(0):
+                        if f"### Requirement: {title}" in master_text:
+                            missing.append(f"REMOVED '{title}' все еще в master-spec")
+                    elif f"### Requirement: {title}" not in master_text:
+                        missing.append(f"'{title}' не слит в master-spec")
+            if missing:
+                errors += errs(
+                    f"openspec/changes/archive/{d.name}: master-spec не соответствует дельтам (контракт 7): "
+                    + "; ".join(missing[:5])
+                )
+
     if ch_dir.is_dir():
         for d in sorted(p for p in ch_dir.iterdir() if p.is_dir()):
             if d.name == "archive":
