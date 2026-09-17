@@ -32,10 +32,14 @@
 - [x] Утверждение r3 Заказчиком
 - [x] OpenSpec-пакет add-kanban-core + sdd.md для wiki (СА-агент, 29 Req/57 сценариев, 7 доменов)
 - [x] Роли dev + code_reviewer: промпты, скиллы implementation/code-review, бандлы af-dev/af-review
-- [x] Первый цикл разработки: задача 1.1 (каркас) — dev a49944a → review approve a0cfa48 → запушено
-- [ ] Эскалация СА: health-эндпоинт в sdd §3 + exempt-список для auth-middleware (до задачи 2.2)
-- [ ] Разработка: задачи 1.2 (схема БД), 1.3 (seed), 1.4 (deploy), 2.x auth, далее фичи
-- [ ] Установить flow_check + flow.yml в ekotov-wiki
+- [x] Цикл 1.1 (каркас): dev a49944a → review approve a0cfa48
+- [x] Цикл 1.2 (схема БД): dev a5614e2 → review approve 5e859cc
+- [x] Цикл 1.3 (seed): dev 6243224 → review approve 72abed2
+- [x] Цикл 1.4 (deploy): dev 24b02d3 → return → fix ff95f22 → approve 75b315c (первый return, отработан)
+- [x] Блок 1 «Каркас и инфраструктура» закрыт (4/4)
+- [ ] Эскалация СА: health-эндпоинт в sdd §3 + exempt-список — ЗАКРЫТА (35d19e2, sdd r4)
+- [ ] Блок 2 «Авторизация»: 2.1 login → 2.2 middleware → 2.3 страница входа
+- [ ] Блоки 3–8: навигация, задачи/доска, fast line, архив, поиск
 - [ ] QA-цикл на wiki: чеклисты → кейсы → ревью → автотесты
 - [ ] Внедрение
 
