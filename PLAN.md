@@ -28,8 +28,9 @@
 - [x] QA-контур: 4 инструкции + контракты 3–6
 - [x] Контракты передачи артефактов (contracts/artifact_contract.md)
 - [x] AGENTS.md + исполняемые ворота флоу (scripts/flow_check.py + CI flow.yml)
-- [ ] Установить flow_check + flow.yml в ekotov-wiki при старте QA
-- [ ] requirements.md для wiki (БА-ассистент + Заказчик)
+- [x] BA-этап wiki: requirements.md r3 «ГОТОВ К УТВЕРЖДЕНИЮ» (3 раунда, ОВ-1…ОВ-18 закрыты)
+- [ ] Утверждение r3 Заказчиком (формально: все ответы получены)
+- [ ] Установить flow_check + flow.yml в ekotov-wiki
 - [ ] OpenSpec-пакет + sdd.md для wiki (СА-агент)
 - [ ] Инструкции: разработчик, код-ревьюер, release-инженер
 - [ ] Разработка wiki (API + веб-интерфейс)
