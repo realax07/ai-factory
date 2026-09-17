@@ -31,9 +31,11 @@
 - [x] BA-этап wiki: requirements.md r3 «ГОТОВ К УТВЕРЖДЕНИЮ» (3 раунда, ОВ-1…ОВ-18 закрыты)
 - [x] Утверждение r3 Заказчиком
 - [x] OpenSpec-пакет add-kanban-core + sdd.md для wiki (СА-агент, 29 Req/57 сценариев, 7 доменов)
+- [x] Роли dev + code_reviewer: промпты, скиллы implementation/code-review, бандлы af-dev/af-review
+- [x] Первый цикл разработки: задача 1.1 (каркас) — dev a49944a → review approve a0cfa48 → запушено
+- [ ] Эскалация СА: health-эндпоинт в sdd §3 + exempt-список для auth-middleware (до задачи 2.2)
+- [ ] Разработка: задачи 1.2 (схема БД), 1.3 (seed), 1.4 (deploy), 2.x auth, далее фичи
 - [ ] Установить flow_check + flow.yml в ekotov-wiki
-- [ ] Инструкции: разработчик, код-ревьюер, release-инженер
-- [ ] Разработка wiki: tasks.md 1.x каркас + 2.x auth → фичи
 - [ ] QA-цикл на wiki: чеклисты → кейсы → ревью → автотесты
 - [ ] Внедрение
 
