@@ -49,7 +49,7 @@
 - [x] Блок 9 «Финализация» закрыт (2/2): 9.1 чеклист 64/64 сценариев PASS (12b9763), 9.2 deploy README + раздел Бэкап
 - [x] РАЗРАБОТКА add-kanban-core ЗАВЕРШЕНА: 25/25 задач, все approved
 - [x] QA-цикл закрыт: чеклист 81 CHK (80 кейсов + CHK-35 отложен DS-1) → ревью 3 итерации → автотесты 60 passed/22 skipped, 0 багов продукта
-- [ ] Архивация пакета (контракт 7: дельты → master-spec)
+- [x] Архивация пакета (контракт 7): add-kanban-core → 8 master-specs (32 Requirement, Purpose заполнены), regression-домен создан; пакет в changes/archive/2026-09-18-add-kanban-core
 - [ ] Внедрение (VPS по deploy/README.md)
 
 ## Роли и скиллы
