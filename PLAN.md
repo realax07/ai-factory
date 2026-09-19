@@ -52,6 +52,15 @@
 - [x] Архивация пакета (контракт 7): add-kanban-core → 8 master-specs (32 Requirement, Purpose заполнены), regression-домен создан; пакет в changes/archive/2026-09-18-add-kanban-core
 - [x] Внедрение выполнено (2026-09-19): текущая машина 194.58.34.122, nginx TLS :10443 (self-signed CN=IP, нестандартный порт), uvicorn 127.0.0.1:8377 под systemd (user wiki), БД /var/lib/ekotov-wiki/wiki.db, seed owner+wife, health 200 снаружи, auth-флоу 401/302 проверены
 
+## Журнал делегаций (D1)
+
+Одна строка на делегацию; append-only. Назначение — восстановление контекста ПМ после компакции/в новой сессии. Шаблон сборки goal: templates/task_delegation.md.
+
+| ID | Роль | Задача | Статус | Результат |
+|---|---|---|---|---|
+| (пилот, до введения журнала) | ba/sa/dev/reviewer/qa-* | add-kanban-core: полный цикл | закрыто | см. чеклист выше; детали в git-истории |
+| (пилот) dev+reviewer | dev, code_reviewer | фикс 2 UI-багов доски (модалки hidden, integer-guard) | закрыто | 79ceb7b, фиксы на проде проверены |
+
 ## Роли и скиллы
 
 Системные промпты (роль, режим запуска, скиллы, вход-выход, границы, эскалация): [agents/README.md](agents/README.md)
