@@ -50,7 +50,7 @@
 - [x] РАЗРАБОТКА add-kanban-core ЗАВЕРШЕНА: 25/25 задач, все approved
 - [x] QA-цикл закрыт: чеклист 81 CHK (80 кейсов + CHK-35 отложен DS-1) → ревью 3 итерации → автотесты 60 passed/22 skipped, 0 багов продукта
 - [x] Архивация пакета (контракт 7): add-kanban-core → 8 master-specs (32 Requirement, Purpose заполнены), regression-домен создан; пакет в changes/archive/2026-09-18-add-kanban-core
-- [ ] Внедрение (VPS по deploy/README.md)
+- [x] Внедрение выполнено (2026-09-19): текущая машина 194.58.34.122, nginx TLS :10443 (self-signed CN=IP, нестандартный порт), uvicorn 127.0.0.1:8377 под systemd (user wiki), БД /var/lib/ekotov-wiki/wiki.db, seed owner+wife, health 200 снаружи, auth-флоу 401/302 проверены
 
 ## Роли и скиллы
 
