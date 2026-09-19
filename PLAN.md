@@ -60,6 +60,10 @@
 |---|---|---|---|---|
 | (пилот, до введения журнала) | ba/sa/dev/reviewer/qa-* | add-kanban-core: полный цикл | закрыто | см. чеклист выше; детали в git-истории |
 | (пилот) dev+reviewer | dev, code_reviewer | фикс 2 UI-багов доски (модалки hidden, integer-guard) | закрыто | 79ceb7b, фиксы на проде проверены |
+| e2e-checklist-002 | qa_checklist | чеклист E2E критического пути (G1) | закрыто | 483c753, 18 CHK-E |
+| e2e-cases-001 | qa_case_author | 18 TC-UI кейсов | закрыто | 41e64f0 + fix 8b3c3e3 (review-001 return) |
+| e2e-review-002 | qa_case_reviewer | ревью кейсов 002 | закрыто | e442947 approve |
+| e2e-automation-001 | qa_automation | Playwright-сьют 18 тестов | закрыто | cb0da6e: 17 passed / 1 failed = BUG-001 (поиск→карточка), API-регресс 77/5 чист |
 
 ## Роли и скиллы
 
