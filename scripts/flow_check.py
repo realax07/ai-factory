@@ -28,6 +28,21 @@ def check(repo: Path) -> int:
 
     # --- Этап 2: change-пакет требует requirements.md (контракт 1) ---
     req = repo / "requirements.md"
+    # --- Контракт 1 (C1): преамбула ответственности в requirements.md ---
+    if req.is_file():
+        req_text = req.read_text(encoding="utf-8")
+        req_head = req_text[:600]
+        # Преамбула может идти после заголовка H1 — ищем первую цитату-строку
+        preamble = re.search(r"^>\s*Статус:", req_head, re.M)
+        if not preamble:
+            errors += errs(
+                "requirements.md: нет преамбулы ответственности (контракт 1, C1): "
+                "> Статус: ... | Автор: ba_agent | История: r1 → ... → rN"
+            )
+        elif "Автор:" not in req_head:
+            errors += errs(
+                "requirements.md: в преамбуле нет поля «Автор:» (контракт 1, C1)"
+            )
     active_changes = []
     archived_changes = []
     ch_dir = openspec / "changes"
