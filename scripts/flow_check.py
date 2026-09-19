@@ -43,6 +43,46 @@ def check(repo: Path) -> int:
             errors += errs(
                 "requirements.md: в преамбуле нет поля «Автор:» (контракт 1, C1)"
             )
+
+        # --- Контракт 1 (E3): структурная валидация ТЗ скриптом ---
+        # 1) Все 7 разделов (допускаются вариации заголовков с «##»).
+        required_sections = (
+            "описание", "аудитория", "функциональн", "нефункциональн",
+            "приорит", "ограничен", "открытые вопросы",
+        )
+        low = req_text.lower()
+        for sec in required_sections:
+            if not re.search(rf"^#+\s.*{sec}", low, re.M):
+                errors += errs(
+                    f"requirements.md: нет раздела «{sec}» (контракт 1, E3)"
+                )
+        # 2) Уникальность FR-N / NFR-N: определение (раздел FR/NFR или MoSCoW)
+        #    — каждое ровно один раз; упоминания в связках (дельты, сценарии)
+        #    не считаются. Эвристика: считаем только в строках-определениях
+        #    (маркированный список с идентификатором в начале описания).
+        def_lines = re.findall(r"^[-*]\s*(?:\*\*)?(FR|NFR)-(\d+)\b", req_text, re.M)
+        ids_def = [f"{kind}-{num}" for kind, num in def_lines]
+        dupes = sorted({i for i in ids_def if ids_def.count(i) > 1})
+        if dupes:
+            errors += errs(
+                "requirements.md: дубликаты идентификаторов в определениях "
+                "(контракт 1, E3): " + ", ".join(dupes[:6])
+            )
+        # 3) Нет TBD/TODO.
+        for marker in ("TBD", "TODO"):
+            if re.search(rf"\b{marker}\b", req_text):
+                errors += errs(
+                    f"requirements.md: найден {marker} (контракт 1, E3) — реши и запиши"
+                )
+        # 4) Оценочные формулировки в строках FR (эвристика, контракт 1).
+        for ln in req_text.splitlines():
+            if re.match(r"^[-*\d].*\bFR-\d+", ln) and re.search(
+                r"\b(быстро|удобно|просто|понятно)\b", ln, re.I
+            ):
+                errors += errs(
+                    f"requirements.md: оценочная формулировка без критерия в FR-строке "
+                    f"(контракт 1, E3): {ln.strip()[:80]}"
+                )
     active_changes = []
     archived_changes = []
     ch_dir = openspec / "changes"
