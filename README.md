@@ -14,6 +14,7 @@
 |---|---|---|---|---|
 | **БА** (бизнес-аналитик) | [agents/ba_agent.md](agents/ba_agent.md) | Диалог с Заказчиком, формулирование требований (не придумывает их — только фиксирует слова Заказчика) | `requirements.md`, `docs/ba/answers_roundN.md` | диалог → УТВЕРЖДЕННОЕ ТЗ |
 | **СА** (системный аналитик) | [agents/sa_agent.md](agents/sa_agent.md) | ТЗ → формальная спека OpenSpec + SDD: домены, Requirement + Scenario, API-контракты, задачи | `openspec/changes/<id>/**`, `sdd.md` | ТЗ → change-пакет |
+| **qa_impact_analyst** | (создается при первом change с MODIFIED-дельтами, H5) | Impact-анализ: дельты vs существующий регресс → вердикт по каждому затронутому тесту (keep/revalidate/retire) | `test-model/impact/<change-id>.md` | дельты → вердикты по тестам |
 | **dev** (разработчик) | [agents/dev_agent.md](agents/dev_agent.md) | Реализация одной задачи tasks.md; ветка + PR | своя ветка `feature/*` | задача → код + PR |
 | **code_reviewer** | [agents/code_reviewer_agent.md](agents/code_reviewer_agent.md) | Ревью диффа по 3 кругам (спека как закон / практики / интеграция) + регресс-прогон | `code-reviews/`, review PR | PR → approve / return |
 | **qa_checklist** | [agents/qa_checklist_agent.md](agents/qa_checklist_agent.md) | Спека → чеклист проверок (CHK-N), техники границ/негатива, дефекты спеки | `test-model/checklists/` | спека → чеклист |
@@ -29,6 +30,8 @@
 
 ```
 Заказчик ⇄ БА → requirements.md (УТВЕРЖДЕН) → СА → change-пакет + sdd.md
+                                                       │
+                                     (MODIFIED/REMOVED дельты? → qa_impact_analyst → вердикты по регрессу)
                                                        │
      ┌─────────────────────────────────────────────────┘
      ▼  цикл на каждую задачу tasks.md (G6: ветка + PR)
@@ -96,6 +99,7 @@
 | `test-model/approved/<id>/` | Одобренные кейсы | qa_case_reviewer |
 | `test-model/bugs/BUG-NNN-*.md` | Баг-репорты | qa_automation |
 | `test-model/regression/manifest.md` | Манифест регресса (G5, с первого релиза) | qa_regression_analyst |
+| `test-model/impact/<change-id>.md` | Impact-анализ регресса (H5: keep/revalidate/retire) | qa_impact_analyst |
 | `code-reviews/<id>/` | Ревью кода dev-задач | code_reviewer |
 | `deploy/`, `.github/workflows/` | Развертывание + CI | dev / ПМ |
 
@@ -105,6 +109,7 @@
 
 1. **Заказчик → БА → СА** (requirements.md): 7 разделов, FR-N/NFR-N, MoSCoW, преамбула, статусная модель (ЧЕРНОВИК → ГОТОВ К УТВЕРЖДЕНИЮ → УТВЕРЖДЕН — только Заказчик), decision rights (Заказчик / интерпретация ПМ / технические детали), answers_roundN обязателен.
 2. **СА → Разработка** (change-пакет + sdd): Must покрыт, каждый Requirement со Scenario, без реализации в спеке, tasks атомарны. Вход: ТЗ УТВЕРЖДЕН + answers-артефакты.
+2a. **СА → qa_impact_analyst** (H5, при MODIFIED/REMOVED дельтах): дельты + существующий регресс → вердикт по каждому затронутому тесту (keep / revalidate=pending_update / retire) в `test-model/impact/<change-id>.md`; запускается до qa_checklist, его вердикты добавляют в чеклист требования «обновить кейс».
 3. **СА → QA-чеклисты**: спека доступна, change-id проставлен.
 4. **Чеклисты → кейсы**: полное покрытие CHK, негативные/граничные для валидаций, дефекты спеки эскалированы.
 5. **Автор ⇄ Ревьюер кейсов**: цикл new/ → reviews/ → approved/; ревью 6 осей + G8-оси кода тестов; approve без blocker/major.
