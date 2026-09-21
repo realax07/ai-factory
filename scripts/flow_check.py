@@ -12,7 +12,7 @@ import sys
 from pathlib import Path
 
 CHANGE_ID = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)+$")  # kebab-case, >= 2 слов
-TC_REF = re.compile(r"TC-[a-zA-Z0-9]+-\d{3}")
+TC_REF = re.compile(r"TC-[a-zA-Z0-9]+(?:-[a-zA-Z0-9]+)*-\d{3}")
 
 
 def errs(*msg):
