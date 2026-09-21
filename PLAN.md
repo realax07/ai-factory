@@ -64,6 +64,8 @@
 | e2e-cases-001 | qa_case_author | 18 TC-UI кейсов | закрыто | 41e64f0 + fix 8b3c3e3 (review-001 return) |
 | e2e-review-002 | qa_case_reviewer | ревью кейсов 002 | закрыто | e442947 approve |
 | e2e-automation-001 | qa_automation | Playwright-сьют 18 тестов | закрыто | cb0da6e: 17 passed / 1 failed = BUG-001 (поиск→карточка), API-регресс 77/5 чист |
+| r1-bug001-dev | dev | R1.1 фикс BUG-001 (первый G6 PR-цикл) | закрыто | f6baa75 → merge f3248d9, прод обновлен |
+| r1-bug001-review | code_reviewer | ревью PR BUG-001 | закрыто | approve, 0 findings |
 
 ## Роли и скиллы
 
