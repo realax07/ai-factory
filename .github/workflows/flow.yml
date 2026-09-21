@@ -29,3 +29,10 @@ jobs:
 
       - name: Flow check
         run: python3 scripts/flow_check.py .
+
+      - name: PR artifact validation (I3/I4)
+        if: github.event_name == 'pull_request'
+        run: |
+          python3 scripts/pr_validate.py . \
+            --id "$(cat "$GITHUB_EVENT_PATH" | python3 -c "import json,sys; d=json.load(sys.stdin); print((d.get('pull_request',{}).get('title','')+' '+(d.get('pull_request',{}).get('body') or '')).strip())")" \
+            || echo "::warning::pr_validate found missing artifacts (см. выше)" && exit 1
