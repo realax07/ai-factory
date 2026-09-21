@@ -83,7 +83,7 @@
   **Первый запуск:** PR очистки текущей свалки (10 smoke-скриптов backend/ ~108K + test-model/new дубль) — после фиксации BUG-001.
 
 
-### Блок H: Тюнинг QA и флоу (продолжение)
+### Блок H5: qa_impact_analyst (2026-09-19)
 
 - [ ] **H5. qa_impact_analyst — impact-анализ регресса при изменении спеки.** Тесты устаревают при доработках — постфактум при фейле = ложный пожар. → (решение 2026-09-19): отдельная роль, запуск после СА при MODIFIED/REMOVED дельтах, до qa_checklist. Выход: `test-model/impact/<change-id>.md` — keep / revalidate (pending_update) / retire. Отражено в README и agents/README.
 
