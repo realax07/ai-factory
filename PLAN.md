@@ -70,6 +70,7 @@
 | r1-p4-dev | dev | R1.3 P4: GET /api/suggestions + datalist (по уточнению Заказчика set(tags∪categories)) | закрыто | 1f11011, прод обновлен |
 | r13-ba-sa-impact-checklist-cases-review-automation | ba/sa/impact/checklist/cases/reviewer/automation | Ретро-Флоу 1 для R1.3 (requirements-p4, дельта, impact keep 12/0/0, чеклист 13 CHK, 4 кейса дыры, ревью approve, тесты+метки G5) | закрыто | f973e4a, b1efbca, 600537f, 8301bb1, 95dadac, 944346c, 3a4b890; архивация 23ae489 |
 | r1-cleanup-dev | dev | R1.6 G9 чистка: 13 смоков удалено (+3 DOM-варианта поймано ПМ), final_check в archive | закрыто | ed36d42+19344df, merge 578f6ec, регресс 21+85/5 зеленый |
+| deploy-R1 | ПМ | Деплой Релиза 1 на прод (после ребута машины) | закрыто | health ok, ES-модули на проде, suggestions 401, /board 302 — все проверки impact GO выполнены. РЕЛИЗ 1 ЗАКРЫТ |
 
 ## Роли и скиллы
 
