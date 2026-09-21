@@ -66,6 +66,7 @@
 | e2e-automation-001 | qa_automation | Playwright-сьют 18 тестов | закрыто | cb0da6e: 17 passed / 1 failed = BUG-001 (поиск→карточка), API-регресс 77/5 чист |
 | r1-bug001-dev | dev | R1.1 фикс BUG-001 (первый G6 PR-цикл) | закрыто | f6baa75 → merge f3248d9, прод обновлен |
 | r1-bug001-review | code_reviewer | ревью PR BUG-001 | закрыто | approve, 0 findings |
+| r1-p6-dev | dev | R1.2 P6 board.js -> ES modules (7 модулей) | закрыто | 63a205b+fc4d9ff, 18/18 web (подтверждено ПМ), origin/main обновлен |
 
 ## Роли и скиллы
 
