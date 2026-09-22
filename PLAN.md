@@ -91,6 +91,7 @@
 | r2-review-3a | code_reviewer | Ревью ветки -4 (4.1+4.2) deleg_db7e7c32 | закрыто | APPROVE (review-005.md): смок 17/17, 422 дословно на 5 путях, NULL-обход закрыт подтвержден, регресс-дельта 0, 2 minor |
 | r2-review-3b | code_reviewer | Ревью ветки -5 (визуал V3) deleg_db7e7c32 | закрыто | APPROVE (review-006.md): крестик 40px/subpixel, SVG=эталон, V3-токены совпадают мокапу, a11y+ОГР-8 подтверждены, web-регресс=baseline побайтно, 2 minor; эскалация: TC-UI-009 синхронизировать в 6.1 |
 | merge-2.4-2.5 | ПМ | Merge задач 2.4+2.5 в main | закрыто | 8bd6ad9 reviews, de769f4 (2.4), db89106 (2.5); push origin/main; ворота зеленые; worktree /tmp прибраны (wt-r24, rv-24, rv-25) |
+| r2-qa-impact | qa_impact | QA 2.6 шаг 1: impact-анализ дельт (первый запуск роли H5, промпт qa_impact_analyst_agent.md создан) | запущено 2026-09-22 deleg_358b857a | — |
 
 ### План задачи: change-пакет Релиза 2 (план от 2026-09-22)
 
