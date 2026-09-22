@@ -27,6 +27,7 @@
 | QA: автоматизатор | auto-edit | `tests/**`, `test-model/bugs/`, dev-зависимости | нет |
 | QA: impact-аналитик | auto-edit | `test-model/impact/<change-id>.md` | нет (роль создается при первом change с MODIFIED-дельтами, H5) |
 | QA: регресс-аналитик | auto-edit | `test-model/regression/manifest.md` | нет (роль создается при первом релизе, G5) |
+| Дизайнер UI | auto-edit | `design/**` проекта | нет (роль создается 2026-09-22 для R2/задачи 2.5, Д-5; мокапы и токены, продукт-код не пишет) |
 | ПМ (оркестратор) | — | `PLAN.md`, `BACKLOG.md`, merge PR, push | да |
 
 Запись вне зоны = нарушение флоу; отчет отклоняется ПМ.
