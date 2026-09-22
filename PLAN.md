@@ -100,7 +100,7 @@
 | r2-qa-auto-web | qa_automation | QA 2.6 шаг 5б: 24 web-кейса + 7 revalidate-обновлений → Playwright (worktree, ветка r2-qa-web-tests) (deleg_d9100a02) | закрыто | 86b14a2: 45 passed/0 failed (было 16/5), worktree-изоляция; все 7 pending_update сняты; эскалации: tasks.md 4.3 (блокировка поля UI) не реализована — сервер компенсирует, чекбоксы 2.2/4.3 синхронизировать |
 | bug002-decision | Заказчик/ПМ | Решение по BUG-002 и 4.3 | закрыто | РЕШЕНО 2026-09-22: BUG-002 фиксить (Флоу 3); 4.3 (UI-блокировка поля) — серверная компенсация принимается, доделка не планируется |
 | r2-bug002-dev | dev | Багфикс BUG-002: явный null → 422, model_fields_set (deleg_4b683b91) | закрыто | da782f5 (58fc2aa cherry-pick 71973fc) в origin/feature/bug002-fast-null-priority; прогон 116 passed/0 failed/0 xfailed (xfail снят), смоук все комбинации включая порядок 422 до 409; замечание: cherry-pick-дубль учесть при merge |
-| r2-bug002-review | code_reviewer | Ревью BUG-002 фикса (deleg_d85feb2b) | запущено 2026-09-22 | — |
+| r2-bug002-review | code_reviewer | Ревью BUG-002 фикса (deleg_d85feb2b → прерван 429; перезапуск deleg_71b33635) | запущено 2026-09-22 | прерван: лимит провайдера 429 (22:46), перезапущен после обновления токенов |
 
 ### План задачи: change-пакет Релиза 2 (план от 2026-09-22)
 
