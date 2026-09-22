@@ -74,7 +74,8 @@
 | deploy-R1 | ПМ | Деплой Релиза 1 на прод (после ребута машины) | закрыто | health ok, ES-модули на проде, suggestions 401, /board 302 — все проверки impact GO выполнены. РЕЛИЗ 1 ЗАКРЫТ |
 | r2-ba | ba | ТЗ Релиза 2 requirements-r2.md (FR-19..30, решения Заказчика дословно, 0 открытых вопросов) | закрыто | requirements-r2.md закоммичен ПМ |
 | r2-sa | sa | Change-пакет Релиза 2: openspec/changes/add-r2-categories-settings/ (proposal/design/7 дельт/tasks 2.1-2.6/sdd) | закрыто | a8caab5, ворота зеленые (openspec 9/9 strict, flow_check OK), трассировка 12/12 FR+NFR-8, 14 чекбоксов чисты; приемка ПМ пост-фактум (отчет СА сверен с фактами) |
-| r2-dev-1 | dev | R2 задача 2.1: backend — categories + CRUD + валидация 422 + миграция (tasks 1.1-1.3) | запущено 2026-09-22 deleg_d691318f | — |
+| r2-dev-1 | dev | R2 задача 2.1: backend — categories + CRUD + валидация 422 + миграция (tasks 1.1-1.3) | закрыто | aa81df9 в origin/feature/...-1, диф в зоне (backend+чекбоксы 3/3), смоук 41/41, регресс tests/api 85 passed/5 skipped (заявления сверены ПМ: ветка, диф, PR-текст /tmp/pr_body.md); gh на машине нет — PR создаст ПМ; эскалация: design §1.4 «автообновление задач» при хранении по значению неточно — на ревью |
+| r2-review-1 | code_reviewer | Ревью PR задачи 2.1 (deleg_3c3bf29f) | запущено 2026-09-22 | — |
 
 ### План задачи: change-пакет Релиза 2 (план от 2026-09-22)
 
