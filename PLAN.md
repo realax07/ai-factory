@@ -96,6 +96,8 @@
 | r2-qa-author | qa_case_author | QA 2.6 шаг 3: кейсы по CHK-82..147 + 7 revalidate-обновлений (deleg_d1cb5cc3) | закрыто | 66 файлов (59 новых TC-cat/migr/set/nav/form/sel/fast2/env + 7 revalidate-update), трассировка CHK полная 82..147 (проверено ПМ скриптом), формат approved/; эскалации (а)(б)(в) унаследованы и помечены в кейсах; коммит 397a64f за ПМ |
 | r2-qa-cases-review | qa_case_reviewer | QA 2.6 шаг 4: ревью 66 кейсов, поэтапно по доменам (deleg_fb12dc3c) | закрыто | ОДОБРИТЬ 66/66 (approved/ перенесены, review-001.md): трассировка программно 66/66, 422-дословность, Д-1, NFR-8, fastline-комбинации, revalidate-таблицы — сверены; 2 minor; БОНУС: пойман красный flow_check в чеклисте (4 CHK без FR-источника) — ПМ починил (CHK-141/145/146/147), ворота зеленые |
 | fix-checklist-fr | ПМ | Фикс чеклиста: FR-источники в 4 CHK-строках (rule 6) | закрыто | 64cbf13: review-001 + approved/ + фикс чеклиста; flow_check OK, openspec 9/9 |
+| r2-qa-auto-api | qa_automation | QA 2.6 шаг 5а: 33 API-кейса → pytest (ветка r2-qa-api-tests) (deleg_d9100a02) | запущено 2026-09-22 | — |
+| r2-qa-auto-web | qa_automation | QA 2.6 шаг 5б: 24 web-кейса + 7 revalidate-обновлений → Playwright (worktree, ветка r2-qa-web-tests) (deleg_d9100a02) | запущено 2026-09-22 | — |
 
 ### План задачи: change-пакет Релиза 2 (план от 2026-09-22)
 
