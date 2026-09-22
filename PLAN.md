@@ -76,7 +76,8 @@
 | r2-sa | sa | Change-пакет Релиза 2: openspec/changes/add-r2-categories-settings/ (proposal/design/7 дельт/tasks 2.1-2.6/sdd) | закрыто | a8caab5, ворота зеленые (openspec 9/9 strict, flow_check OK), трассировка 12/12 FR+NFR-8, 14 чекбоксов чисты; приемка ПМ пост-фактум (отчет СА сверен с фактами) |
 | r2-dev-1 | dev | R2 задача 2.1: backend — categories + CRUD + валидация 422 + миграция (tasks 1.1-1.3) | закрыто | aa81df9 в origin/feature/...-1, диф в зоне (backend+чекбоксы 3/3), смоук 41/41, регресс tests/api 85 passed/5 skipped (заявления сверены ПМ: ветка, диф, PR-текст /tmp/pr_body.md); gh на машине нет — PR создаст ПМ; эскалация: design §1.4 «автообновление задач» при хранении по значению неточно — на ревью |
 | r2-review-1 | code_reviewer | Ревью PR задачи 2.1 (deleg_3c3bf29f) | закрыто | APPROVE (review-001.md), ворота зеленые, миграция идемпотентна (2 прогона), смоки 20/20, 3 minor findings; эскалации: design §1.4 правка текста (при архивации), сьют Р1 несовместим с FR-21 → план QA 6.x; зона соблюдена |
-| r2-fix1-dev | dev | Задача 2.1 фикс 3 minor findings ревью (IN_USE_BODY, BEGIN IMMEDIATE rename, fast-транзакция) | запущено 2026-09-22 | — |
+| r2-fix1-dev | dev | Задача 2.1 фикс 3 minor findings ревью (IN_USE_BODY, BEGIN IMMEDIATE rename, fast-транзакция) | закрыто | 27de791 в origin, диф 2 файла 25+/10− в границе, ворота зеленые, смоук PASS, идемпотентность миграции подтверждена (заявления сверены ПМ) |
+| r2-review-1b | code_reviewer | Повторное ревью фикса 27de791 (deleg_00bf2c70) | запущено 2026-09-22 | — |
 
 ### План задачи: change-пакет Релиза 2 (план от 2026-09-22)
 
