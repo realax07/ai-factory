@@ -74,6 +74,7 @@
 | deploy-R1 | ПМ | Деплой Релиза 1 на прод (после ребута машины) | закрыто | health ok, ES-модули на проде, suggestions 401, /board 302 — все проверки impact GO выполнены. РЕЛИЗ 1 ЗАКРЫТ |
 | r2-ba | ba | ТЗ Релиза 2 requirements-r2.md (FR-19..30, решения Заказчика дословно, 0 открытых вопросов) | закрыто | requirements-r2.md закоммичен ПМ |
 | r2-sa | sa | Change-пакет Релиза 2: openspec/changes/add-r2-categories-settings/ (proposal/design/7 дельт/tasks 2.1-2.6/sdd) | закрыто | a8caab5, ворота зеленые (openspec 9/9 strict, flow_check OK), трассировка 12/12 FR+NFR-8, 14 чекбоксов чисты; приемка ПМ пост-фактум (отчет СА сверен с фактами) |
+| r2-dev-1 | dev | R2 задача 2.1: backend — categories + CRUD + валидация 422 + миграция (tasks 1.1-1.3) | запущено 2026-09-22 deleg_d691318f | — |
 
 ### План задачи: change-пакет Релиза 2 (план от 2026-09-22)
 
