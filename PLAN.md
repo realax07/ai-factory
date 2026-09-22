@@ -92,6 +92,7 @@
 | r2-review-3b | code_reviewer | Ревью ветки -5 (визуал V3) deleg_db7e7c32 | закрыто | APPROVE (review-006.md): крестик 40px/subpixel, SVG=эталон, V3-токены совпадают мокапу, a11y+ОГР-8 подтверждены, web-регресс=baseline побайтно, 2 minor; эскалация: TC-UI-009 синхронизировать в 6.1 |
 | merge-2.4-2.5 | ПМ | Merge задач 2.4+2.5 в main | закрыто | 8bd6ad9 reviews, de769f4 (2.4), db89106 (2.5); push origin/main; ворота зеленые; worktree /tmp прибраны (wt-r24, rv-24, rv-25) |
 | r2-qa-impact | qa_impact | QA 2.6 шаг 1: impact-анализ дельт (первый запуск роли H5, промпт qa_impact_analyst_agent.md создан) | закрыто | impact/add-r2-categories-settings.md: keep 102 / revalidate 7 / retire 0 (счет программно); все revalidate — web (SUGG-001/002, sugg-007, UI-009, 011, 017, 018); 7 новых тестовых требований; средовое: seed категорий; 3 эскалации в sdd (null vs отсутствие поля, источник категорий в suggestions, конфликт спек add-suggestions) |
+| r2-qa-checklist | qa_checklist | QA 2.6 шаг 2: чеклист покрытия дельт + revalidate-обновления (deleg_d6d692ce) | запущено 2026-09-22 | — |
 
 ### План задачи: change-пакет Релиза 2 (план от 2026-09-22)
 
