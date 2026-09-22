@@ -98,6 +98,8 @@
 | fix-checklist-fr | ПМ | Фикс чеклиста: FR-источники в 4 CHK-строках (rule 6) | закрыто | 64cbf13: review-001 + approved/ + фикс чеклиста; flow_check OK, openspec 9/9 |
 | r2-qa-auto-api | qa_automation | QA 2.6 шаг 5а: 33 API-кейса → pytest (ветка r2-qa-api-tests) (deleg_d9100a02) | закрыто | 71973fc: 35 тестов, seed-фикстура закрыла 17 предсуществующих падений → 115 passed/0 failed, ruff clean, метки G5; **BUG-002** (явный null → 201 вместо 422, xfail strict) — требует решения ПМ/СА; UI-остатки → web-сессии |
 | r2-qa-auto-web | qa_automation | QA 2.6 шаг 5б: 24 web-кейса + 7 revalidate-обновлений → Playwright (worktree, ветка r2-qa-web-tests) (deleg_d9100a02) | закрыто | 86b14a2: 45 passed/0 failed (было 16/5), worktree-изоляция; все 7 pending_update сняты; эскалации: tasks.md 4.3 (блокировка поля UI) не реализована — сервер компенсирует, чекбоксы 2.2/4.3 синхронизировать |
+| bug002-decision | Заказчик/ПМ | Решение по BUG-002 и 4.3 | закрыто | РЕШЕНО 2026-09-22: BUG-002 фиксить (Флоу 3); 4.3 (UI-блокировка поля) — серверная компенсация принимается, доделка не планируется |
+| r2-bug002-dev | dev | Багфикс BUG-002: явный null → 422, model_fields_set (deleg_4b683b91) | запущено 2026-09-22 | — |
 
 ### План задачи: change-пакет Релиза 2 (план от 2026-09-22)
 
