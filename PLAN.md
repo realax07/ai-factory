@@ -93,6 +93,7 @@
 | merge-2.4-2.5 | ПМ | Merge задач 2.4+2.5 в main | закрыто | 8bd6ad9 reviews, de769f4 (2.4), db89106 (2.5); push origin/main; ворота зеленые; worktree /tmp прибраны (wt-r24, rv-24, rv-25) |
 | r2-qa-impact | qa_impact | QA 2.6 шаг 1: impact-анализ дельт (первый запуск роли H5, промпт qa_impact_analyst_agent.md создан) | закрыто | impact/add-r2-categories-settings.md: keep 102 / revalidate 7 / retire 0 (счет программно); все revalidate — web (SUGG-001/002, sugg-007, UI-009, 011, 017, 018); 7 новых тестовых требований; средовое: seed категорий; 3 эскалации в sdd (null vs отсутствие поля, источник категорий в suggestions, конфликт спек add-suggestions) |
 | r2-qa-checklist | qa_checklist | QA 2.6 шаг 2: чеклист покрытия дельт + revalidate-обновления (deleg_d6d692ce) | закрыто | CHK-82..147 (66 пунктов, сквозная после add-kanban-core; ПМ проверил программно: без пропусков/дублей, 13/13 Requirement трассировано FR-19..30+NFR-8, fastline 422-комбинации раздельно); 7 revalidate-пунктов; 3 эскалации спеки — в примечании «Дефекты спеки»; коммит 6b0dc6d |
+| r2-qa-author | qa_case_author | QA 2.6 шаг 3: кейсы по CHK-82..147 + 7 revalidate-обновлений (deleg_d1cb5cc3) | запущено 2026-09-22 | — |
 
 ### План задачи: change-пакет Релиза 2 (план от 2026-09-22)
 
