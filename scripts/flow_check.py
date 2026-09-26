@@ -21,10 +21,37 @@ def errs(*msg):
     return len(msg)
 
 
+def warns(*msg):
+    for m in msg:
+        print(f"FLOW-WARNING: {m}")
+    return len(msg)
+
+
 def check(repo: Path) -> int:
     errors = 0
     openspec = repo / "openspec"
     tm = repo / "test-model"
+
+    # --- factory-init: рассинхрон промптов с эталоном фабрики (если фабрика на машине) ---
+    project_agents = repo / "agents"
+    if project_agents.is_dir():
+        factory_agents = Path.home() / "ai-factory/agents"
+        if factory_agents.is_dir():
+            import hashlib
+            stale = []
+            for dst in sorted(project_agents.glob("*.md")):
+                src = factory_agents / dst.name
+                if not src.is_file():
+                    continue
+                m = re.search(r"factory-version: ([0-9a-f]{12})", dst.read_text(encoding="utf-8", errors="replace")[:300])
+                cur = hashlib.sha256(src.read_bytes()).hexdigest()[:12]
+                if m and m.group(1) != cur:
+                    stale.append(dst.name)
+            if stale:
+                warns(
+                    f"промпты устарели относительно ~/ai-factory: {', '.join(stale[:5])} "
+                    f"— обнови: factory_init.py --target {repo.name} --name <name> --force"
+                )
 
     # --- Этап 2: change-пакет требует requirements.md (контракт 1) ---
     req = repo / "requirements.md"

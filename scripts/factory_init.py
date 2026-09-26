@@ -15,8 +15,9 @@ Usage:
   openspec/ (скелет specs/ + changes/archive/), test-model/ (checklists/new/reviews/approved/bugs),
   architecture/ (пустая, для map.md архитектора)
 
-Промпты ролей НЕ копируются — источник один (~/ai-factory/agents/), делегации
-ссылаются на промпт фабрики по абсолютному пути (нет копипасты = нет рассинхрона).
+Промпты ролей копируются в <target>/agents/ — фабрика самодостаточна после установки.
+Каждый промпт получает шапку-версию (yaml-комментарий с sha эталона); при наличии
+~/ai-factory на машине flow_check предупреждает о рассинхроне (WARNING).
 
 Post-init ворота: flow_check <target> должен завершиться exit 0.
 """
@@ -83,6 +84,22 @@ def main() -> int:
         shutil.copy2(src, dst)
         copied += 1
     print(f"  файлы: {copied} скопировано, {skipped} уже были (--force для перезаписи)")
+
+    # 2b. Промпты ролей (в проект — самодостаточность установки) + README реестра
+    import hashlib
+    agents_copied = 0
+    agents_dir = target / "agents"
+    agents_dir.mkdir(exist_ok=True)
+    for src in sorted((FACTORY / "agents").glob("*.md")):
+        dst = agents_dir / src.name
+        if dst.exists() and not args.force:
+            continue
+        text = src.read_text(encoding="utf-8")
+        sha = hashlib.sha256(src.read_bytes()).hexdigest()[:12]
+        header = f"<!-- factory-version: {sha} -->\n\n"
+        dst.write_text(header + text, encoding="utf-8")
+        agents_copied += 1
+    print(f"  промпты ролей: {agents_copied} в agents/ (версия = sha эталона в шапке)")
 
     # 3. Constitution из шаблона (если нет)
     constitution = target / "CONSTITUTION.md"
