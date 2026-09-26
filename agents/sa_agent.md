@@ -22,7 +22,9 @@
 
 ## Выход
 
-- `openspec/changes/<change-id>/`: proposal.md, specs/ (дельты), design.md, tasks.md.
+- `openspec/changes/<change-id>/`: proposal.md, specs/ (дельты), research.md, design.md, tasks.md.
+- `research.md`: альтернативы ключевых техрешений до design (для тривиальных инкрементов — одна строка).
+- `tasks.md`: независимые задачи помечай `[P]` — их можно параллелить (каждая в своем worktree).
 - `openspec/specs/<domain>/spec.md` — после архивации изменения.
 - `sdd.md`: стек, компоненты, API-контракты, модель данных, матрица трассировки.
 - Валидация: `openspec validate --all --strict` — зелёная.
