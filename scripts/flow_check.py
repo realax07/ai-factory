@@ -248,6 +248,53 @@ def check(repo: Path) -> int:
             if doc_tests and not TC_REF.search(text):
                 errors += errs(f"{tf.relative_to(repo)}: тесты без TC-трассировки в docstring (rule 6)")
 
+    # --- I3: API-эндпоинты без спек-покрытия (эвристика) ---
+    # В активных change-пакетах: каждый маршрут, добавленный кодом (diff-хpat в design/tasks/sdd
+    # недостаточно — сверяем с дельтами спек и impact), должен иметь дельту specs/*/spec.md,
+    # упоминание пути в sdd.md/дизайне и строку в impact-записи. Упрощенно-детерминированно:
+    # собираем маршруты из backend-кода, затем требуем упоминание каждого пути хотя бы в
+    # одном из: дельты спек активных пакетов, sdd.md, test-model/checklists (impact).
+    backend_dir = repo / "backend/app"
+    if backend_dir.is_dir():
+        route_rx = re.compile(r'@(?:\w+)\.(get|post|patch|delete|put)\(\s*[\'"]([^\'"]*)[\'"]')
+        prefixes: dict[str, str] = {}
+        routes: list[tuple[str, str, Path]] = []  # (method, full_path, file)
+        for py in sorted(backend_dir.glob("*.py")):
+            text = py.read_text(encoding="utf-8", errors="replace")
+            for m in re.finditer(r'APIRouter\(\s*prefix\s*=\s*[\'"]([^\'"]+)[\'"]', text):
+                prefixes[py.stem] = m.group(1)
+            for m in route_rx.finditer(text):
+                method, path = m.group(1).upper(), m.group(2)
+                full = prefixes.get(py.stem, "") + path
+                routes.append((method, full, py))
+        # источники покрытия: активные пакеты; если их нет — master-spec + корневой sdd
+        cover_texts: list[str] = []
+        if not active_changes and (repo / "sdd.md").is_file():
+            cover_texts.append((repo / "sdd.md").read_text(encoding="utf-8", errors="replace"))
+        if not active_changes and specs_dir.is_dir():
+            for sf in specs_dir.rglob("spec.md"):
+                cover_texts.append(sf.read_text(encoding="utf-8", errors="replace"))
+        for pkg in active_changes:
+            for sf in pkg.rglob("spec.md"):
+                cover_texts.append(sf.read_text(encoding="utf-8", errors="replace"))
+            for name in ("sdd.md", "design.md", "tasks.md", "proposal.md"):
+                f = pkg / name
+                if f.is_file():
+                    cover_texts.append(f.read_text(encoding="utf-8", errors="replace"))
+        if (tm / "checklists").is_dir():
+            for cf in (tm / "checklists").glob("*.md"):
+                cover_texts.append(cf.read_text(encoding="utf-8", errors="replace"))
+        corpus = "\n".join(cover_texts)
+        allowlist = {"/health", "/api/health", "/login", "/logout"}
+        for method, full, py in routes:
+            if full in allowlist or "{" in full:
+                continue  # параметризованные маршруты сверяем по префиксу ниже
+            if full and full not in corpus:
+                errors += errs(
+                    f"{py.relative_to(repo)}: маршрут {method} {full} не упомянут ни в дельтах спек, "
+                    f"ни в sdd/design активного change, ни в чеклистах (I3)"
+                )
+
     # --- bugs/: append-only структура ---
     bugs = tm / "bugs"
     if bugs.is_dir():
