@@ -40,6 +40,13 @@ def check_change(repo: Path, change_id: str) -> list[str]:
     missing = []
     pkg = repo / "openspec" / "changes" / change_id
     if not pkg.is_dir():
+        # J6: пакет заархивирован (пост-мерж) — PR не может требовать активный пакет.
+        # Работы после архивации помечаются [chore]; если маркер change и пакет в archive —
+        # валидируем слитность (контракт 7), а не активный пакет.
+        arch = repo / "openspec" / "changes" / "archive"
+        archived = [d for d in arch.iterdir() if d.is_dir() and d.name.endswith(change_id)] if arch.is_dir() else []
+        if archived:
+            return [f"CHANGE-ARCHIVED: пакет в archive ({archived[0].name}) — для пост-релизных работ по нему используй маркер [chore]"]
         return [f"openspec/changes/{change_id}/: change-пакет отсутствует (контракт 2)"]
     for req_file in ("proposal.md", "design.md", "tasks.md"):
         if not (pkg / req_file).is_file():
