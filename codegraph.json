@@ -1,0 +1,17 @@
+{
+  "meta": {
+    "tool": "scripts/codegraph.py",
+    "py_dir": "backend/app",
+    "js_dirs": [
+      "frontend/static/js"
+    ]
+  },
+  "nodes": [
+    "scripts.check_auth_timing",
+    "scripts.codegraph",
+    "scripts.flow_check",
+    "scripts.pr_validate"
+  ],
+  "edges": [],
+  "js_entry_points": []
+}
