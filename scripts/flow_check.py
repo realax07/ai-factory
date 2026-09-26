@@ -182,7 +182,10 @@ def check(repo: Path) -> int:
         if "Дефекты спеки" not in text:
             errors += errs(f"{cl.relative_to(repo)}: нет раздела «Дефекты спеки»")
 
-    # --- Кейсы new/: требуют чеклист (контракт 4) и CHK-ссылки ---
+    # --- Кейсы new/: требуют чеклист (контракт 4), CHK-ссылки и формат H1 ---
+    # H1: 1 кейс = 1 файл, имя файла = ID кейса (допускается суффикс -update).
+    # Заголовки кейсов: # TC-... или ## TC-... (оба уровня приняты практикой).
+    TC_HEAD = re.compile(r"^#{1,3}\s+(TC-[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*-\d{3})", re.M)
     new_dir = tm / "new"
     case_files = list(new_dir.rglob("*.md")) if new_dir.is_dir() else []
     cl_ids = {cl.stem for cl in checklists}
@@ -192,9 +195,18 @@ def check(repo: Path) -> int:
                 f"{cf.relative_to(repo)}: кейсы без чеклиста test-model/checklists/{cf.parent.name}.md (контракт 4)"
             )
         text = cf.read_text(encoding="utf-8")
-        tcs = re.findall(r"^##\s+(TC-[a-z0-9]+-\d{3})", text, re.M)
+        tcs = TC_HEAD.findall(text)
         if not tcs:
             errors += errs(f"{cf.relative_to(repo)}: нет кейсов TC-***-NNN")
+            continue
+        if len(tcs) > 1:
+            errors += errs(
+                f"{cf.relative_to(repo)}: {len(tcs)} кейсов в одном файле — нарушение «1 кейс = 1 файл» (H1)"
+            )
+        elif cf.stem != tcs[0] and not cf.stem.startswith(tcs[0] + "-update"):
+            errors += errs(
+                f"{cf.relative_to(repo)}: имя файла не совпадает с ID кейса {tcs[0]} (H1)"
+            )
         orphan = [tc for tc in tcs if f"[{tc}]" not in text and "CHK-" not in text]
         if orphan:
             errors += errs(f"{cf.relative_to(repo)}: кейсы без CHK-трассировки (rule 6)")
