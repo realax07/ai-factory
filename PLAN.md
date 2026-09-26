@@ -58,6 +58,7 @@
 
 | ID | Роль | Задача | Статус | Результат |
 |---|---|---|---|---|
+| deleg_ad5aaeb3 | architect-analyst | Проектирование J1–J3 (Флоу 4): промпт ПМ-сабагента, механизм запуска, границы с enforcement, план внедрения | запущена | agents/pm_agent.md, templates/pm_launch.md, scripts/pm_bounds_check.py; BACKLOG J1–J3 обновлены; коммит локальный (см. git log) |
 | (пилот, до введения журнала) | ba/sa/dev/reviewer/qa-* | add-kanban-core: полный цикл | закрыто | см. чеклист выше; детали в git-истории |
 | (пилот) dev+reviewer | dev, code_reviewer | фикс 2 UI-багов доски (модалки hidden, integer-guard) | закрыто | 79ceb7b, фиксы на проде проверены |
 | e2e-checklist-002 | qa_checklist | чеклист E2E критического пути (G1) | закрыто | 483c753, 18 CHK-E |
