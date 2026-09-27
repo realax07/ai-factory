@@ -17,7 +17,10 @@ TC_REF = re.compile(r"TC-[a-zA-Z0-9]+(?:-[a-zA-Z0-9]+)*-\d{3}")
 # --- J10: обязательный code-review закрытых dev-задач ---
 # Формат review-файла: agents/code_reviewer_agent.md —
 #   код-reviews/<change-id>/review-<задача>-<NNN>.md, строка «## Вердикт: approve|return».
-REVIEW_FILE_RE = re.compile(r"^review-(.+?)-(\d{3})\.md$", re.I)
+# Два формата имени: review-<NNN>-<task>.md (code_reviewer Р3) и review-<task>-<NNN>.md
+REVIEW_FILE_RE = re.compile(r"^review-(\d{3})-(.+?)-(\d{3})\.md$", re.I)  # rev-first: NNN-task без цифр на конце — неоднозначно; ниже общий
+REVIEW_FILE_REV_FIRST = re.compile(r"^review-(\d{3})-(.+)\.md$", re.I)
+REVIEW_FILE_TASK_FIRST = re.compile(r"^review-(.+?)-(\d{3})\.md$", re.I)
 VERDICT_LINE_RE = re.compile(r"^#{1,4}\s*Вердикт\s*:?\s*(.+)$", re.I | re.M)
 VERDICT_APPROVE_RE = re.compile(r"\b(approve|approved|одобрен\w*)\b", re.I)
 VERDICT_RETURN_RE = re.compile(r"\b(return|доработк\w*)\b", re.I)
@@ -55,10 +58,19 @@ def approved_review_tasks(repo: Path, change_id: str) -> dict[str, str]:
     if not cr_dir.is_dir():
         return {}
     for rf in cr_dir.glob("review-*.md"):
-        m = REVIEW_FILE_RE.match(rf.name)
-        if not m:
-            continue
-        task, rev = m.group(1), int(m.group(2))
+        m = REVIEW_FILE_REV_FIRST.match(rf.name)
+        if m:
+            rev, task = int(m.group(1)), m.group(2)
+        else:
+            m = REVIEW_FILE_TASK_FIRST.match(rf.name)
+            if not m:
+                continue
+            task, rev = m.group(1), int(m.group(2))
+        # Нормализация: имя может нести суффикс (review-001-1.1-auth-me.md) —
+        # задача = ведущий числовой идентификатор вида N[.N...]
+        tm = re.match(r"(\d+(?:\.\d+)*)", task)
+        if tm:
+            task = tm.group(1)
         if parse_verdict(rf.read_text(encoding="utf-8", errors="replace")) == "approve":
             if task not in covered or rev > covered[task][0]:
                 covered[task] = (rev, rf.name)
