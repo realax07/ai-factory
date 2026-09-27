@@ -36,10 +36,19 @@ integration branch — ONLY after green gates (see Procedure step 4).
 
 ## Procedure
 
-1. **Merge plan.** Read `tasks.md`: build the merge order from task dependencies
+1. **Review gate (J10, before any merge).** For EVERY branch in the merge plan:
+   locate `code-reviews/<change-id>/review-<task>-<NNN>.md` (highest NNN) and
+   verify its verdict line is **approve**. No review file, verdict `return`,
+   or open blocker/major → DO NOT merge that branch: stop and escalate to the
+   orchestrator (PM) listing the uncovered tasks. A missing verdict is a hard
+   stop, not a judgment call — the gate is also enforced mechanically by
+   `flow_check.py` (J10), `pr_validate.py` (J10) and
+   `pm_bounds_check.py --require-review` (J10); a merge without approvals is
+   caught in git history after the fact.
+2. **Merge plan.** Read `tasks.md`: build the merge order from task dependencies
    (a task depending on a skeleton merges after it). Independent branches — any
    order; document the chosen order and why in the report.
-2. **Merge one branch at a time, `git merge --no-ff`.** Commit message:
+3. **Merge one branch at a time, `git merge --no-ff`.** Commit message:
    `Merge <NN>: <task title> (change <change-id>)`. On conflict: resolve by the
    principle **spec beats code, newer flow beats older** (a delta of the active
    change supersedes master-spec text; the newer task's flow supersedes the old
@@ -47,11 +56,11 @@ integration branch — ONLY after green gates (see Procedure step 4).
    if resolving requires choosing between behaviors — STOP, escalate to the
    architect via the orchestrator with both variants and spec quotes. Do NOT
    resolve semantic conflicts yourself.
-3. **Gates after EVERY merge:** project `flow_check.py` + `openspec validate --all
+4. **Gates after EVERY merge:** project `flow_check.py` + `openspec validate --all
    --strict` (+ pipeline linters if configured). Red → fix forward on the merged
    branch (mechanical fixes only: imports, checkboxes, duplicates) or back out the
    merge (`git revert -m 1`) and escalate. Never push red.
-4. **Final:** full regression on the stand (api + web per `tests/README.md`;
+5. **Final:** full regression on the stand (api + web per `tests/README.md`;
    mind E6/E7: clean inherited `EKOTOV_WIKI_*` env, explicit non-default port).
    Then the consolidated report (below) and cleanup: `session_worktree.sh remove`
    for each merged session's worktree and branch deletion — only AFTER the
@@ -71,6 +80,11 @@ integration branch — ONLY after green gates (see Procedure step 4).
   combine specified behavior, never invent it. "While I'm here" improvements —
   forbidden; note them in the report instead.
 - Do NOT merge branches with pending code-review verdicts (return = back to dev).
+- **J10: merge only with an approve verdict per branch.** Every branch needs
+  `code-reviews/<change-id>/review-<task>-<NNN>.md` with verdict **approve**
+  before it enters the merge plan; missing/return → stop and escalate to the
+  orchestrator. This is the mechanical gate (see Procedure step 1), not a
+  recommendation.
 - Do NOT touch specs, `test-model/` QA artifacts, pipeline files (`scripts/`,
   `flow.yml`) — pipeline changes are a separate Flow 4 task.
 - Push to the integration branch only after green gates; a red push is a violation.

@@ -16,11 +16,16 @@
      исполнитель — коммиты ПМ-сессии (owner_pm из active_sessions.json) в
      продуктовых репо вне [pipeline]-маркера = FAIL. Git-история = evidence:
      «ПМ сам делал merge 7 веток» становится ловимым фактом, а не дисциплиной.
+  4. Обязательный code-review (--require-review, J10): merge-коммит ПМ в
+     продуктовом репо, для которого нет review-файла с вердиктом approve и
+     датой раньше коммита → FAIL (задним числом не отмазаться). Формат
+     review-файла: agents/code_reviewer_agent.md.
 
 Использование:
   pm_bounds_check.py --commits HASH[,HASH...] [--repo PATH]   # проверка дифов
   pm_bounds_check.py --sessions [PATH]                        # проверка реестра
   pm_bounds_check.py --product-commits A..B --repo PATH       # коммиты ПМ в продуктовом репо
+  pm_bounds_check.py --product-commits A..B --repo PATH --require-review   # + J10
   pm_bounds_check.py --all-projects                           # по реестру, все продуктовые репо
   pm_bounds_check.py --all --commits ... --sessions ...       # всё сразу
 
@@ -31,6 +36,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -157,7 +163,10 @@ def load_pm_projects(sessions_path: Path) -> tuple[set[str], list[str]]:
     return repos, problems
 
 
-def check_pm_commits(repo: Path, rev_range: str, author_of_record: str = "") -> list[str]:
+def check_pm_commits(
+    repo: Path, rev_range: str, author_of_record: str = "",
+    require_review: bool = False,
+) -> list[str]:
     """Проверка диапазона коммитов продуктового репо на исполнительство ПМ (J9).
 
     Коммит приписывается ПМ-сессии, если:
@@ -176,6 +185,8 @@ def check_pm_commits(repo: Path, rev_range: str, author_of_record: str = "") -> 
         subject = sh(repo, "show", "-s", "--format=%s", h).strip()
         if any(m in subject for m in PIPELINE_MARKERS):
             continue
+        if require_review:
+            problems += check_review_coverage(repo, h)
         author = sh(repo, "show", "-s", "--format=%an", h).strip()
         if author_of_record and author != author_of_record:
             continue  # коммит другой роли (dev, dev-lead) — легален
@@ -185,6 +196,67 @@ def check_pm_commits(repo: Path, rev_range: str, author_of_record: str = "") -> 
             f"продуктовом репо без пометки [pipeline] (J9: ПМ не исполнитель; "
             f"merge — через dev-lead, изменения конвейера — отдельная задача Флоу 4)"
         )
+    return problems
+
+
+# --- J10: обязательный code-review merge-коммитов ПМ (--require-review) ---
+
+MERGE_TASK_RE = re.compile(
+    r"(?:merge|задача|task)\s+(\d+(?:\.\d+)+)", re.I
+)
+
+
+def review_approve_date(text: str) -> str | None:
+    """Вердикт approve + дата из review-файла (формат agents/code_reviewer_agent.md)."""
+    # повторяем семантику flow_check.parse_verdict без импорта (скрипт самодостаточен)
+    verdict = None
+    for m in re.finditer(r"^#{1,4}\s*Вердикт\s*:?\s*(.+)$", text, re.I | re.M):
+        v = m.group(1).strip().strip("*").strip().lower()
+        if re.search(r"\b(return|доработк\w*)\b", v, re.I):
+            verdict = "return"
+        elif re.search(r"\b(approve|approved|одобрен\w*)\b", v, re.I):
+            verdict = "approve"
+    if verdict != "approve":
+        return None
+    dm = re.search(r"Дата\s*[:\*]*\s*(\d{4}-\d{2}-\d{2})", text, re.I)
+    return dm.group(1) if dm else None
+
+
+def check_review_coverage(repo: Path, commit: str) -> list[str]:
+    """J10: merge-коммит без review-файла с approve-вердиктом и датой раньше коммита."""
+    subject = sh(repo, "show", "-s", "--format=%s", commit).strip()
+    tasks = [m.group(1) for m in MERGE_TASK_RE.finditer(subject)]
+    if not tasks:
+        return []  # номера задач не извлечь — J9-проверка отработает отдельно
+    commit_date = sh(repo, "show", "-s", "--format=%cI", commit).strip()[:10]
+    problems: list[str] = []
+    for task in tasks:
+        covered_by = None
+        cr_dir = repo / "code-reviews"
+        candidates = []
+        if cr_dir.is_dir():
+            for change_dir in sorted(p for p in cr_dir.iterdir() if p.is_dir()):
+                for rf in change_dir.glob("review-*.md"):
+                    m = re.match(r"^review-(.+?)-(\d{3})\.md$", rf.name, re.I)
+                    if m and m.group(1) == task:
+                        candidates.append((int(m.group(2)), rf))
+        for _, rf in sorted(candidates, reverse=True):
+            verdict_date = review_approve_date(
+                rf.read_text(encoding="utf-8", errors="replace")
+            )
+            if verdict_date and verdict_date <= commit_date:
+                covered_by = rf
+                break
+        if covered_by is None:
+            detail = (
+                "нет approve-вердикта с датой раньше коммита"
+                if candidates
+                else "нет review-файла"
+            )
+            problems.append(
+                f"{repo}: {commit[:9]} '{subject[:80]}' — merge задачи {task} без "
+                f"code-review: {detail} в code-reviews/ (J10 --require-review)"
+            )
     return problems
 
 
@@ -205,6 +277,9 @@ def main() -> int:
     ap.add_argument("--all-projects", action="store_true",
         help="проверить коммиты ПМ-сессии во ВСЕХ продуктовых репо из реестра "
              "(нужен --sessions или путь реестра по умолчанию)")
+    ap.add_argument("--require-review", action="store_true",
+        help="J10: merge-коммиты ПМ в продуктовом репо без review-файла с "
+             "вердиктом approve и датой раньше коммита → FAIL")
     args = ap.parse_args()
 
     problems: list[str] = []
@@ -216,7 +291,8 @@ def main() -> int:
         problems += check_sessions(Path(args.sessions).expanduser())
     if args.product_commits:
         problems += check_pm_commits(
-            Path(args.repo).resolve(), args.product_commits, args.owner)
+            Path(args.repo).resolve(), args.product_commits, args.owner,
+            require_review=args.require_review)
     if args.all_projects:
         sessions_path = Path(args.sessions).expanduser() if args.sessions else (
             Path.home() / ".hermes/state/active_sessions.json")
@@ -236,7 +312,8 @@ def main() -> int:
             if not head:
                 problems.append(f"{repo}: нет main/origin/main — пропущен")
                 continue
-            problems += check_pm_commits(repo, f"{head}..HEAD")
+            problems += check_pm_commits(
+                repo, f"{head}..HEAD", require_review=args.require_review)
 
     if problems:
         print("pm_bounds_check: FAIL — нарушения границ ПМ:")

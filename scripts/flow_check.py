@@ -14,6 +14,56 @@ from pathlib import Path
 CHANGE_ID = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)+$")  # kebab-case, >= 2 слов
 TC_REF = re.compile(r"TC-[a-zA-Z0-9]+(?:-[a-zA-Z0-9]+)*-\d{3}")
 
+# --- J10: обязательный code-review закрытых dev-задач ---
+# Формат review-файла: agents/code_reviewer_agent.md —
+#   код-reviews/<change-id>/review-<задача>-<NNN>.md, строка «## Вердикт: approve|return».
+REVIEW_FILE_RE = re.compile(r"^review-(.+?)-(\d{3})\.md$", re.I)
+VERDICT_LINE_RE = re.compile(r"^#{1,4}\s*Вердикт\s*:?\s*(.+)$", re.I | re.M)
+VERDICT_APPROVE_RE = re.compile(r"\b(approve|approved|одобрен\w*)\b", re.I)
+VERDICT_RETURN_RE = re.compile(r"\b(return|доработк\w*)\b", re.I)
+QA_SECTION = "6"  # раздел 6.x — QA-цикл, не dev (J10)
+
+
+def closed_dev_tasks(tasks_text: str) -> list[str]:
+    """Закрытые dev-задачи ([x]) tasks.md; QA-раздел 6.x исключен (J10)."""
+    out = []
+    for m in re.finditer(r"^[-*]\s*\[x\]\s*(\d+(?:\.\d+)*)", tasks_text, re.M):
+        num = m.group(1)
+        if num.split(".")[0] == QA_SECTION:
+            continue
+        out.append(num)
+    return out
+
+
+def parse_verdict(text: str) -> str | None:
+    """Вердикт из review-файла по формату code_reviewer_agent.md: 'approve' | 'return' | None."""
+    for m in VERDICT_LINE_RE.finditer(text):
+        v = m.group(1).strip().strip("*").strip().lower()
+        has_return = bool(VERDICT_RETURN_RE.search(v))
+        has_approve = bool(VERDICT_APPROVE_RE.search(v))
+        if has_return:
+            return "return"
+        if has_approve:
+            return "approve"
+    return None
+
+
+def approved_review_tasks(repo: Path, change_id: str) -> dict[str, str]:
+    """task-id → имя последнего review-файла с вердиктом approve (code-reviews/<change-id>/)."""
+    covered: dict[str, tuple[int, str]] = {}
+    cr_dir = repo / "code-reviews" / change_id
+    if not cr_dir.is_dir():
+        return {}
+    for rf in cr_dir.glob("review-*.md"):
+        m = REVIEW_FILE_RE.match(rf.name)
+        if not m:
+            continue
+        task, rev = m.group(1), int(m.group(2))
+        if parse_verdict(rf.read_text(encoding="utf-8", errors="replace")) == "approve":
+            if task not in covered or rev > covered[task][0]:
+                covered[task] = (rev, rf.name)
+    return {task: name for task, (_, name) in covered.items()}
+
 
 def errs(*msg):
     for m in msg:
@@ -172,6 +222,26 @@ def check(repo: Path) -> int:
                 errors += errs(
                     f"openspec/changes/{d.name}/: нет дельт specs/*/spec.md (контракт 2)"
                 )
+            # --- J10: обязательный code-review закрытых dev-задач ---
+            tasks_file = d / "tasks.md"
+            if tasks_file.is_file():
+                closed = closed_dev_tasks(tasks_file.read_text(encoding="utf-8", errors="replace"))
+                if closed:
+                    covered = approved_review_tasks(repo, d.name)
+                    if not covered:
+                        errors += errs(
+                            f"openspec/changes/{d.name}: {len(closed)} закрытых dev-задач без "
+                            f"code-review — каталог code-reviews/{d.name}/ пуст или без approve-вердиктов (J10): "
+                            + ", ".join(closed)
+                        )
+                    else:
+                        uncovered = [t for t in closed if t not in covered]
+                        if uncovered:
+                            errors += errs(
+                                f"openspec/changes/{d.name}: закрытые dev-задачи без review-файла "
+                                f"с вердиктом approve в code-reviews/{d.name}/ (J10): "
+                                + ", ".join(uncovered)
+                            )
 
     # --- sdd.md: активный change требует SDD (контракт 2) ---
     sdd = repo / "sdd.md"

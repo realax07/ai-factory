@@ -35,7 +35,7 @@ def check_bug(repo: Path, num: str) -> list[str]:
     return missing
 
 
-def check_change(repo: Path, change_id: str) -> list[str]:
+def check_change(repo: Path, change_id: str, marker: str = "") -> list[str]:
     """Флоу 1: change-пакет + QA-артефакты (контракты 2, 4, 5, 6, 7)."""
     missing = []
     pkg = repo / "openspec" / "changes" / change_id
@@ -85,6 +85,21 @@ def check_change(repo: Path, change_id: str) -> list[str]:
     if not rev_dir.is_dir() or not any(rev_dir.glob("review-*.md")):
         missing.append(f"test-model/reviews/{change_id}/: нет review-файла (контракт 5)")
 
+    # J10: PR без code-review задач из дифа → FAIL.
+    # Задачи берутся из ветки PR (GITHUB_HEAD_REF) и строк title/body с
+    # «Merge/задача/task»; для каждой нужен review-файл с вердиктом approve
+    # в code-reviews/<change-id>/ (формат agents/code_reviewer_agent.md).
+    from flow_check import approved_review_tasks  # единый парсер вердиктов (J10)
+    pr_tasks = extract_pr_tasks(marker + " " + os.environ.get("GITHUB_HEAD_REF", ""))
+    if pr_tasks:
+        covered = approved_review_tasks(repo, change_id)
+        unreviewed = [t for t in pr_tasks if t not in covered]
+        if unreviewed:
+            missing.append(
+                f"code-reviews/{change_id}/: нет review-файла с вердиктом approve "
+                f"для задач из дифа PR (J10): " + ", ".join(unreviewed)
+            )
+
     # Тесты: хотя бы один TC-ID change в tests/ (контракт 6, трассировка)
     tests_root = repo / "tests"
     tc_prefix = "TC-" + change_id.split("-")[0].upper()
@@ -119,6 +134,20 @@ FLOWS = {
 }
 
 MARKER_RE = re.compile(r"\[(BUG-\d+|[a-z0-9]+(?:-[a-z0-9]+)+|\bchore)\]")
+
+# J10: извлечение номеров задач из текста PR (ветка/заголовок/тело).
+# Принимает формы: 1.1, 5.2, 2.1+2.2 (объединенная задача — обе).
+PR_TASK_RE = re.compile(r"(?<![\d.])(\d+\.\d+)(?:\s*\+\s*(\d+\.\d+))?(?![\d.])")
+
+
+def extract_pr_tasks(text: str) -> list[str]:
+    """Номера задач из текста PR: 'feature/add-x-1.2', 'Merge 2.1+2.2: ...', 'задача 3.1'."""
+    tasks: list[str] = []
+    for m in PR_TASK_RE.finditer(text):
+        tasks.append(m.group(1))
+        if m.group(2):
+            tasks.append(m.group(2))
+    return tasks
 
 
 def parse_id(text: str) -> tuple[str, str] | None:
@@ -176,7 +205,10 @@ def main() -> int:
         flow_type = args.type
 
     repo = Path(args.repo).resolve()
-    missing = FLOWS[flow_type](repo, ident)
+    if flow_type == "change":
+        missing = FLOWS[flow_type](repo, ident, marker_text)
+    else:
+        missing = FLOWS[flow_type](repo, ident)
 
     if missing:
         print(f"PR-VALIDATE FAIL ({flow_type}:{ident}): отсутствуют артефакты по контрактам:")

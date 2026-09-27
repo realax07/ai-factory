@@ -30,10 +30,13 @@ jobs:
       - name: Flow check
         run: python3 scripts/flow_check.py .
 
-      - name: PR artifact validation (I3/I4, J6)
+      - name: PR artifact validation (I3/I4, J6; code-review gate J10)
         if: github.event_name == 'pull_request'
         run: |
           PR_TEXT="$(cat "$GITHUB_EVENT_PATH" | python3 -c "import json,sys; d=json.load(sys.stdin); pr=d.get('pull_request',{}); print(pr.get('title','')+' '+(pr.get('body') or ''))")"
+          # J10: PR по change-маркеру обязан иметь code-reviews/<change-id>/ с
+          # approve-вердиктами задач из дифа — проверяет pr_validate.py (check_change).
+          # Задачи берутся из ветки PR (GITHUB_HEAD_REF) и title/body.
           if ! python3 scripts/pr_validate.py . --id "$PR_TEXT"; then
             echo "::error::pr_validate: обязательные артефакты отсутствуют (см. выше)"
             exit 1
