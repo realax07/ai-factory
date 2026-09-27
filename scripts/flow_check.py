@@ -66,14 +66,16 @@ def approved_review_tasks(repo: Path, change_id: str) -> dict[str, str]:
             if not m:
                 continue
             task, rev = m.group(1), int(m.group(2))
-        # Нормализация: имя может нести суффикс (review-001-1.1-auth-me.md) —
-        # задача = ведущий числовой идентификатор вида N[.N...]
-        tm = re.match(r"(\d+(?:\.\d+)*)", task)
-        if tm:
-            task = tm.group(1)
-        if parse_verdict(rf.read_text(encoding="utf-8", errors="replace")) == "approve":
-            if task not in covered or rev > covered[task][0]:
-                covered[task] = (rev, rf.name)
+        # Нормализация: имя может объединять несколько задач (review-001-2.1-2.2-dnd.md)
+        # или нести суффикс (review-001-1.1-auth-me.md) — задачи = все числовые
+        # идентификаторы вида N[.N...] в task-части имени
+        nums = re.findall(r"\d+(?:\.\d+)*", task)
+        tasks = nums if nums else [task]
+        verdict = parse_verdict(rf.read_text(encoding="utf-8", errors="replace"))
+        if verdict == "approve":
+            for task_id in tasks:
+                if task_id not in covered or rev > covered[task_id][0]:
+                    covered[task_id] = (rev, rf.name)
     return {task: name for task, (_, name) in covered.items()}
 
 
