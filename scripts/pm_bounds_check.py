@@ -221,7 +221,9 @@ def main() -> int:
         sessions_path = Path(args.sessions).expanduser() if args.sessions else (
             Path.home() / ".hermes/state/active_sessions.json")
         repos, registry_problems = load_pm_projects(sessions_path)
-        problems += registry_problems
+        if not args.sessions:
+            # при явном --sessions реестр уже проверен выше — не дублируем
+            problems += registry_problems
         if not repos:
             problems.append(
                 "--all-projects: продуктовые репо не найдены по реестру "
