@@ -35,6 +35,9 @@ case "$cmd" in
       git -C "$repo" fetch origin --quiet >&2 || true
       git -C "$repo" worktree add "$wt" -b "$branch" "$base" >&2 || exit 2
     fi
+    # J7: маркер сессии в корне дерева — сабагент сверяет его первым действием
+    printf '# SESSION\nsession-id: %s\nbranch: %s\nrepo: %s\ncreated: %s\n' \
+      "$sid" "$branch" "$repo" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$wt/SESSION.md"
     echo "$wt"
     ;;
   remove)
