@@ -58,6 +58,8 @@
 
 | ID | Роль | Задача | Статус | Результат |
 |---|---|---|---|---|
+| deleg_2037a72c/task-0 | integrator | Сверка tasks.md add-r3-visual-foundation по evidence, подготовка архивации (контракт 7) | запущена | worktree sess-fin-r3, ветка finalization-r3 |
+| deleg_2037a72c/task-1 | qa_automation | Фикс 3 дефектов тестов: TC-UI-018 cleanup, TC-vis-105 гонка, API archive порядок (Флоу 1, ветка testfix-r3) | запущена | worktree sess-testfix-r3 |
 | deleg_ad5aaeb3 | architect-analyst | Проектирование J1–J3 (Флоу 4): промпт ПМ-сабагента, механизм запуска, границы с enforcement, план внедрения | запущена | agents/pm_agent.md, templates/pm_launch.md, scripts/pm_bounds_check.py; BACKLOG J1–J3 обновлены; коммит локальный (см. git log) |
 | (пилот, до введения журнала) | ba/sa/dev/reviewer/qa-* | add-kanban-core: полный цикл | закрыто | см. чеклист выше; детали в git-истории |
 | (пилот) dev+reviewer | dev, code_reviewer | фикс 2 UI-багов доски (модалки hidden, integer-guard) | закрыто | 79ceb7b, фиксы на проде проверены |
