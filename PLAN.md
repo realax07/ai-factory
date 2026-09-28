@@ -58,9 +58,11 @@
 
 | ID | Роль | Задача | Статус | Результат |
 |---|---|---|---|---|
-| deleg_2037a72c/task-0 | integrator | Сверка tasks.md add-r3-visual-foundation по evidence, подготовка архивации (контракт 7) | запущена | worktree sess-fin-r3, ветка finalization-r3 |
-| deleg_2037a72c/task-1 | qa_automation | Фикс 3 дефектов тестов: TC-UI-018 cleanup, TC-vis-105 гонка, API archive порядок (Флоу 1, ветка testfix-r3) | запущена | worktree sess-testfix-r3 |
-| deleg_ad5aaeb3 | architect-analyst | Проектирование J1–J3 (Флоу 4): промпт ПМ-сабагента, механизм запуска, границы с enforcement, план внедрения | запущена | agents/pm_agent.md, templates/pm_launch.md, scripts/pm_bounds_check.py; BACKLOG J1–J3 обновлены; коммит локальный (см. git log) |
+| deleg_2037a72c/task-0 | integrator | Сверка tasks.md add-r3-visual-foundation по evidence, подготовка архивации (контракт 7) | закрыто | merge 1260381 (finalization-r3→main) |
+| deleg_2037a72c/task-1 | qa_automation | Фикс 3 дефектов тестов: TC-UI-018 cleanup, TC-vis-105 гонка, API archive порядок (Флоу 1, ветка testfix-r3) | закрыто | обрыв /stop (J19); докачано ПМ вручную facb3da, review-004 APPROVE, merge 612137d |
+| deleg_ad5aaeb3 | architect-analyst | Проектирование J1–J3 (Флоу 4): промпт ПМ-сабагента, механизм запуска, границы с enforcement, план внедрения | закрыто | agents/pm_agent.md, templates/pm_launch.md, scripts/pm_bounds_check.py; BACKLOG J1–J3 обновлены; коммит локальный (см. git log) |
+| deleg_01934e88 | qa_case_reviewer | Ревью фиксов testfix-r3 по осям G8 (изоляция/инварианты/детерминизм/трассировка) | закрыто | review-004-testfix-isolation: APPROVE, 5 minors; 1b44548 |
+| deleg_bc5f1135 | integrator | Архивация add-r3-visual-foundation (контракт 7): дельты→master-spec, пакет→archive | запущена | см. git log ekotov-wiki |
 | (пилот, до введения журнала) | ba/sa/dev/reviewer/qa-* | add-kanban-core: полный цикл | закрыто | см. чеклист выше; детали в git-истории |
 | (пилот) dev+reviewer | dev, code_reviewer | фикс 2 UI-багов доски (модалки hidden, integer-guard) | закрыто | 79ceb7b, фиксы на проде проверены |
 | e2e-checklist-002 | qa_checklist | чеклист E2E критического пути (G1) | закрыто | 483c753, 18 CHK-E |
