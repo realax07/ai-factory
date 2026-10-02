@@ -484,9 +484,13 @@ def _sha256_text(text: str) -> str:
 def _review_file_revision(name: str | None) -> int:
     """Ревизия из имени review-файла: ЕДИНЫЙ парс с flow_check (review-005
     m3 — ревизия rev-first NNN-task или task-first task-NNN, без второго
-    частичного regex)."""
+    частичного regex). review-006 m4: имена sidecar несут суффикс
+    .provenance.json — срезаем его перед матчингом .md$, иначе оба regex
+    заанкорены на .md и ни разу не совпадают (rev всегда 0)."""
     if not name:
         return 0
+    if name.endswith(PROVENANCE_SIDECAR_SUFFIX):
+        name = name[:-len(PROVENANCE_SIDECAR_SUFFIX)]
     m = flow_check.REVIEW_FILE_REV_FIRST.match(name)
     if m:
         return int(m.group(1))
