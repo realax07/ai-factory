@@ -11,13 +11,19 @@ timeout. Путь к openspec-CLI — параметр (в этой среде C
 
 GateReport (ТЗ 05; контракт §11): gate_id, scope, command, adapter_version,
 input_head, input_digest, started_at, duration, exit_code,
-status PASS|FAIL|ERROR|SKIPPED, log_path, краткая диагностика.
+status PASS|FAIL|ERROR|SKIPPED, executed, log_path, краткая диагностика.
   - exit 0 → PASS; exit 1 → FAIL; любой другой exit, timeout, отсутствие
     исполняемого файла, ошибка записи лога → ERROR (блокирует);
+  - конфигурационная ошибка адаптера (pm_bounds_check без явного режима или
+    без обязательного аргумента режима) → ERROR, НЕ SKIPPED: «отсутствующий
+    gate блокирует переход» (ТЗ 05; review-005 B1);
   - SKIPPED — только по явному правилу неприменимости (pr_validate без
-    PR-контекста); SKIPPED не считается пройденным;
+    PR-контекста); SKIPPED не считается пройденным: любой SKIPPED делает
+    overall=SKIPPED (не PASS) и exit 1 (review-005 B1/M2), в отчете
+    перечислен в skipped_gates с пометкой «не выполнен»;
   - input_head/input_digest фиксируют вход; повтор после изменения входного
-    SHA обязателен: `status` помечает отчет STALE, если HEAD репо изменился.
+    SHA обязателен: `status` помечает отчет STALE, если HEAD репо изменился
+    (отчет без repo_head при валидном HEAD — тоже STALE, review-005 m1).
 
 pm_bounds_check запускается в ЯВНОМ режиме (параметр --pm-mode): commits /
 sessions / product-commits. `--all-projects` намеренно не предоставляется как
@@ -46,11 +52,12 @@ Usage:
     python3 scripts/gate_runner.py record-review --review-path PATH
         --project ID --change ID --tasks T1,T2 --author-delegation ID
         --reviewer-delegation ID --commit SHA --verdict approve
-        [--diff-digest D --diff-base B] [--sidecar PATH] [--json]
+        --diff-digest D [--diff-base B] [--repo PATH] [--sidecar PATH] [--json]
     python3 scripts/gate_runner.py diff-digest --repo PATH --base B --head H [--json]
 
-Exit codes (run/status): 0 — PASS без STALE; 1 — FAIL или STALE (повтор
-обязателен); 2 — ERROR, SKIPPED-блокировка отчета, нет отчета или ошибка входа.
+Exit codes (run/status): 0 — PASS без STALE; 1 — FAIL, SKIPPED-отчет
+(«не все gates выполнены») или STALE (повтор обязателен); 2 — ERROR,
+нет отчета или ошибка входа.
 """
 
 from __future__ import annotations
@@ -200,6 +207,7 @@ class GateReport:
     duration: float
     exit_code: int | None
     status: str
+    executed: bool
     log_path: str | None
     diagnostics: str
 
@@ -256,8 +264,15 @@ def _write_log(log_dir: Path, gate_id: str, started: str,
 
 def run_gate(gate_id: str, cmd: list, repo: Path, scope_name: str,
              timeout: int, log_dir: Path, extra: dict | None = None,
-             skip_reason: str | None = None) -> GateReport:
-    """Запуск одного gate как subprocess (явный cwd=repo, timeout)."""
+             skip_reason: str | None = None,
+             applicable_by_rule: bool = False) -> GateReport:
+    """Запуск одного gate как subprocess (явный cwd=repo, timeout).
+
+    skip_reason задается ТОЛЬКО по явному правилу неприменимости
+    (applicable_by_rule=True — например, pr_validate без PR-контекста).
+    Конфигурационная ошибка адаптера (applicable_by_rule=False) — это
+    «отсутствующий gate», а он блокирует переход: статус ERROR, не SKIPPED
+    (ТЗ 05; review-005 B1)."""
     started = utcnow_iso()
     input_head = git_head(repo)
     input_digest = compute_input_digest(repo, gate_id, cmd, extra)
@@ -265,11 +280,23 @@ def run_gate(gate_id: str, cmd: list, repo: Path, scope_name: str,
         gate_id=gate_id, scope=scope_name, command=[str(c) for c in cmd],
         adapter_version=ADAPTER_VERSION, input_head=input_head,
         input_digest=input_digest, started_at=started, duration=0.0,
-        exit_code=None, status=STATUS_ERROR, log_path=None, diagnostics="",
+        exit_code=None, status=STATUS_ERROR, executed=False, log_path=None,
+        diagnostics="",
     )
     if skip_reason is not None:
-        base["status"] = STATUS_SKIPPED
-        base["diagnostics"] = skip_reason
+        if applicable_by_rule:
+            base["status"] = STATUS_SKIPPED
+            base["executed"] = False
+            base["diagnostics"] = (
+                f"{skip_reason} — gate НЕ ВЫПОЛНЕН (SKIPPED, явное правило "
+                f"неприменимости; не считается пройденным, ТЗ 05)")
+        else:
+            base["status"] = STATUS_ERROR
+            base["executed"] = False
+            base["diagnostics"] = (
+                f"{skip_reason} — конфигурационная ошибка запускающего: "
+                f"обязательный gate не выполнен и БЛОКИРУЕТ переход "
+                f"(«отсутствующий gate блокирует», ТЗ 05; review-005 B1)")
         return GateReport(**base)
 
     t0 = time.monotonic()
@@ -298,6 +325,7 @@ def run_gate(gate_id: str, cmd: list, repo: Path, scope_name: str,
     base["exit_code"] = proc.returncode
     log_path = _write_log(log_dir, gate_id, started, proc.stdout, proc.stderr)
     base["log_path"] = str(log_path)
+    base["executed"] = True
     if proc.returncode == 0:
         base["status"] = STATUS_PASS
         base["diagnostics"] = (proc.stdout or "").strip().splitlines()[-1] \
@@ -319,51 +347,59 @@ def run_gate(gate_id: str, cmd: list, repo: Path, scope_name: str,
 # ------------------------------------------------------------------ адаптеры
 
 
-def adapter_openspec_validate(repo: Path, openspec_cmd: str) -> tuple[list, dict]:
+def adapter_openspec_validate(repo: Path, openspec_cmd: str
+                              ) -> tuple[list, dict, str | None, bool]:
     """`openspec validate --all --strict` в репозитории проекта."""
     cmd = openspec_cmd.split() + ["validate", "--all", "--strict"]
-    return cmd, {"openspec_cmd": openspec_cmd}
+    return cmd, {"openspec_cmd": openspec_cmd}, None, False
 
 
-def adapter_flow_check(repo: Path) -> tuple[list, dict]:
-    return [sys.executable, str(SCRIPTS / "flow_check.py"), str(repo)], {}
+def adapter_flow_check(repo: Path) -> tuple[list, dict, str | None, bool]:
+    return ([sys.executable, str(SCRIPTS / "flow_check.py"), str(repo)],
+            {}, None, False)
 
 
 def adapter_pm_bounds(repo: Path, mode: str | None, commits: str | None,
                       rev_range: str | None, registry: str | None,
-                      require_review: bool) -> tuple[list, dict, str | None]:
-    """pm_bounds_check в ЯВНОМ режиме (ТЗ 05: не --all-projects)."""
+                      require_review: bool
+                      ) -> tuple[list, dict, str | None, bool]:
+    """pm_bounds_check в ЯВНОМ режиме (ТЗ 05: не --all-projects).
+
+    Возвращаемый 4-й элемент — applicable_by_rule: у pm_bounds_check явного
+    правила неприменимости НЕТ; незаданный режим или неполные аргументы
+    режима — конфигурационная ошибка запускающего → ERROR (review-005 B1)."""
     cmd = [sys.executable, str(SCRIPTS / "pm_bounds_check.py")]
     extra: dict = {"pm_mode": mode}
     if mode == "commits":
         if not commits:
             return cmd, extra, ("--pm-mode=commits требует --pm-commits — "
-                                "конфигурация gate неполна, ERROR")
+                                "конфигурация gate неполна"), False
         cmd += ["--commits", commits, "--repo", str(repo)]
         extra["commits"] = commits
     elif mode == "sessions":
         if not registry:
             return cmd, extra, ("--pm-mode=sessions требует --pm-registry — "
-                                "конфигурация gate неполна, ERROR")
+                                "конфигурация gate неполна"), False
         cmd += ["--sessions", registry]
         extra["registry"] = str(registry)
     elif mode == "product-commits":
         if not rev_range:
             return cmd, extra, ("--pm-mode=product-commits требует --pm-range — "
-                                "конфигурация gate неполна, ERROR")
+                                "конфигурация gate неполна"), False
         cmd += ["--product-commits", rev_range, "--repo", str(repo)]
         extra["rev_range"] = rev_range
     else:
         return cmd, extra, (
             f"режим pm_bounds_check не задан (pm_mode={mode!r}) — запуск без "
-            f"явного режима запрещен (ТЗ 05), ERROR")
+            f"явного режима запрещен (ТЗ 05)"), False
     if require_review:
         cmd.append("--require-review")
         extra["require_review"] = True
-    return cmd, extra, None
+    return cmd, extra, None, False
 
 
-def adapter_pr_validate(repo: Path, pr_id: str | None) -> tuple[list, dict, str | None]:
+def adapter_pr_validate(repo: Path, pr_id: str | None
+                        ) -> tuple[list, dict, str | None, bool]:
     """pr_validate — только при PR-контексте; иначе SKIPPED по явному правилу
     неприменимости («не запускается без PR-контекста и не считается
     пройденным», ТЗ 05)."""
@@ -372,22 +408,20 @@ def adapter_pr_validate(repo: Path, pr_id: str | None) -> tuple[list, dict, str 
     if not pr_id and not (event_path and event_path.is_file()):
         return [], {}, (
             "нет PR-контекста (--pr-id / GITHUB_EVENT_PATH) — pr_validate "
-            "не запускается и не считается пройденным (ТЗ 05; SKIPPED)")
+            "не запускается и не считается пройденным (ТЗ 05)"), True
     cmd = [sys.executable, str(SCRIPTS / "pr_validate.py"), str(repo)]
     if pr_id:
         cmd += ["--id", pr_id]
-    return cmd, {"pr_id": pr_id}, None
+    return cmd, {"pr_id": pr_id}, None, False
 
 
 def build_gate_command(gate_id: str, repo: Path, opts: argparse.Namespace
-                       ) -> tuple[list, dict, str | None]:
-    """(cmd, extra-входы, skip_reason|None) для gate."""
+                       ) -> tuple[list, dict, str | None, bool]:
+    """(cmd, extra-входы, skip_reason|None, applicable_by_rule) для gate."""
     if gate_id == "openspec_validate":
-        cmd, extra = adapter_openspec_validate(repo, opts.openspec_cmd)
-        return cmd, extra, None
+        return adapter_openspec_validate(repo, opts.openspec_cmd)
     if gate_id == "flow_check":
-        cmd, extra = adapter_flow_check(repo)
-        return cmd, extra, None
+        return adapter_flow_check(repo)
     if gate_id == "pm_bounds_check":
         return adapter_pm_bounds(repo, opts.pm_mode, opts.pm_commits,
                                  opts.pm_range, opts.pm_registry,
@@ -420,10 +454,12 @@ def run_gates(repo: Path, scope_name: str, gates: list[str],
 
     reports: list[GateReport] = []
     for gate_id in gates:
-        cmd, extra, skip = build_gate_command(gate_id, repo, opts)
+        cmd, extra, skip, applicable_by_rule = build_gate_command(
+            gate_id, repo, opts)
         report = run_gate(gate_id, cmd, repo, scope_name,
                           opts.timeout, log_dir, extra=extra,
-                          skip_reason=skip)
+                          skip_reason=skip,
+                          applicable_by_rule=applicable_by_rule)
         reports.append(report)
         if opts.audit:
             # В audit — только факты и ссылки; stdout gate остается в log_path.
@@ -437,10 +473,16 @@ def run_gates(repo: Path, scope_name: str, gates: list[str],
             )
 
     statuses = [r.status for r in reports]
+    skipped = [r.gate_id for r in reports if r.status == STATUS_SKIPPED]
     if STATUS_ERROR in statuses:
         overall = STATUS_ERROR
     elif STATUS_FAIL in statuses:
         overall = STATUS_FAIL
+    elif skipped:
+        # SKIPPED не считается пройденным (ТЗ 05; review-005 B1/M2): отчет
+        # без выполненных обязательных gates не зеленый — overall=SKIPPED,
+        # exit 1 (повтор с корректным контекстом обязателен).
+        overall = STATUS_SKIPPED
     else:
         overall = STATUS_PASS
     report = {
@@ -452,6 +494,10 @@ def run_gates(repo: Path, scope_name: str, gates: list[str],
         "repo_head": head,
         "started_at": started,
         "gates": [r.to_dict() for r in reports],
+        "skipped_gates": [
+            {"gate_id": g.gate_id, "reason": g.diagnostics}
+            for g in reports if g.status == STATUS_SKIPPED
+        ],
         "overall": overall,
     }
     report_dir = Path(opts.report_dir) if opts.report_dir else log_dir
@@ -472,6 +518,10 @@ def exit_code_for(report: dict, repo: Path | None = None) -> int:
         return 2
     if overall == STATUS_FAIL:
         return 1
+    if overall == STATUS_SKIPPED:
+        # SKIPPED не считается пройденным (ТЗ 05; review-005 B1/M2):
+        # повтор запуска с корректным контекстом обязателен.
+        return 1
     if repo is not None and is_stale(report, repo):
         return 1
     return 0
@@ -479,10 +529,13 @@ def exit_code_for(report: dict, repo: Path | None = None) -> int:
 
 def is_stale(report: dict, repo: Path) -> bool:
     """Digest-check: PASS при измененном входном SHA невалиден — повтор
-    проверки обязателен (ТЗ 05)."""
+    проверки обязателен (ТЗ 05). Отчет без repo_head при валидном HEAD —
+    поврежденный отчет, тоже STALE (review-005 m1)."""
     head = git_head(repo)
-    return bool(head) and report.get("repo_head") not in (head, None) or \
-        (head is None and report.get("repo_head") is not None)
+    report_head = report.get("repo_head")
+    if report_head is None:
+        return bool(head)  # валидный HEAD есть, факт отчета — нет → STALE
+    return bool(head) and report_head != head
 
 
 def load_latest_report(report_dir: Path) -> tuple[dict | None, str | None]:
@@ -507,11 +560,18 @@ def _report_human(report: dict, repo: Path | None) -> str:
                      "проверка обязательна (digest-check, ТЗ 05)")
     for g in report["gates"]:
         lines.append(
-            f"  [{g['status']}] {g['gate_id']} exit={g['exit_code']} "
+            f"  [{g['status']}] {g['gate_id']} "
+            f"executed={g.get('executed', g['status'] != STATUS_SKIPPED)} "
+            f"exit={g['exit_code']} "
             f"digest={g['input_digest'][:12]} dur={g['duration']}s "
             f"— {g['diagnostics']}")
         if g.get("log_path"):
             lines.append(f"      log: {g['log_path']}")
+    skipped = report.get("skipped_gates") or []
+    if skipped:
+        ids = ", ".join(s["gate_id"] for s in skipped)
+        lines.append(
+            f"НЕ ВЫПОЛНЕНЫ (SKIPPED, не считаются пройденными — ТЗ 05): {ids}")
     return "\n".join(lines)
 
 
@@ -606,7 +666,42 @@ def _cmd_status(args) -> int:
 
 
 def _cmd_record_review(args) -> int:
+    import flow_check  # локально: единый парсер вердикта/имен (review-005 m2/m3)
+
     review_path = Path(args.review_path)
+    # review-005 M3: diff_digest обязателен — единственная защита от approve
+    # «тот же SHA, другой content» (history rewrite / force-push).
+    if not args.diff_digest:
+        print("GATE-RUNNER-ERROR: --diff-digest обязателен (gate_runner.py "
+              "diff-digest) — без него approve «того же SHA, другого "
+              "content» неотличим (ТЗ 05; review-005 M3)", file=sys.stderr)
+        return 2
+    # review-005 m2: вердикт sidecar сверяется с вердиктом человекочитаемого
+    # .md — машинное и человеческое доказательства не расходятся.
+    try:
+        md_verdict = flow_check.parse_verdict(
+            review_path.read_text(encoding="utf-8", errors="replace"))
+    except OSError as exc:
+        print(f"GATE-RUNNER-ERROR: review-файл нечитаем: {exc}", file=sys.stderr)
+        return 2
+    if md_verdict != args.verdict:
+        print(f"GATE-RUNNER-ERROR: вердикт в {review_path} — "
+              f"{md_verdict!r}, а --verdict {args.verdict!r}: sidecar поверх "
+              f"человеческого вердикта не записывается (review-005 m2)",
+              file=sys.stderr)
+        return 2
+    # review-005 m2: reviewed_commit_sha должен существовать в репо.
+    if args.repo:
+        repo = Path(args.repo).resolve()
+        if not repo.is_dir():
+            print(f"GATE-RUNNER-ERROR: репозиторий не найден: {repo}",
+                  file=sys.stderr)
+            return 2
+        if git_out(repo, "rev-parse", "--verify", "--quiet",
+                   f"{args.commit}^{{commit}}") != args.commit:
+            print(f"GATE-RUNNER-ERROR: reviewed_commit_sha {args.commit} "
+                  f"не найден в {repo}", file=sys.stderr)
+            return 2
     try:
         path, payload = write_review_provenance(
             review_path, args.project, args.change,
@@ -690,8 +785,14 @@ def main(argv: list[str] | None = None) -> int:
     p_rr.add_argument("--reviewer-delegation", required=True)
     p_rr.add_argument("--commit", required=True, help="reviewed commit SHA")
     p_rr.add_argument("--verdict", required=True, choices=("approve", "return"))
-    p_rr.add_argument("--diff-digest", default=None)
+    p_rr.add_argument("--diff-digest", required=True,
+                      help="sha256 диффа base..head (ОБЯЗАТЕЛЕН: без него "
+                           "approve «того же SHA, другой content» "
+                           "неотличим — ТЗ 05, review-005 M3)")
     p_rr.add_argument("--diff-base", default=None)
+    p_rr.add_argument("--repo", default=None,
+                      help="репо для проверки существования --commit "
+                           "(рекомендуется)")
     p_rr.add_argument("--sidecar", default=None, help="явный путь sidecar JSON")
     p_rr.add_argument("--json", action="store_true", dest="as_json")
     p_rr.set_defaults(func=_cmd_record_review)

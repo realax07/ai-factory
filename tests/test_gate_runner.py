@@ -276,14 +276,20 @@ class TestDigestCheck:
 class TestSkipRules:
     def test_pr_validate_skipped_without_pr_context(self, tmp_path):
         """Приемка ТЗ 05: pr_validate без PR-контекста не запускается и не
-        считается пройденным; SKIPPED по явному правилу неприменимости."""
+        считается пройденным; SKIPPED по явному правилу неприменимости.
+        review-005 B1/M2: SKIPPED-гейт не считается пройденным и в overall —
+        отчет не PASS и exit ≥ 1 (но SKIPPED, не FAIL: правило легально)."""
         repo = make_repo(tmp_path)
-        report, _ = gr.run_gates(repo, "pre_merge", ["pr_validate"], Opts(tmp_path))
+        report, code = gr.run_gates(repo, "pre_merge", ["pr_validate"],
+                                    Opts(tmp_path))
         g = gate_status(report, "pr_validate")
         assert g["status"] == "SKIPPED"
+        assert g["executed"] is False
         assert g["exit_code"] is None
         assert "PR-контекста" in g["diagnostics"]
-        assert report["overall"] == "PASS"  # SKIPPED не FAIL, но и не PASS gate
+        assert report["overall"] == "SKIPPED"  # НЕ PASS: gate не выполнен
+        assert code == 1
+        assert report["skipped_gates"][0]["gate_id"] == "pr_validate"
 
     def test_pr_validate_runs_with_pr_id(self, tmp_path):
         repo = make_repo(tmp_path)
@@ -294,18 +300,31 @@ class TestSkipRules:
         assert g["exit_code"] in (0, 1)
 
     def test_pm_bounds_requires_explicit_mode(self, tmp_path):
-        """ТЗ 05: pm_bounds_check без явного режима не запускается."""
+        """ТЗ 05: pm_bounds_check без явного режима не запускается.
+        review-005 B1: это конфигурационная ошибка обязательного gate,
+        а не неприменимость — статус ERROR и overall НЕ PASS, exit ≥ 1
+        БЕЗ ручной подстановки overall (тест маскировал дефект)."""
         repo = make_repo(tmp_path)
         report, code = gr.run_gates(
             repo, "pre_accept", ["pm_bounds_check"], Opts(tmp_path))
         g = gate_status(report, "pm_bounds_check")
-        assert g["status"] == "SKIPPED"
+        assert g["status"] == "ERROR"
+        assert g["executed"] is False
         assert "явного режима" in g["diagnostics"]
-        # провал конфигурации gate — не молчаливый успех: код отказа 1
-        # (конфигурационная ошибка входа превратится в ERROR при явном
-        # требовании gate; здесь отчет обязателен как блокирующий FAIL)
-        report["overall"] = gr.STATUS_FAIL
-        assert gr.exit_code_for(report, repo) == 1
+        # B1 негативный тест: обязательный gate «отсутствует» → блок,
+        # никаких ручных правок report не требуется
+        assert report["overall"] == "ERROR"
+        assert code == 2
+
+    def test_pre_accept_without_pm_mode_not_green(self, tmp_path):
+        """B1, буквальная приемка ревью: run --scope pre_accept без
+        --pm-mode → exit ≥ 1 и overall ≠ PASS на ПОЛНОМ наборе фазы."""
+        repo = make_repo(tmp_path)
+        report, code = gr.run_gates(
+            repo, "pre_accept", list(gr.DEFAULT_GATES["pre_accept"]),
+            Opts(tmp_path))
+        assert report["overall"] != "PASS"
+        assert code >= 1
 
     def test_pm_mode_sessions(self, tmp_path):
         repo = make_repo(tmp_path)
@@ -316,6 +335,7 @@ class TestSkipRules:
             Opts(tmp_path, pm_mode="sessions", pm_registry=str(reg)))
         g = gate_status(report, "pm_bounds_check")
         assert g["status"] == "PASS"
+        assert g["executed"] is True
         assert "--sessions" in " ".join(g["command"])
         assert code == 0
 
@@ -325,8 +345,10 @@ class TestSkipRules:
             repo, "pre_accept", ["pm_bounds_check"],
             Opts(tmp_path, pm_mode="commits"))
         g = gate_status(report, "pm_bounds_check")
-        assert g["status"] == "SKIPPED"
+        assert g["status"] == "ERROR"  # конфигурационная ошибка → блок (B1)
         assert "--pm-commits" in g["diagnostics"]
+        assert report["overall"] == "ERROR"
+        assert code == 2
 
     def test_flow_check_adapter_on_fixture_repo(self, tmp_path):
         """Адаптер flow_check запускает РЕАЛЬНЫЙ скрипт subprocess'ом

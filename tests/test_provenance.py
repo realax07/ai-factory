@@ -222,6 +222,48 @@ class TestWrongBinding:
         assert d.status == "UNKNOWN"
         assert has_code(d, ft.MISSING_INPUT)
 
+    def test_foreign_task_sidecar_denied_not_unknown(self, tmp_path):
+        """review-005 M1: sidecar ЧУЖОЙ задачи — единственный под change →
+        DENY «approve другой задачи», а не тихий legacy-UNKNOWN."""
+        repo = make_repo(tmp_path)
+        head = git(repo, "rev-parse", "HEAD")
+        diff = ft._git_diff_for_head({"scope": {"repo": str(repo)}}, head)
+        add_review_with_sidecar(repo, "add-widget", ["1.2"], head,
+                                diff_digest=ft._sha256_text(diff))
+        d = ft.check_action(snapshot_for(repo, "1.1"),
+                            accept_review_action("1.1"))
+        assert d.status == "DENY", d.details
+        assert d.allowed is False
+        assert has_code(d, ft.MISSING_INPUT)
+        assert any("не покрывают задачу 1.1" in x for x in d.details)
+        assert any("1.2" in x for x in d.details)
+        # это НЕ legacy-ветка: sidecar назван и виден
+        assert not any("legacy evidence" in x for x in d.details)
+
+    def test_missing_diff_digest_unknown_not_allow(self, tmp_path):
+        """review-005 M3: sidecar с task/change/SHA и независимой ролью,
+        но БЕЗ diff_digest → UNKNOWN (не ALLOW): digest — единственная
+        защита от approve «того же SHA, другой content»."""
+        repo = make_repo(tmp_path)
+        head = git(repo, "rev-parse", "HEAD")
+        add_review_with_sidecar(repo, "add-widget", ["1.1"], head,
+                                diff_digest=None)
+        d = ft.check_action(snapshot_for(repo), accept_review_action())
+        assert d.status == "UNKNOWN", d.details
+        assert d.allowed is False
+        assert has_code(d, ft.MISSING_INPUT)
+        assert any("diff_digest" in x for x in d.details)
+
+    def test_missing_diff_digest_merge_not_allowed(self, tmp_path):
+        """M3 на merge_task: неполная провенанс не разрешает merge."""
+        repo = make_repo(tmp_path)
+        head = git(repo, "rev-parse", "HEAD")
+        add_review_with_sidecar(repo, "add-widget", ["1.1"], head,
+                                diff_digest=None)
+        d = ft.check_action(snapshot_for(repo), merge_action())
+        assert d.status != "ALLOW"
+        assert has_code(d, ft.MISSING_INPUT)
+
 
 # ----------------------------------------- TC-PRV-003: независимость роли
 
@@ -304,8 +346,10 @@ class TestLegacyCompat:
         d0 = ft.check_action(snapshot_for(repo), accept_review_action())
         assert d0.status == "UNKNOWN"
         head = git(repo, "rev-parse", "HEAD")
+        diff = ft._git_diff_for_head({"scope": {"repo": str(repo)}}, head)
         gr.write_review_provenance(rf, "proj", "add-widget", ["1.1"],
-                                   "deleg_a", "deleg_b", head, "approve")
+                                   "deleg_a", "deleg_b", head, "approve",
+                                   diff_digest=ft._sha256_text(diff))
         d1 = ft.check_action(snapshot_for(repo), accept_review_action())
         assert d1.status == "ALLOW"
 
@@ -359,6 +403,7 @@ class TestCliRecordReview:
         rf = repo / "code-reviews" / "add-widget" / "review-001-1.1.md"
         write(repo, str(rf.relative_to(repo)), "## Вердикт: approve\n")
         head = git(repo, "rev-parse", "HEAD")
+        diff = ft._git_diff_for_head({"scope": {"repo": str(repo)}}, head)
         r = subprocess.run(
             [sys.executable, str(SCRIPTS / "gate_runner.py"),
              "record-review",
@@ -366,7 +411,8 @@ class TestCliRecordReview:
              "--change", "add-widget", "--tasks", "1.1",
              "--author-delegation", "deleg_a",
              "--reviewer-delegation", "deleg_b",
-             "--commit", head, "--verdict", "approve", "--json"],
+             "--commit", head, "--verdict", "approve",
+             "--diff-digest", ft._sha256_text(diff), "--json"],
             capture_output=True, text=True,
         )
         assert r.returncode == 0
@@ -376,6 +422,76 @@ class TestCliRecordReview:
         d = ft.check_action(snapshot_for(repo), accept_review_action())
         assert d.status == "ALLOW"
 
+    def test_cli_record_review_without_diff_digest_exit2(self, tmp_path):
+        """review-005 M3: sidecar без diff_digest через record-review не
+        пишется — digest обязателен (M3-негатив на уровне CLI)."""
+        repo = make_repo(tmp_path)
+        rf = repo / "code-reviews" / "add-widget" / "review-001-1.1.md"
+        write(repo, str(rf.relative_to(repo)), "## Вердикт: approve\n")
+        head = git(repo, "rev-parse", "HEAD")
+        r = subprocess.run(
+            [sys.executable, str(SCRIPTS / "gate_runner.py"),
+             "record-review",
+             "--review-path", str(rf), "--project", "proj",
+             "--change", "add-widget", "--tasks", "1.1",
+             "--author-delegation", "deleg_a",
+             "--reviewer-delegation", "deleg_b",
+             "--commit", head, "--verdict", "approve"],
+            capture_output=True, text=True,
+        )
+        assert r.returncode == 2
+        assert "diff-digest" in r.stderr
+        assert not list((repo / "code-reviews" / "add-widget").glob(
+            "*.provenance.json"))
+
+    def test_cli_record_review_verdict_mismatch_exit2(self, tmp_path):
+        """review-005 m2: sidecar-approve поверх .md с вердиктом RETURN
+        не записывается — машинное и человеческое доказательства
+        не расходятся."""
+        repo = make_repo(tmp_path)
+        rf = repo / "code-reviews" / "add-widget" / "review-001-1.1.md"
+        write(repo, str(rf.relative_to(repo)), "## Вердикт: RETURN\n")
+        head = git(repo, "rev-parse", "HEAD")
+        diff = ft._git_diff_for_head({"scope": {"repo": str(repo)}}, head)
+        r = subprocess.run(
+            [sys.executable, str(SCRIPTS / "gate_runner.py"),
+             "record-review",
+             "--review-path", str(rf), "--project", "proj",
+             "--change", "add-widget", "--tasks", "1.1",
+             "--author-delegation", "deleg_a",
+             "--reviewer-delegation", "deleg_b",
+             "--commit", head, "--verdict", "approve",
+             "--diff-digest", ft._sha256_text(diff)],
+            capture_output=True, text=True,
+        )
+        assert r.returncode == 2
+        assert "вердикт" in r.stderr
+        assert not list((repo / "code-reviews" / "add-widget").glob(
+            "*.provenance.json"))
+
+    def test_cli_record_review_unknown_sha_exit2(self, tmp_path):
+        """review-005 m2: reviewed_commit_sha, отсутствующий в репо,
+        отклоняется (--repo задан)."""
+        repo = make_repo(tmp_path)
+        rf = repo / "code-reviews" / "add-widget" / "review-001-1.1.md"
+        write(repo, str(rf.relative_to(repo)), "## Вердикт: approve\n")
+        head = git(repo, "rev-parse", "HEAD")
+        diff = ft._git_diff_for_head({"scope": {"repo": str(repo)}}, head)
+        bogus = "0" * 40
+        r = subprocess.run(
+            [sys.executable, str(SCRIPTS / "gate_runner.py"),
+             "record-review",
+             "--review-path", str(rf), "--project", "proj",
+             "--change", "add-widget", "--tasks", "1.1",
+             "--author-delegation", "deleg_a",
+             "--reviewer-delegation", "deleg_b",
+             "--commit", bogus, "--verdict", "approve",
+             "--diff-digest", ft._sha256_text(diff), "--repo", str(repo)],
+            capture_output=True, text=True,
+        )
+        assert r.returncode == 2
+        assert "не найден" in r.stderr
+
     def test_cli_record_review_bad_input_exit2(self, tmp_path):
         r = subprocess.run(
             [sys.executable, str(SCRIPTS / "gate_runner.py"),
@@ -383,7 +499,8 @@ class TestCliRecordReview:
              "--review-path", "/nonexistent.md", "--project", "p",
              "--change", "a-b", "--tasks", "1.1",
              "--author-delegation", "a", "--reviewer-delegation", "b",
-             "--commit", "x", "--verdict", "approve"],
+             "--commit", "x", "--verdict", "approve",
+             "--diff-digest", "d" * 64],
             capture_output=True, text=True,
         )
         assert r.returncode == 2

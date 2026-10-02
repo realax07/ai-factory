@@ -481,36 +481,64 @@ def _sha256_text(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
+def _review_file_revision(name: str | None) -> int:
+    """Ревизия из имени review-файла: ЕДИНЫЙ парс с flow_check (review-005
+    m3 — ревизия rev-first NNN-task или task-first task-NNN, без второго
+    частичного regex)."""
+    if not name:
+        return 0
+    m = flow_check.REVIEW_FILE_REV_FIRST.match(name)
+    if m:
+        return int(m.group(1))
+    m = flow_check.REVIEW_FILE_TASK_FIRST.match(name)
+    if m:
+        return int(m.group(2))
+    return 0
+
+
 def load_review_provenance(repo: Path, change_id: str, task_id: str
-                           ) -> tuple[dict | None, str | None, str | None]:
+                           ) -> tuple[dict | None, str | None, str | None,
+                                      dict | None]:
     """Последний sidecar под задачи, покрывающие task_id (ревизия — max).
-    Возвращает (sidecar, sidecar_path|None, None). Побитый sidecar —
-    (None, path, err), чтобы проверка вернула честный UNKNOWN/AMBIGUOUS."""
+    Возвращает (sidecar, sidecar_path|None, err|None, foreign|None):
+    - побитый sidecar — (None, path, err, None): честный UNKNOWN/AMBIGUOUS;
+    - sidecar, не покрывающий task_id, НЕ отбрасывается молча (review-005
+      M1): (None, path, None, foreign) — «чужой» approve под задачей есть,
+      но он не покрывает эту задачу → DENY, а не невидимость;
+    - sidecar под задачу нет вовсе — (None, None, None, None) → легаси."""
     cr_dir = repo / "code-reviews" / change_id
     if not cr_dir.is_dir():
-        return None, None, None
+        return None, None, None, None
     candidates: list[tuple[int, str, Path]] = []
+    foreign: dict | None = None
+    foreign_path: str | None = None
     for pf in sorted(cr_dir.glob(f"review-*{PROVENANCE_SIDECAR_SUFFIX}")):
         try:
             data = json.loads(pf.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as exc:
-            return None, str(pf), f"sidecar нечитаем: {exc}"
+            return None, str(pf), f"sidecar нечитаем: {exc}", None
         if not isinstance(data, dict):
-            return None, str(pf), "sidecar не словарь"
+            return None, str(pf), "sidecar не словарь", None
         tasks = data.get("task_ids")
         if not isinstance(tasks, list):
-            return None, str(pf), "sidecar без task_ids"
+            return None, str(pf), "sidecar без task_ids", None
         if task_id and not any(
             task_id in re.findall(r"\d+(?:\.\d+)*", str(t)) for t in tasks
         ):
+            # Чужой sidecar запоминается (не отбрасывается молча, M1):
+            # максимум по ревизии, чтобы DENY назвал фактический sidecar.
+            rev = _review_file_revision(pf.name)
+            if foreign is None or rev > _review_file_revision(foreign_path):
+                foreign = data
+                foreign_path = str(pf)
             continue
-        m = re.search(r"review-(\d{3})-", pf.name)
-        rev = int(m.group(1)) if m else 0
-        candidates.append((rev, pf.name, pf))
+        candidates.append((_review_file_revision(pf.name), pf.name, pf))
     if not candidates:
-        return None, None, None
+        if foreign is not None:
+            return None, foreign_path, None, foreign
+        return None, None, None, None
     _, name, pf = max(candidates, key=lambda x: (x[0], x[1]))
-    return json.loads(pf.read_text(encoding="utf-8")), str(pf), None
+    return (json.loads(pf.read_text(encoding="utf-8")), str(pf), None, None)
 
 
 def provenance_findings(sidecar: dict, snapshot: dict, action, ctx: dict,
@@ -563,8 +591,21 @@ def provenance_findings(sidecar: dict, snapshot: dict, action, ctx: dict,
             f"устарел; повторное review обязательно (ТЗ 05; спека «Provenance "
             f"review»); проверка времени остаётся дополнительной, основная — "
             f"идентичность SHA/diff"))
+    # review-005 M3: diff_digest обязателен. Digest — единственная защита от
+    # approve «того же SHA, другой content» (history rewrite, force-push):
+    # sidecar с task/change/SHA и независимой ролью, но без digest —
+    # неполное доказательство → UNKNOWN, не ALLOW (контракт §9).
     diff_digest = sidecar.get("diff_digest")
-    if diff_digest and head:
+    if not diff_digest:
+        out.append(Finding(
+            MISSING_INPUT,
+            f"sidecar {sidecar_path}: diff_digest отсутствует — утвержденная "
+            f"версия работы не зафиксирована, approve «того же SHA, другой "
+            f"content» (history rewrite / force-push) неотличим → "
+            f"UNKNOWN, не ALLOW (ТЗ 05; контракт §9; review-005 M3); "
+            f"перепиши sidecar: gate_runner.py record-review --diff-digest …",
+            True))
+    elif head:
         actual = _sha256_text(_git_diff_for_head(snapshot, head))
         if actual != diff_digest:
             out.append(Finding(
@@ -622,7 +663,7 @@ def _provenance_findings(snapshot, action, ctx: dict, stage: str) -> list:
             MISSING_INPUT,
             f"provenance для {stage}: scope без repo/change/task_id — "
             f"проверка sidecar невозможна, UNKNOWN (ТЗ 05)", True)]
-    sidecar, sidecar_path, err = load_review_provenance(
+    sidecar, sidecar_path, err, foreign = load_review_provenance(
         Path(repo), change_id, action.task_id)
     if err:
         out.append(Finding(AMBIGUOUS_STATE,
@@ -632,6 +673,18 @@ def _provenance_findings(snapshot, action, ctx: dict, stage: str) -> list:
         ctx["evidence"].add(sidecar_path or "")
         return provenance_findings(sidecar, snapshot, action, ctx,
                                    sidecar_path or "")
+    if foreign is not None:
+        # review-005 M1: sidecar под change есть, но task_ids его не
+        # покрывают — это «approve другой задачи», отклонение (DENY),
+        # а не тихая невидимость с legacy-UNKNOWN.
+        tasks = foreign.get("task_ids") or []
+        out.append(Finding(
+            MISSING_INPUT,
+            f"sidecar {sidecar_path}: task_ids {tasks} не покрывают задачу "
+            f"{action.task_id} — approve другой задачи под этим change "
+            f"отклоняется (ТЗ 05; review-005 M1); нужен sidecar, "
+            f"покрывающий задачу {action.task_id}"))
+        return out
     # Легаси: review-файлы без sidecar — compatibility mode (уже не «до
     # поставки 05», а явный ограниченный режим для старых review).
     cr_dir = Path(repo) / "code-reviews" / change_id
