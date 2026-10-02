@@ -6,6 +6,30 @@ on:
   pull_request:
 
 jobs:
+  # P0.5: полный набор тестов Flow Control (включая негативные сценарии
+  # P0.2–P0.4) в обычном PR CI. Задача Заказчика — включить этот job в
+  # required checks ruleset, тогда он станет обязательным для merge.
+  test-flow-control:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install pytest
+        run: python -m pip install --upgrade pip pytest
+
+      # GITHUB_EVENT_PATH удаляется на уровне процесса (env -u): Actions
+      # всегда указывает эту переменную, а pr_validate/gate_runner трактуют
+      # её наличие как «PR-контекст есть» — тогда негативные тесты
+      # (SKIPPED без PR-контекста, tests/test_gate_runner.py) получают
+      # FAIL вместо SKIPPED. Локально переменной нет — тесты зеленые.
+      - name: Run tests
+        run: env -u GITHUB_EVENT_PATH python -m pytest tests/ -q
+
   flow:
     runs-on: ubuntu-latest
     steps:
@@ -41,3 +65,9 @@ jobs:
             echo "::error::pr_validate: обязательные артефакты отсутствуют (см. выше)"
             exit 1
           fi
+
+# Примечание (P0.5): job test-flow-control (pytest tests/) НЕ зависит от job flow —
+# pytest независим от flow_check. На момент этого изменения flow_check на main
+# красный из-за 5 самоссылочных ошибок пакета add-deterministic-flow (гигиена P0.6,
+# вне рамок P0.5), поэтому PR могут оставаться красными из-за соседнего job flow —
+# это ожидаемо и не связано с тестами.
