@@ -589,6 +589,10 @@ def check_archive_change(snapshot, action, ctx, flow):
                 f"не все задачи закрыты (open={open_n}) — архивация требует [x] "
                 f"по всем задачам (контракт 7; evidence: "
                 f"openspec/changes/<id>/tasks.md)"))
+    # TODO(3.1/S5): проверка по пакету — поставка 04, решение Заказчика
+    # 2026-10-02. Сейчас _test_model_sub проверяет глобальную непустость
+    # test-model/approved/; нужен факт approved_cases_of_change в снимке:
+    # qa_automation/archive без approved-кейсов СВОЕГО change → DENY/MISSING_INPUT.
     out.extend(_test_model_sub(
         snapshot, ctx, "approved",
         "QA-контур не завершен: нет approved-кейсов — QA не сводится к одной "
@@ -783,7 +787,10 @@ STAGE_TABLE: dict[int, tuple[Stage, ...]] = {
               ("flow_check (контракт 5)",), check_qa_review),
         Stage("qa_automation", ("qa_automation",), False,
               ("flow_check (контракт 6)",), check_qa_automation),
-        Stage("archive_change", ("integrator", "dev_lead"), False,
+        # Решение Заказчика 3.3 (S7, 2026-10-02): sa добавлен как легальная роль
+        # архивации — контракт 7: автор спек сливает дельты (практика Р6: sa
+        # заархивировал f925a57). dev_lead/integrator остаются допустимыми.
+        Stage("archive_change", ("sa", "dev_lead", "integrator"), False,
               ("flow_check (контракт 7)", "openspec validate"), check_archive_change),
         Stage("release", ("pm",), True, (), check_release),
     ),

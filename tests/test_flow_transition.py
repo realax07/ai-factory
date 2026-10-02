@@ -321,7 +321,40 @@ class TestFlow1:
                    approval_ref="PLAN.md: разрешение ПМ на архивацию"))
         assert d.status == "ALLOW"
 
+    def test_archive_by_sa_is_legal_role(self, tmp_path):
+        """Решение Заказчика 3.3 (S7, 2026-10-02): archive_change от sa —
+        легальная роль (контракт 7: автор спек сливает дельты), не WRONG_ROLE."""
+        repo = make_repo(tmp_path)
+        reg = make_registry(tmp_path)
+        write(repo, "openspec/changes/add-widget/tasks.md",
+              "- [x] 1.1\n- [x] 1.2\n- [x] 2.1\n- [x] 6.1\n")
+        write(repo, "test-model/approved/add-widget/TC-WID-001.md", "# TC\n")
+        commit_all(repo)
+        s = snapshot_for(repo, reg)
+        d = ft.check_action(
+            s, act(requested_action="archive_change", actor_role="sa",
+                   approval_ref="PLAN.md: разрешение ПМ на архивацию"))
+        assert d.status == "ALLOW"
+        assert not has_code(d, ft.WRONG_ROLE)
+
+    def test_archive_wrong_role_still_denied(self, tmp_path):
+        """Обратная сторона 3.3: чужие роли (pm, dev) на архивации по-прежнему
+        WRONG_ROLE — расширение легальных ролей не размывает резервирование."""
+        repo = make_repo(tmp_path)
+        reg = make_registry(tmp_path)
+        s = snapshot_for(repo, reg)
+        for role in ("pm", "dev"):
+            d = ft.check_action(
+                s, act(requested_action="archive_change", actor_role=role,
+                       approval_ref="PLAN.md: разрешение ПМ на архивацию"))
+            assert d.status == "DENY", role
+            assert has_code(d, ft.WRONG_ROLE), role
+
     def test_release_requires_approval_and_closed_change(self, tmp_path):
+        """Решение Заказчика 3.2 (S6, 2026-10-02): граф не меняется — release
+        строго после archive_change (практика Р6 признана нарушением порядка).
+        Негативный: release при незакрытом change → DENY/INVALID_GATE,
+        даже с approval_ref."""
         repo = make_repo(tmp_path)
         reg = make_registry(tmp_path)
         s = snapshot_for(repo, reg)
