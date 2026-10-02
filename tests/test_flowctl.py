@@ -367,8 +367,9 @@ class TestPrepareRun:
         r = flowctl_cmd(*argv)
         assert r.returncode == 1
         data = json.loads(r.stdout)
+        # prepare при запрете пишет запись цикла: decision внутри record
         assert "HUMAN_APPROVAL_REQUIRED" in \
-            data["decision"]["blocking_reasons"]
+            data["record"]["decision"]["blocking_reasons"]
         assert registry_sessions(reg) == []
 
 

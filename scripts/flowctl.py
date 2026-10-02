@@ -74,6 +74,7 @@ SCRIPTS = Path(__file__).resolve().parent
 if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
+import flow_mode  # noqa: E402
 import flow_state  # noqa: E402
 import flow_transition as ft  # noqa: E402
 import gate_runner as gr  # noqa: E402
@@ -314,22 +315,13 @@ def cmd_prepare(args) -> int:
             "schema_version": OUTPUT_SCHEMA, "command": "prepare",
             "dry_run": True, "correlation_id": correlation,
             "adapter": ADAPTER, "prepared": decision.allowed,
+            "mode": flow_mode.get_mode(),
             **plan,
             "note": "dry-run: snapshot/reservation/worktree/goal НЕ созданы",
         }, args.as_json)
         return _status_exit(decision.status)
 
-    # 3) Не разрешено — исполнять нечего; никаких side effects.
-    if decision.status != ft.ALLOW:
-        _emit({
-            "schema_version": OUTPUT_SCHEMA, "command": "prepare",
-            "correlation_id": correlation, "prepared": False,
-            "adapter": ADAPTER, **plan,
-            "note": "действие не разрешено (ALLOW обязателен) — "
-                    "reservation/worktree/goal не создавались",
-        }, args.as_json)
-        return _status_exit(decision.status)
-
+    # 4) Идемпотентность по correlation ID (до side effects).
     state_path = Path(args.state) if args.state else default_state_path(
         args.registry)
     state = state_load(state_path)
@@ -360,7 +352,61 @@ def cmd_prepare(args) -> int:
         }, args.as_json)
         return 1
 
-    # 4) Worktree (реальный side effect — до reservation, чтобы записать путь;
+    # 4a) Не разрешено — никаких side effects исполнения (worktree/
+    #     reservation/goal не создаются). Запись цикла с decision сохраняется
+    #     (state — вспомогательный, не реестр): она — источник blocks_on для
+    #     run при последующем включении enforcing (решение Заказчика
+    #     2026-10-02: в enforcing DENY/UNKNOWN останавливают и подготовку —
+    #     note с mode/reason это называет явно; в shadow решение вычислено
+    #     и видно в status, но исполнение не разрешено, как и раньше).
+    if decision.status != ft.ALLOW:
+        record = {
+            "correlation_id": correlation,
+            "delegation_id": delegation_id,
+            "adapter": ADAPTER,
+            "status": "prepared",
+            "action": args.action,
+            "actor_role": args.role,
+            "task_id": args.task,
+            "scope": snapshot["scope"],
+            "prepared_digest": snapshot["snapshot_digest"],
+            "zones": zones,
+            "worktree": None,
+            "branch": args.branch,
+            "goal_path": None,
+            "registry": str(registry_path),
+            "owner_pm": args.owner_pm,
+            "approval_ref": args.approval_ref,
+            "decision": decision.to_dict(),
+            "request_fingerprint": fingerprint,
+            "created_at": gr.utcnow_iso(),
+        }
+
+        def _mutate(st: dict) -> None:
+            st["runs"][correlation] = record
+
+        state_write_locked(state_path, state, _mutate)
+        if flow_mode.blocks_on_status(decision.status):
+            _emit({
+                "schema_version": OUTPUT_SCHEMA, "command": "prepare",
+                "correlation_id": correlation, "prepared": False,
+                "mode": flow_mode.get_mode(), "reason": decision.status,
+                "record": record,
+                "note": "enforcing: решение "
+                        f"{decision.status} запрещает подготовку (blocks_on)"
+                        " — reservation/worktree/goal не создавались",
+            }, args.as_json)
+        else:
+            _emit({
+                "schema_version": OUTPUT_SCHEMA, "command": "prepare",
+                "correlation_id": correlation, "prepared": False,
+                "record": record,
+                "note": "действие не разрешено (ALLOW обязателен) — "
+                        "reservation/worktree/goal не создавались",
+            }, args.as_json)
+        return _status_exit(decision.status)
+
+    # 5) Worktree (реальный side effect — до reservation, чтобы записать путь;
     #    при отказе reservation worktree НЕ удаляется молча — разбор ПМ).
     worktree = None
     if args.worktree:
@@ -382,7 +428,7 @@ def cmd_prepare(args) -> int:
             return 2
         worktree = proc.stdout.strip().splitlines()[-1]
 
-    # 5) Атомарная reservation зоны (поставка 04).
+    # 6) Атомарная reservation зоны (поставка 04).
     base_tree = Path(worktree) if worktree else repo
     res = sc.reserve({
         "repo": str(repo),
@@ -405,7 +451,7 @@ def cmd_prepare(args) -> int:
         }, args.as_json)
         return 1
 
-    # 6) Переснимок ПОСЛЕ reservation: registry_digest входит в snapshot
+    # 7) Переснимок ПОСЛЕ reservation: registry_digest входит в snapshot
     #    digest; run сравнивается с этим «осевшим» значением (иначе ложный
     #    STALE_SNAPSHOT на собственную reservation).
     snapshot2 = flow_state.inspect(
@@ -416,19 +462,50 @@ def cmd_prepare(args) -> int:
     if decision2.status != ft.ALLOW:
         # Крайне редкий случай (чужая параллельная запись между резервацией и
         # переснимком): честный отказ, reservation сохранена для разбора.
+        # Запись цикла с decision2 — источник blocks_on для run при
+        # последующем включении enforcing (та же семантика, что в п.8).
+        record = {
+            "correlation_id": correlation,
+            "delegation_id": delegation_id,
+            "adapter": ADAPTER,
+            "status": "prepared",
+            "action": args.action,
+            "actor_role": args.role,
+            "task_id": args.task,
+            "scope": snapshot2["scope"],
+            "prepared_digest": snapshot2["snapshot_digest"],
+            "zones": zones,
+            "worktree": worktree,
+            "branch": args.branch,
+            "goal_path": None,
+            "registry": str(registry_path),
+            "owner_pm": args.owner_pm,
+            "approval_ref": args.approval_ref,
+            "decision": decision2.to_dict(),
+            "request_fingerprint": fingerprint,
+            "created_at": gr.utcnow_iso(),
+        }
+
+        def _mutate(st: dict) -> None:
+            st["runs"][correlation] = record
+
+        state_write_locked(state_path, state, _mutate)
         _emit({
             "schema_version": OUTPUT_SCHEMA, "command": "prepare",
             "correlation_id": correlation, "prepared": False,
-            "decision": decision2.to_dict(),
+            "record": record,
             "note": "после reservation решение перестало быть ALLOW — "
                     "сессия не готовится, reservation оставлена для разбора",
         }, args.as_json)
         return _status_exit(decision2.status)
 
-    # 7) Goal-артефакт (без секретов; подготовка ≠ запуск).
+    # 9) Goal-артефакт (без секретов; подготовка ≠ запуск).
     goal_path = Path(args.goal_path) if args.goal_path else (
         state_path.parent / f"goal-{correlation}.md")
     goal_path.parent.mkdir(parents=True, exist_ok=True)
+    # 10) Запись цикла (state): решение последней проверки — источник для
+    # enforcement на run (blocks_on). reservation уже создана; запись
+    # prepare без нее не имеет смысла, поэтому отказ здесь не делаем.
     record = {
         "correlation_id": correlation,
         "delegation_id": delegation_id,
@@ -446,6 +523,7 @@ def cmd_prepare(args) -> int:
         "registry": str(registry_path),
         "owner_pm": args.owner_pm,
         "approval_ref": args.approval_ref,
+        "decision": decision2.to_dict(),
         "request_fingerprint": fingerprint,
         "created_at": gr.utcnow_iso(),
     }
@@ -514,6 +592,24 @@ def cmd_run(args) -> int:
         }, args.as_json)
         return 1
 
+    # 0) Enforcement (решение Заказчика 2026-10-02): в enforcing DENY/
+    # UNKNOWN из prepare останавливают запуск — отказ с кодом причины,
+    # статус не меняется, делегация не стартует. В shadow решение уже
+    # вычислено (запись prepared существует), но не исполняется.
+    prepared_status = (record.get("decision") or {}).get("status")
+    if prepared_status and flow_mode.blocks_on_status(prepared_status):
+        _emit({
+            "schema_version": OUTPUT_SCHEMA, "command": "run",
+            "correlation_id": args.correlation_id, "started": False,
+            "mode": flow_mode.get_mode(), "reason": prepared_status,
+            "decision_status": prepared_status, "record": record,
+            "note": "enforcing: решение prepare "
+                    f"{prepared_status} останавливает запуск (blocks_on) — "
+                    "статус не изменен, делегация не стартовала; в shadow "
+                    "этот run был бы разрешен",
+        }, args.as_json)
+        return 1 if prepared_status == ft.DENY else 2
+
     registry_path = Path(record["registry"])
     scope = record["scope"]
     # Переснимок непосредственно перед стартом (ТЗ 06: STALE_SNAPSHOT).
@@ -543,6 +639,21 @@ def cmd_run(args) -> int:
         "flowctl run: действие разрешено, старт делегации разрешен "
         f"(adapter={ADAPTER}; факт запуска фиксирует внешний исполнитель)",
         f"state: {state_path}; goal: {record['goal_path']}")
+    if not tr["ok"] and not record.get("goal_path"):
+        # DENY/UNKNOWN-prepare в реестре не резервировался: запуск невозможен
+        # по определению (нет reservation) — в shadow честный отказ без
+        # делегации, в enforcing сюда не доходим (blocks_on выше).
+        _emit({
+            "schema_version": OUTPUT_SCHEMA, "command": "run",
+            "correlation_id": args.correlation_id, "started": False,
+            "reason": tr["reason"],
+            "decision_status": (record.get("decision") or {}).get("status"),
+            "note": "запись prepare без reservation (решение "
+                    f"{(record.get('decision') or {}).get('status')} не "
+                    "разрешало подготовку) — запуск невозможен; повтори "
+                    "prepare с новым correlation ID после устранения причин",
+        }, args.as_json)
+        return 2
     if not tr["ok"]:
         _emit({
             "schema_version": OUTPUT_SCHEMA, "command": "run",

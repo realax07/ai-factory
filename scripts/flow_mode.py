@@ -25,6 +25,9 @@ from pathlib import Path
 
 DEFAULT_MODE_FILE = Path.home() / ".hermes/state/flow_mode.json"
 VALID_MODES = ("shadow", "enforcing")
+# Статусы решений flow_transition, которые enforcing останавливает
+# (shadow — только вычисляет, не исполняет).
+BLOCKING_STATUSES = ("DENY", "UNKNOWN")
 
 
 def mode_file() -> Path:
@@ -68,6 +71,16 @@ def blocks_on(deny_or_unknown: bool) -> bool:
     enforcing: да — DENY/UNKNOWN останавливают действие.
     """
     return get_mode() == "enforcing" and deny_or_unknown
+
+
+def blocks_on_status(status: str) -> bool:
+    """blocks_on для статуса решения flow_transition (ALLOW/DENY/UNKNOWN)."""
+    return blocks_on(status in BLOCKING_STATUSES)
+
+
+def mode_payload() -> dict:
+    """Режим для вывода компонентов (прозрачность: видно, что активно)."""
+    return {"mode": get_mode(), "mode_file": str(mode_file())}
 
 
 def main() -> int:

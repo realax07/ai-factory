@@ -50,6 +50,8 @@ import tempfile
 import time
 from pathlib import Path
 
+import flow_mode  # noqa: E402  (режим shadow/enforcing в ответах)
+
 REGISTRY_SCHEMA = "active-sessions/2"
 LIFECYCLE_ACTIVE = ("reserved", "running", "finished")
 # Статусы, в которых зона записи считается занятой (проверка пересечений).
@@ -499,11 +501,13 @@ def reserve(req: dict, registry_path: Path | str) -> dict:
             if payload_new == payload_old:
                 return {"allowed": True, "reason": REASON_OK,
                         "idempotent": True, "migrated": migrated, "details": [],
+                        **flow_mode.mode_payload(),
                         "delegation_id": req["delegation_id"],
                         "session": mine}
             return {"allowed": False, "reason": DUPLICATE_PAYLOAD,
                     "details": [f"delegation_id {req['delegation_id']} уже "
                                 f"зарезервирован с другим payload"],
+                    **flow_mode.mode_payload(),
                     "delegation_id": req["delegation_id"]}
 
         # Пересечение зон активных сессий того же repo.
@@ -527,6 +531,7 @@ def reserve(req: dict, registry_path: Path | str) -> dict:
         if conflicts:
             return {"allowed": False, "reason": ZONE_CONFLICT,
                     "details": conflicts,
+                    **flow_mode.mode_payload(),
                     "delegation_id": req["delegation_id"]}
 
         now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
@@ -557,6 +562,7 @@ def reserve(req: dict, registry_path: Path | str) -> dict:
         registry_write(registry_path, data)
         return {"allowed": True, "reason": REASON_OK, "idempotent": False,
                 "migrated": migrated, "details": [],
+                **flow_mode.mode_payload(),
                 "delegation_id": req["delegation_id"], "session": entry}
     finally:
         _release_lock(lock)
@@ -697,6 +703,7 @@ def check(session_req: dict, registry_path: Path) -> dict:
             "reason": REASON_OK if ok else (violations[0].split(":")[0]
                                             if violations else OUT_OF_ZONE),
             "details": violations, "violations": violations,
+            **flow_mode.mode_payload(),
             "out_of_zone": out_of_zone,
             "changed": {"committed": committed, "uncommitted": uncommitted},
             "zones": zones, "delegation_id": delegation_id}
@@ -795,6 +802,7 @@ def reconcile(registry_path: Path, repo: Path | None = None,
             _release_lock(lock)
     return {"ok": True, "reason": REASON_OK, "details": [],
             "results": results,
+            **flow_mode.mode_payload(),
             "needs_attention": dirty_any or any(
                 r.get("status_after") == "needs_attention" for r in results)}
 
@@ -813,6 +821,7 @@ def status(registry_path: Path, delegation_id: str | None = None) -> dict:
                      or s.get("delegation_id") == delegation_id)]
     return {"ok": True, "reason": REASON_OK, "details": [],
             "schema_version": data.get("schema_version", "v1"),
+            **flow_mode.mode_payload(),
             "sessions": sessions}
 
 

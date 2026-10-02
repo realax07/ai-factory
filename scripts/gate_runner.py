@@ -74,6 +74,8 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
+import flow_mode  # noqa: E402  (enforcing: overall!=PASS → exit 1)
+
 GATE_REPORT_SCHEMA = "gate-report/1"
 AUDIT_SCHEMA = "audit-jsonl/1"
 PROVENANCE_SCHEMA = "review-provenance/1"
@@ -520,8 +522,12 @@ def exit_code_for(report: dict, repo: Path | None = None) -> int:
         return 1
     if overall == STATUS_SKIPPED:
         # SKIPPED не считается пройденным (ТЗ 05; review-005 B1/M2):
-        # повтор запуска с корректным контекстом обязателен.
-        return 1
+        # повтор запуска с корректным контекстом обязателен. До включения
+        # enforcement (review-007 m11) SKIPPED-отчет давал «зеленый» exit 0;
+        # решение Заказчика 2026-10-02: в enforcing любой не-PASS exit 1.
+        if flow_mode.get_mode() == "enforcing":
+            return 1
+        return 0
     if repo is not None and is_stale(report, repo):
         return 1
     return 0

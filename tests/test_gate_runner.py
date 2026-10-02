@@ -274,12 +274,19 @@ class TestDigestCheck:
 
 
 class TestSkipRules:
-    def test_pr_validate_skipped_without_pr_context(self, tmp_path):
+    def test_pr_validate_skipped_without_pr_context(self, tmp_path,
+                                                    monkeypatch):
         """Приемка ТЗ 05: pr_validate без PR-контекста не запускается и не
         считается пройденным; SKIPPED по явному правилу неприменимости.
         review-005 B1/M2: SKIPPED-гейт не считается пройденным и в overall —
-        отчет не PASS и exit ≥ 1 (но SKIPPED, не FAIL: правило легально)."""
+        отчет не PASS. Решение Заказчика 2026-10-02: не-зеленый exit только
+        в enforcing (в shadow SKIPPED-отчет дает exit 0); проверяем
+        семантику блокировки в enforcing."""
         repo = make_repo(tmp_path)
+        mf = tmp_path / "flow_mode.json"
+        mf.parent.mkdir(parents=True, exist_ok=True)
+        mf.write_text(json.dumps({"mode": "enforcing"}), encoding="utf-8")
+        monkeypatch.setenv("FLOW_MODE_FILE", str(mf))
         report, code = gr.run_gates(repo, "pre_merge", ["pr_validate"],
                                     Opts(tmp_path))
         g = gate_status(report, "pr_validate")
