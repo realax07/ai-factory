@@ -216,6 +216,7 @@ class TestFlowctlRunEnforcement:
             "project": "proj",
             "owner_pm": "pm-main",
             "paths": rec["zones"],
+            "policy_version": rec["policy_version"],
             "worktree": None,
             "branch": None,
             "base_sha": git(repo, "rev-parse", "HEAD"),
@@ -448,7 +449,8 @@ class TestSessionCheckReserve:
         reg = make_registry(tmp_path)
         base = ["reserve", "--registry", str(reg), "--repo", str(repo),
                 "--role", "dev", "--project", "proj", "--owner-pm",
-                "pm-main"]
+                "pm-main", "--policy-version",
+                __import__("role_zone_policy").policy_version()]
         r1 = session_check_cmd(*base, "--delegation-id", "deleg-a",
                                "--path", "src/**", "--json",
                                env_mode_file=mf)
@@ -467,6 +469,8 @@ class TestSessionCheckReserve:
             "reserve", "--registry", str(reg), "--repo", str(repo),
             "--delegation-id", "deleg-a", "--role", "dev",
             "--project", "proj", "--owner-pm", "pm-main",
+            "--policy-version",
+            __import__("role_zone_policy").policy_version(),
             "--path", "src/**", "--json", env_mode_file=mf)
         assert r.returncode == 0
         data = json.loads(r.stdout)
@@ -480,6 +484,8 @@ class TestSessionCheckReserve:
             "reserve", "--registry", str(reg), "--repo", str(repo),
             "--delegation-id", "deleg-a", "--role", "dev",
             "--project", "proj", "--owner-pm", "pm-main",
+            "--policy-version",
+            __import__("role_zone_policy").policy_version(),
             "--path", "src/**", "--json", env_mode_file=mf)
         r = session_check_cmd(
             "check", "--registry", str(reg), "--repo", str(repo),

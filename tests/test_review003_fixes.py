@@ -76,7 +76,9 @@ def reserve(reg: Path, repo: Path, delegation_id: str = "d1",
     return sc.reserve({
         "repo": str(repo), "delegation_id": delegation_id, "role": "dev",
         "project": "proj", "owner_pm": "main-session",
-        "paths": paths or ["src/**"], **kw}, reg)
+        "paths": paths or ["src/**"],
+        "policy_version": __import__("role_zone_policy").policy_version(),
+        **kw}, reg)
 
 
 def registry_backup_names(reg: Path) -> list[str]:
