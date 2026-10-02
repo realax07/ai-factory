@@ -633,15 +633,19 @@ class TestReleaseOutcomes:
         assert d.status == "UNKNOWN"
         assert has_code(d, ft.EXTERNAL_ENFORCEMENT_UNKNOWN)
 
-    def test_string_approval_ref_still_accepted(self, tmp_path):
-        """approval_ref (строка среза 1) по-прежнему принимается как решение —
-        файл releases/<id>.md не отменяет D5."""
+    def test_string_ref_not_from_log_rejected_p04(self, tmp_path):
+        """P0.4 (пересмотр плана): непустая строка approval_ref больше не
+        достаточна — строка без записи журнала решений → DENY с
+        HUMAN_APPROVAL_REQUIRED и подсказкой формата (сужение D5 — это и
+        есть цель P0.4)."""
         repo, reg = self._base(tmp_path)
         protect_ok_report(repo)
         d = ft.check_action(
             snapshot_for(repo, reg),
             act(approval_ref="чат-лог: «погнали» 2026-10-02"))
-        assert d.status == "ALLOW", d.details
+        assert d.status == "DENY", d.details
+        assert has_code(d, ft.HUMAN_APPROVAL_REQUIRED)
+        assert any("decisions/" in x for x in d.details)
 
 
 # =========================================================================
