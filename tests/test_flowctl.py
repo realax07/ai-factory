@@ -334,10 +334,11 @@ class TestPrepareRun:
         reg = make_registry(tmp_path)
         state = tmp_path / "state" / "flowctl_state.json"
         flowctl_cmd(*prepare_argv(repo, reg, state, tmp_path))
-        # Тот же correlation ID, другой payload (другая зона; action/role те
-        # же, чтобы отказ пришел от идемпотентности, а не от wrong-role):
+        # Тот же correlation ID, другой payload (другая валидная для роли
+        # зона; action/role те же, чтобы отказ пришел от идемпотентности,
+        # а не от wrong-role/policy):
         argv = prepare_argv(repo, reg, state, tmp_path)
-        argv[argv.index("--path") + 1] = "docs/**"
+        argv[argv.index("--path") + 1] = "tests/**"
         r = flowctl_cmd(*argv)
         assert r.returncode == 1
         assert "DUPLICATE_PAYLOAD" in r.stdout

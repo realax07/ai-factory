@@ -160,23 +160,27 @@ def session_check_cmd(*argv: str, env_mode_file: Path | None = None):
 
 class TestBlocksOnUnit:
     def test_shadow_missing_file_never_blocks(self, tmp_path, monkeypatch):
+        """TC-FLW-001: трассировка кейса (test-model/approved/add-deterministic-flow/)."""
         monkeypatch.setenv("FLOW_MODE_FILE", str(tmp_path / "nope.json"))
         assert flow_mode.get_mode() == "shadow"
         assert flow_mode.blocks_on(True) is False
 
     def test_shadow_mode_blocks_nothing(self, tmp_path, monkeypatch):
+        """TC-FLW-001: трассировка кейса (test-model/approved/add-deterministic-flow/)."""
         monkeypatch.setenv("FLOW_MODE_FILE", str(set_mode_file(
             tmp_path / "m.json", "shadow")))
         assert flow_mode.blocks_on(True) is False
         assert flow_mode.blocks_on(False) is False
 
     def test_enforcing_blocks_deny_and_unknown(self, tmp_path, monkeypatch):
+        """TC-FLW-001: трассировка кейса (test-model/approved/add-deterministic-flow/)."""
         monkeypatch.setenv("FLOW_MODE_FILE", str(set_mode_file(
             tmp_path / "m.json", "enforcing")))
         assert flow_mode.blocks_on(True) is True   # DENY/UNKNOWN
         assert flow_mode.blocks_on(False) is False  # ALLOW
 
     def test_corrupt_file_fails_soft_to_shadow(self, tmp_path, monkeypatch):
+        """TC-FLW-001: трассировка кейса (test-model/approved/add-deterministic-flow/)."""
         mf = tmp_path / "m.json"
         mf.parent.mkdir(parents=True, exist_ok=True)
         mf.write_text("{not json", encoding="utf-8")
@@ -216,6 +220,7 @@ class TestFlowctlRunEnforcement:
             "project": "proj",
             "owner_pm": "pm-main",
             "paths": rec["zones"],
+            "policy_version": rec["policy_version"],
             "worktree": None,
             "branch": None,
             "base_sha": git(repo, "rev-parse", "HEAD"),
@@ -241,6 +246,7 @@ class TestFlowctlRunEnforcement:
                            "--json", env_mode_file=mf), state
 
     def test_shadow_run_allowed_after_deny_prepare(self, tmp_path):
+        """TC-FLW-001: трассировка кейса (test-model/approved/add-deterministic-flow/)."""
         r, state = self._cycle(tmp_path, mode="shadow")
         assert r.returncode == 0
         data = json.loads(r.stdout)
@@ -250,6 +256,7 @@ class TestFlowctlRunEnforcement:
             == "running"
 
     def test_enforcing_run_blocked_on_deny(self, tmp_path):
+        """TC-FLW-001: трассировка кейса (test-model/approved/add-deterministic-flow/)."""
         r, _ = self._cycle(tmp_path, mode="enforcing")
         assert r.returncode == 1  # DENY-код причины
         data = json.loads(r.stdout)
@@ -259,7 +266,7 @@ class TestFlowctlRunEnforcement:
         assert data["decision_status"] == "DENY"
 
     def test_enforcing_run_blocked_on_unknown(self, tmp_path):
-        """UNKNOWN-решение (requirements.md без статуса — критерий не
+        """TC-FLW-001: UNKNOWN-решение (requirements.md без статуса — критерий не
         проверяем): shadow — run работает, enforcing — отказ UNKNOWN."""
         repo = make_repo(tmp_path, req="# ТЗ\n\nнет статуса тут\n")
         reg = make_registry(tmp_path)
@@ -282,7 +289,7 @@ class TestFlowctlRunEnforcement:
         assert d2["reason"] == "UNKNOWN"
 
     def test_mode_switch_live_changes_run_behavior(self, tmp_path):
-        """Тот же run: enforcing отказывает, shadow (файл удален) — работает."""
+        """TC-FLW-001: Тот же run: enforcing отказывает, shadow (файл удален) — работает."""
         r, state = self._cycle(tmp_path, mode="enforcing")
         assert r.returncode == 1
         reg = json.loads(state.read_text(encoding="utf-8"))["runs"][
@@ -299,7 +306,7 @@ class TestFlowctlRunEnforcement:
         assert json.loads(r2.stdout)["started"] is True
 
     def test_enforcing_run_allowed_after_allow_prepare(self, tmp_path):
-        """Enforcing не блокирует валидный цикл: ALLOW-prepare → run ок."""
+        """TC-FLW-001: Enforcing не блокирует валидный цикл: ALLOW-prepare → run ок."""
         repo = make_repo(tmp_path)
         reg = make_registry(tmp_path)
         state = tmp_path / "state" / "flowctl_state.json"
@@ -319,7 +326,7 @@ class TestFlowctlRunEnforcement:
 
 class TestFlowctlPrepareEnforcement:
     def test_enforcing_deny_prepare_refused_no_side_effects(self, tmp_path):
-        """Enforcing: DENY запрещает подготовку (reservation/worktree/goal
+        """TC-FLW-001: Enforcing: DENY запрещает подготовку (reservation/worktree/goal
         не создаются); запись цикла с decision — источник blocks_on для run."""
         repo = make_repo_deny(tmp_path)
         reg = make_registry(tmp_path)
@@ -341,7 +348,7 @@ class TestFlowctlPrepareEnforcement:
         assert rec["decision"]["status"] == "DENY"
 
     def test_shadow_deny_prepare_state_written(self, tmp_path):
-        """Shadow: прежний отказ prepare (exit 1, без reservation), но
+        """TC-FLW-001: Shadow: прежний отказ prepare (exit 1, без reservation), но
         решение сохранено в state-записи — run при включении enforcing
         сможет его заблокировать (blocks_on)."""
         repo = make_repo_deny(tmp_path)
@@ -359,6 +366,7 @@ class TestFlowctlPrepareEnforcement:
         assert rec["decision"]["status"] == "DENY"
 
     def test_enforcing_unknown_prepare_refused(self, tmp_path):
+        """TC-FLW-001: трассировка кейса (test-model/approved/add-deterministic-flow/)."""
         repo = make_repo(tmp_path, req="# ТЗ\n\nнет статуса тут\n")
         reg = make_registry(tmp_path)
         state = tmp_path / "state" / "flowctl_state.json"
@@ -376,6 +384,7 @@ class TestFlowctlPrepareEnforcement:
 
 class TestGateRunnerEnforcement:
     def test_enforcing_fail_overall_exit_1(self, tmp_path, monkeypatch):
+        """TC-FLW-001: трассировка кейса (test-model/approved/add-deterministic-flow/)."""
         monkeypatch.setenv("FLOW_MODE_FILE", str(set_mode_file(
             tmp_path / "m.json", "enforcing")))
         report, code = gr.run_gates(
@@ -386,7 +395,7 @@ class TestGateRunnerEnforcement:
         assert code == 1
 
     def test_enforcing_skip_overall_exit_1(self, tmp_path, monkeypatch):
-        """Enforcing закрывает m11: SKIPPED-отчет больше не «зеленый» exit 0."""
+        """TC-FLW-001: Enforcing закрывает m11: SKIPPED-отчет больше не «зеленый» exit 0."""
         monkeypatch.setenv("FLOW_MODE_FILE", str(set_mode_file(
             tmp_path / "m.json", "enforcing")))
         repo = make_repo(tmp_path)
@@ -397,6 +406,7 @@ class TestGateRunnerEnforcement:
         assert code == 1
 
     def test_enforcing_error_overall_exit_2(self, tmp_path, monkeypatch):
+        """TC-FLW-001: трассировка кейса (test-model/approved/add-deterministic-flow/)."""
         monkeypatch.setenv("FLOW_MODE_FILE", str(set_mode_file(
             tmp_path / "m.json", "enforcing")))
         report, code = gr.run_gates(
@@ -406,6 +416,7 @@ class TestGateRunnerEnforcement:
         assert code == 2
 
     def test_enforcing_pass_exit_0(self, tmp_path, monkeypatch):
+        """TC-FLW-001: трассировка кейса (test-model/approved/add-deterministic-flow/)."""
         monkeypatch.setenv("FLOW_MODE_FILE", str(set_mode_file(
             tmp_path / "m.json", "enforcing")))
         report, code = gr.run_gates(
@@ -416,7 +427,7 @@ class TestGateRunnerEnforcement:
         assert code == 0
 
     def test_shadow_fail_overall_exit_1_unchanged(self, tmp_path, monkeypatch):
-        """Shadow: прежняя семантика — FAIL остался exit 1 (не 0)."""
+        """TC-FLW-001: Shadow: прежняя семантика — FAIL остался exit 1 (не 0)."""
         monkeypatch.setenv("FLOW_MODE_FILE", str(set_mode_file(
             tmp_path / "m.json", "shadow")))
         report, code = gr.run_gates(
@@ -427,7 +438,7 @@ class TestGateRunnerEnforcement:
         assert code == 1
 
     def test_status_enforcing_skip_exit_1(self, tmp_path, monkeypatch):
-        """`gate_runner.py status` при enforcing на SKIPPED-отчете: exit 1."""
+        """TC-FLW-001: `gate_runner.py status` при enforcing на SKIPPED-отчете: exit 1."""
         monkeypatch.setenv("FLOW_MODE_FILE", str(set_mode_file(
             tmp_path / "m.json", "enforcing")))
         repo = make_repo(tmp_path)
@@ -442,13 +453,14 @@ class TestGateRunnerEnforcement:
 
 class TestSessionCheckReserve:
     def test_reserve_strict_in_both_modes(self, tmp_path, monkeypatch):
-        """Резервация всегда строгая: конфликт зон — отказ и в shadow."""
+        """TC-FLW-001: Резервация всегда строгая: конфликт зон — отказ и в shadow."""
         mf = set_mode_file(tmp_path / "m.json", "shadow")
         repo = make_repo(tmp_path)
         reg = make_registry(tmp_path)
         base = ["reserve", "--registry", str(reg), "--repo", str(repo),
                 "--role", "dev", "--project", "proj", "--owner-pm",
-                "pm-main"]
+                "pm-main", "--policy-version",
+                __import__("role_zone_policy").policy_version()]
         r1 = session_check_cmd(*base, "--delegation-id", "deleg-a",
                                "--path", "src/**", "--json",
                                env_mode_file=mf)
@@ -460,6 +472,7 @@ class TestSessionCheckReserve:
         assert json.loads(r2.stdout)["reason"] == "ZONE_CONFLICT"
 
     def test_reserve_output_contains_mode(self, tmp_path, monkeypatch):
+        """TC-FLW-001: трассировка кейса (test-model/approved/add-deterministic-flow/)."""
         mf = set_mode_file(tmp_path / "m.json", "enforcing")
         repo = make_repo(tmp_path)
         reg = make_registry(tmp_path)
@@ -467,12 +480,15 @@ class TestSessionCheckReserve:
             "reserve", "--registry", str(reg), "--repo", str(repo),
             "--delegation-id", "deleg-a", "--role", "dev",
             "--project", "proj", "--owner-pm", "pm-main",
+            "--policy-version",
+            __import__("role_zone_policy").policy_version(),
             "--path", "src/**", "--json", env_mode_file=mf)
         assert r.returncode == 0
         data = json.loads(r.stdout)
         assert data["mode"] == "enforcing"
 
     def test_check_output_contains_mode(self, tmp_path, monkeypatch):
+        """TC-FLW-001: трассировка кейса (test-model/approved/add-deterministic-flow/)."""
         mf = set_mode_file(tmp_path / "m.json", "enforcing")
         repo = make_repo(tmp_path)
         reg = make_registry(tmp_path)
@@ -480,6 +496,8 @@ class TestSessionCheckReserve:
             "reserve", "--registry", str(reg), "--repo", str(repo),
             "--delegation-id", "deleg-a", "--role", "dev",
             "--project", "proj", "--owner-pm", "pm-main",
+            "--policy-version",
+            __import__("role_zone_policy").policy_version(),
             "--path", "src/**", "--json", env_mode_file=mf)
         r = session_check_cmd(
             "check", "--registry", str(reg), "--repo", str(repo),

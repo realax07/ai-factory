@@ -97,6 +97,8 @@ def req(**kw) -> dict:
         "project": "proj",
         "owner_pm": "main-session",
         "paths": kw.pop("paths", ["src/**"]),
+        "policy_version": kw.pop(
+            "policy_version", __import__("role_zone_policy").policy_version()),
     }
     base.update(kw)
     return base
@@ -268,7 +270,9 @@ import session_check as sc
 def _req(did):
     return {{"repo": {str(repo)!r}, "delegation_id": did, "role": "dev",
             "project": "proj", "owner_pm": "main-session",
-            "paths": ["src/**"]}}
+            "paths": ["src/**"],
+            "policy_version": __import__(
+                "role_zone_policy").policy_version()}}
 r = sc.reserve(_req(%r), {str(reg)!r})
 print("WIN" if r["allowed"] else "LOSE")
 """
@@ -353,7 +357,9 @@ class TestLifecycle:
         reg = make_registry(tmp_path)
         base = [sys.executable, str(SCRIPTS / "session_check.py"), "reserve",
                 "--registry", str(reg), "--repo", str(repo), "--role", "dev",
-                "--project", "proj", "--owner-pm", "main-session"]
+                "--project", "proj", "--owner-pm", "main-session",
+                "--policy-version",
+                __import__("role_zone_policy").policy_version()]
         ok = subprocess.run(base + ["--delegation-id", "d1", "--path",
                                     "src/**"], capture_output=True, text=True)
         assert ok.returncode == 0

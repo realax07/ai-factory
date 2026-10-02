@@ -20,13 +20,17 @@ failed → closed. Смена статуса несет evidence и причин
 соответствует вложенным путям, '*' — внутри одного сегмента. Symlink,
 уводящий измененный путь за пределы repo/разрешенной зоны — отказ. Пересечение
 зон активных сессий того же repo → ZONE_CONFLICT: ровно одна сессия владеет
-путем.
+путем. P0.3: резервация требует policy_version — редакцию политики зон роли
+(ROLE_ZONE_POLICY; сужение выполняет flowctl prepare до резервации); версия
+хранится в записи и попадает в verdict finish (ZONE_POLICY_MISMATCH при
+расхождении редакций).
 
 Usage:
     python3 scripts/session_check.py reserve --registry PATH --repo PATH \
         --delegation-id ID --role ROLE --project ID --owner-pm PM \
         --path 'src/**' [--path ...] [--worktree PATH] [--branch NAME]
-        [--base-sha SHA] [--snapshot-digest SHA] [--json]
+        [--base-sha SHA] [--snapshot-digest SHA] [--policy-version V] [--pid N]
+        [--json]
     python3 scripts/session_check.py check --registry PATH --repo PATH \
         --delegation-id ID [--json]
     python3 scripts/session_check.py reconcile --registry PATH [--repo PATH] \
@@ -439,6 +443,14 @@ def pid_alive(pid) -> bool:
         return True  # процесс чужого пользователя существует
 
 
+# ------------------------------------------------------------- резервация
+# P0.3 (пересмотр плана Заказчика): резервация несет policy_version —
+# редакцию политики зон роли (ROLE_ZONE_POLICY, agents/README.md), которой
+# была сужена зона. Без policy_version резервация отклоняется (MISSING_INPUT);
+# идемпотентный повтор с ДРУГОЙ версией политики — DUPLICATE_PAYLOAD.
+# Сужение выполняет вызывающий (flowctl prepare): session_check хранит и
+# возвращает версию как есть.
+
 # --------------------------------------------------------------- reserve
 
 
@@ -449,6 +461,11 @@ def _validate_request(req: dict) -> list[str]:
             problems.append(f"{MISSING_INPUT}: отсутствует {field}")
     if not req.get("paths"):
         problems.append(f"{MISSING_INPUT}: пустая зона записи (paths)")
+    if not req.get("policy_version"):
+        problems.append(
+            f"{MISSING_INPUT}: отсутствует policy_version (P0.3: резервация "
+            "фиксирует редакцию политики зон роли — сузь зону через "
+            "flowctl prepare или передай role_zone_policy.policy_version())")
     return problems
 
 
@@ -490,12 +507,14 @@ def reserve(req: dict, registry_path: Path | str) -> dict:
                 "role": req["role"], "project": req["project"],
                 "owner_pm": req["owner_pm"], "repo": req.get("repo"),
                 "paths": sorted(zone_patterns),
+                "policy_version": req.get("policy_version"),
                 "worktree": req.get("worktree"), "branch": req.get("branch"),
             }
             payload_old = {
                 "role": mine.get("role"), "project": mine.get("project"),
                 "owner_pm": mine.get("owner_pm"), "repo": mine.get("repo"),
                 "paths": sorted(mine.get("zones") or mine.get("paths") or []),
+                "policy_version": mine.get("policy_version"),
                 "worktree": mine.get("worktree"), "branch": mine.get("branch"),
             }
             if payload_new == payload_old:
@@ -543,6 +562,7 @@ def reserve(req: dict, registry_path: Path | str) -> dict:
             "status": "reserved",
             "repo": req.get("repo"),
             "zones": zone_patterns,
+            "policy_version": req.get("policy_version"),
             "worktree": req.get("worktree"),
             "branch": req.get("branch"),
             "base_sha": req.get("base_sha"),
@@ -863,6 +883,10 @@ def main(argv: list[str] | None = None) -> int:
     p_res.add_argument("--base-sha", default=None)
     p_res.add_argument("--snapshot-digest", default=None)
     p_res.add_argument("--pid", type=int, default=None)
+    p_res.add_argument("--policy-version", default=None,
+                       help="версия политики зон роли (P0.3: обязательна — "
+                            "резервация фиксирует редакцию таблицы зон; "
+                            "значение: role_zone_policy.policy_version())")
     p_res.add_argument("--json", action="store_true", dest="as_json")
 
     p_chk = sub.add_parser("check", help="post-check границы сессии")
@@ -897,11 +921,13 @@ def main(argv: list[str] | None = None) -> int:
             {"repo": args.repo, "delegation_id": args.delegation_id,
              "role": args.role, "project": args.project,
              "owner_pm": args.owner_pm, "paths": args.paths,
+             "policy_version": args.policy_version,
              "worktree": args.worktree, "branch": args.branch,
              "base_sha": args.base_sha, "snapshot_digest": args.snapshot_digest,
              "pid": args.pid},
             Path(args.registry),
         )
+        result.setdefault("policy_version", args.policy_version)
         _emit(result, args.as_json)
         return 0 if result["allowed"] else 1
 
