@@ -32,8 +32,10 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import subprocess
 import sys
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
 
@@ -41,6 +43,18 @@ import flow_check
 import flow_state
 
 DECISION_SCHEMA = "flow-decision/1"
+
+# P0.4 (пересмотр плана Заказчика): непустая строка approval_ref больше не
+# достаточна — строка обязана быть decision_id записи журнала решений
+# decisions/<YYYY-MM-DD>-<slug>.md с машиночитаемым блоком decision-record/1.
+# Журнал решений НЕ является защищенной подписью и НЕ независимым одобрением
+# личности Заказчика: в отчетах — «решение зафиксировано», не «личность
+# подтверждена» (контракт §10; спека «Честная граница enforcement»).
+DECISION_RECORD_SCHEMA = "decision-record/1"
+DECISIONS_DIR = "decisions"
+# decision_id = имя файла без .md: YYYY-MM-DD-slug (kebab/lower). Path traversal
+# исключен разбором по этому шаблону — никаких «..» и разделителей путей.
+DECISION_ID_RE = re.compile(r"^\d{4}-\d{2}-\d{2}-[a-z0-9][a-z0-9._-]*$")
 
 ALLOW = "ALLOW"
 DENY = "DENY"
@@ -376,17 +390,221 @@ def _deps_findings(action: ActionRequest, ctx: dict) -> list:
     return out
 
 
-def _approval_finding(action: ActionRequest, scope: dict, stage_name: str) -> Finding | None:
-    """Этапные ворота Заказчика (ТЗ 03 п.7; контракт §10; design D5).
+# ------------------------------------------------- журнал решений (P0.4)
 
-    Срез 1: строковый approval_ref (ссылка на фиксацию в PLAN/BACKLOG/чат-логе)
-    принимается как есть; строгая верификация формата — follow-up. Словарь
-    проверяется по customer_decision v1: grants и привязка к scope/фазе.
 
-    Упрощение среза 1 (review-001 R7): «фаза» привязывается к номеру флоу
-    (bindings: phase == scope.flow). Фазы ВНУТРИ процесса одного флоу (например
-    фаза А/Б релиза одного change) не различаются — расширение scope_ref
-    (фаза ≠ flow) — follow-up; зафиксировано в design D5.
+def parse_decision_record(path: Path, decision_id: str) -> tuple[dict | None,
+                                                                 str | None]:
+    """Разбор записи журнала решений decisions/<id>.md (P0.4).
+
+    Машиночитаемый блок — ```decision-record fenced JSON (schema
+    decision-record/1) в конце человекочитаемого файла. Возвращает
+    (record|None, err|None): побитая/неполная запись — (None, причина).
+    """
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except OSError as exc:
+        return None, f"запись нечитаема: {exc}"
+    m = re.search(r"```decision-record\s*(\{.*?\})\s*```", text, re.S)
+    if not m:
+        return None, ("нет машиночитаемого блока ```decision-record "
+                      "(формат: decisions/<YYYY-MM-DD>-<slug>.md, §10)")
+    try:
+        data = json.loads(m.group(1))
+    except json.JSONDecodeError as exc:
+        return None, f"блок decision-record — битый JSON: {exc}"
+    if not isinstance(data, dict):
+        return None, "блок decision-record — не словарь"
+    if str(data.get("schema_version", "")) != DECISION_RECORD_SCHEMA:
+        return None, (f"schema_version={data.get('schema_version')!r} не "
+                      f"{DECISION_RECORD_SCHEMA} — запись не распознана "
+                      f"(не интерпретируется «на глаз», контракт §2)")
+    if str(data.get("decision_id", "")) != decision_id:
+        return None, (f"decision_id записи ({data.get('decision_id')!r}) не "
+                      f"совпадает с запрошенным ({decision_id!r})")
+    required = ("decision_id", "date", "scope", "action", "commit", "source")
+    missing = [k for k in required if not data.get(k)]
+    if missing:
+        return None, f"запись неполна — нет полей: {', '.join(missing)}"
+    return data, None
+
+
+def load_decision_record(repo: Path, decision_id: str) -> tuple[dict | None,
+                                                                str | None]:
+    """Ищет запись по decision_id в decisions/ (repo/decisions/<id>.md).
+
+    decision_id обязан соответствовать шаблону YYYY-MM-DD-slug (path
+    traversal исключен разбором). Возвращает (record|None, err|None):
+    нет файла — (None, None) → «нет записи», побитая — (None, причина).
+    """
+    did = str(decision_id or "").strip()
+    if not DECISION_ID_RE.match(did):
+        return None, (f"decision_id {did!r} не соответствует формату "
+                      f"YYYY-MM-DD-slug (файл decisions/{did}.md; §10)")
+    path = Path(repo) / DECISIONS_DIR / f"{did}.md"
+    if not path.is_file():
+        return None, None
+    return parse_decision_record(path, did)
+
+
+def _git(repo: Path, *args: str) -> str:
+    proc = subprocess.run(
+        ["git", "-C", str(repo), *args], capture_output=True, text=True,
+    )
+    return (proc.stdout or "").strip()
+
+
+def _decision_sha_is_fresh(record: dict, repo: Path) -> str | None:
+    """Свежесть SHA записи (P0.4): SHA записи — предок HEAD или равен ему.
+
+    Решение не может быть принято ПОСЛЕ изменения, ломающего его
+    применимость: если commit записи не в истории HEAD — решение «из
+    будущего» относительно текущей версии работы. Аналог releases-журнала
+    (решение В1): допуск HEAD ИЛИ родитель коммита записи — журнал
+    фиксирует решение после факта. Выбранный принцип: «SHA в истории»,
+    НЕ TTL ≤24ч (fact TTL — для наблюдаемых фактов уровня 2; решение —
+    норма уровня 1). Возвращает причину отказа или None.
+    """
+    sha = str(record.get("commit") or "").strip().lower()
+    if not re.fullmatch(r"[0-9a-f]{7,64}", sha):
+        return (f"commit записи ({sha!r}) не похож на SHA — привязка решения "
+                f"к версии работы отсутствует")
+    head = _git(Path(repo), "rev-parse", "HEAD").lower()
+    if not head:
+        return "HEAD репо нечитаем — сверка SHA решения невозможна"
+    if head.startswith(sha):
+        return None
+    # Предок HEAD? (git merge-base --is-ancestor, exit 0 = да).
+    proc = subprocess.run(
+        ["git", "-C", str(repo), "merge-base", "--is-ancestor", sha, head],
+        capture_output=True, text=True,
+    )
+    if proc.returncode == 0:
+        return None
+    return (f"SHA решения {sha[:12]}… не в истории HEAD {head[:12]}… — решение "
+            f"принято после изменения, применимость его к текущей работе не "
+            f"подтверждается")
+
+
+def _decision_log_finding(ref: str, action: ActionRequest, scope: dict,
+                          stage_name: str, repo: Path,
+                          ctx: dict | None = None) -> Finding | None:
+    """Строковый approval_ref = decision_id записи журнала решений (P0.4).
+
+    Запись найдена и валидна (action/scope/SHA/expiration соответствуют
+    запросу) → ворота исполнены («решение зафиксировано»). Нет записи,
+    чужой action/scope, истекший expiration, строка не из журнала →
+    HUMAN_APPROVAL_REQUIRED с конкретикой.
+    """
+    ctx_evidence = f"{DECISIONS_DIR}/{ref}.md"
+    record, err = load_decision_record(repo, ref)
+    if err:
+        return Finding(
+            HUMAN_APPROVAL_REQUIRED,
+            f"approval_ref {ref!r}: запись журнала решений не проходит "
+            f"проверку: {err} (формат: decisions/<YYYY-MM-DD>-<slug>.md, "
+            f"машиночитаемый блок decision-record/1; контракт §10; P0.4)")
+    if record is None:
+        return Finding(
+            HUMAN_APPROVAL_REQUIRED,
+            f"approval_ref {ref!r}: записи нет в журнале решений "
+            f"({ctx_evidence} не найден). Непустая строка без записи журнала "
+            f"решением не является (P0.4); формат: decisions/"
+            f"<YYYY-MM-DD>-<slug>.md, decision_id в approval_ref; контракт §10")
+
+    # 1) action записи покрывает запрошенное действие.
+    granted = record.get("action")
+    if isinstance(granted, list):
+        covered = action.requested_action in granted
+    else:
+        covered = str(granted) == action.requested_action
+    if not covered:
+        return Finding(
+            HUMAN_APPROVAL_REQUIRED,
+            f"решение {ref} покрывает действие «{granted}», а не "
+            f"«{action.requested_action}» — разрешение чужого действия не "
+            f"переносится (P0.4; контракт §10; запись: {ctx_evidence})")
+
+    # 2) scope записи покрывает scope запроса (заполненные поля сверяются).
+    rec_scope = record.get("scope")
+    if not isinstance(rec_scope, dict):
+        return Finding(
+            HUMAN_APPROVAL_REQUIRED,
+            f"решение {ref}: scope записи ({rec_scope!r}) не словарь — "
+            f"привязка к scope отсутствует (P0.4; контракт §10)")
+    scope_bindings = (
+        ("project", scope.get("project")),
+        ("change_id", scope.get("change")),
+        ("phase", scope.get("flow")),
+    )
+    for key, expected in scope_bindings:
+        declared = rec_scope.get(key)
+        if declared is not None and str(declared) != str(expected):
+            return Finding(
+                HUMAN_APPROVAL_REQUIRED,
+                f"решение {ref} относится к другому scope ({key}={declared}, "
+                f"действие требует {expected}) — разрешение не переносится "
+                f"(P0.4; спека «Этапные ворота Заказчика»; запись: "
+                f"{ctx_evidence})")
+
+    # 3) Свежесть: SHA записи — предок HEAD или равен ему.
+    stale = _decision_sha_is_fresh(record, repo)
+    if stale:
+        return Finding(
+            STALE_EVIDENCE,
+            f"решение {ref}: {stale} (P0.4; запись: {ctx_evidence})")
+
+    # 4) expiration не истек (если задан).
+    expiration = str(record.get("expiration") or "").strip()
+    if expiration:
+        try:
+            exp_dt = datetime.fromisoformat(expiration.replace("Z", "+00:00"))
+            if exp_dt.tzinfo is None:
+                exp_dt = exp_dt.replace(tzinfo=timezone.utc)
+        except ValueError:
+            return Finding(
+                AMBIGUOUS_STATE,
+                f"решение {ref}: expiration {expiration!r} не разбирается "
+                f"(ожидается ISO-дата) — проверка истечения невозможна, "
+                f"UNKNOWN честнее разрешения (P0.4; запись: {ctx_evidence})",
+                True)
+        if datetime.now(timezone.utc) > exp_dt:
+            return Finding(
+                HUMAN_APPROVAL_REQUIRED,
+                f"решение {ref} истекло (expiration={expiration}) — требуется "
+                f"новое решение (P0.4; запись: {ctx_evidence})")
+    if ctx is not None:
+        # Валидная запись — evidence уровня 2 (файл журнала в репо).
+        ctx.setdefault("evidence", set()).add(ctx_evidence)
+    return None
+
+
+def _approval_finding(action: ActionRequest, scope: dict, stage_name: str,
+                      repo: Path | None = None,
+                      ctx: dict | None = None) -> Finding | None:
+    """Этапные ворота Заказчика (ТЗ 03 п.7; контракт §10; design D5; P0.4).
+
+    P0.4 (пересмотр плана Заказчика): непустая строка approval_ref больше НЕ
+    принимается «как есть». Строка обязана быть decision_id записи журнала
+    решений decisions/<YYYY-MM-DD>-<slug>.md с машиночитаемым блоком
+    decision-record/1. Запись проверяется на соответствие запросу:
+      - action записи покрывает requested_action;
+      - scope записи (project/change_id/phase) покрывает scope запроса
+        (заполненные поля записи сверяются; расхождение заполненного поля
+        — отказ, «чужое» решение не переносится);
+      - SHA записи (commit) — предок текущего HEAD или равен ему: решение не
+        могло быть принято ПОСЛЕ изменения, ломающего его применимость.
+        Свежесть — «SHA в истории» (аналогично releases-журналу: допускается
+        HEAD и родитель коммита записи), а не TTL ≤24ч: решение — уровень 1
+        (норма), а не наблюдаемый факт уровня 2;
+      - expiration, если задан, не истек.
+    Отказы (нет записи, чужой action/scope, истекший, строка не из журнала) —
+    HUMAN_APPROVAL_REQUIRED с указанием формата (decisions/<...>.md, §10).
+    Журнал решений — НЕ защищенная подпись и НЕ независимое одобрение
+    личности: ворота исполнены = «решение зафиксировано».
+
+    Словарь customer_decision v1 сохраняется для обратной совместимости
+    (программные вызовы; D5): проверка grants/scope — как раньше.
     """
     ref = action.approval_ref
     if not ref:
@@ -394,10 +612,20 @@ def _approval_finding(action: ActionRequest, scope: dict, stage_name: str) -> Fi
             HUMAN_APPROVAL_REQUIRED,
             f"действие «{stage_name}» требует зафиксированного решения Заказчика "
             f"(дословная фиксация; «ПМ считает согласованным» решением не является; "
-            f"формат: contracts/flow_control_contract.md §10; AGENTS.md «Этапные "
+            f"формат: запись в журнале решений decisions/<YYYY-MM-DD>-<slug>.md, "
+            f"decision_id в approval_ref; контракт §10; AGENTS.md «Этапные "
             f"ворота Заказчика»)")
     if isinstance(ref, str):
-        return None
+        if repo is None:
+            # Журнал не передан (чистый вызов без контекста репо) — проверить
+            # запись невозможно: честный отказ, не молчаливое разрешение.
+            return Finding(
+                HUMAN_APPROVAL_REQUIRED,
+                f"approval_ref — строка, но журнал решений недоступен (нет "
+                f"репозитория): строковый ref обязан быть decision_id записи "
+                f"decisions/<YYYY-MM-DD>-<slug>.md (контракт §10; P0.4)")
+        return _decision_log_finding(ref, action, scope, stage_name, repo,
+                                     ctx=ctx)
     if isinstance(ref, dict):
         if not ref.get("decision_id") or not isinstance(ref.get("grants"), list):
             return Finding(
@@ -1452,7 +1680,8 @@ def check_action(snapshot: dict, action: ActionRequest,
                  if f.get("key") == "release.approval"), None)
             waived = bool(rel_fact and rel_fact.get("status") == "ready")
         if not waived:
-            af = _approval_finding(action, scope, action.requested_action)
+            af = _approval_finding(action, scope, action.requested_action,
+                                   repo=scope.get("repo"), ctx=ctx)
             if af is not None:
                 findings.append(af)
     findings.extend(stage.check(snapshot, action, ctx, flow))

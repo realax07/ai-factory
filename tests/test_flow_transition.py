@@ -367,9 +367,11 @@ class TestFlow1:
         d2 = ft.check_action(
             s2, act(requested_action="release", actor_role="pm",
                     approval_ref="чат-лог: «погнали» 2026-10-02"))
+        # P0.4: строковый ref не из журнала решений решением не считается →
+        # HUMAN_APPROVAL_REQUIRED остается вместе с INVALID_GATE.
         assert d2.status == "DENY"
         assert has_code(d2, ft.INVALID_GATE)
-        assert not has_code(d2, ft.HUMAN_APPROVAL_REQUIRED)
+        assert has_code(d2, ft.HUMAN_APPROVAL_REQUIRED)
 
 
 # --------------------------------------- TC-FTR-005: роли (спека «Чужая роль»)
@@ -419,14 +421,49 @@ class TestCustomerGates:
         assert d.status == "DENY"
         assert has_code(d, ft.HUMAN_APPROVAL_REQUIRED)
 
-    def test_create_change_with_string_ref(self, tmp_path):
+    def test_create_change_with_decision_log_record(self, tmp_path):
+        """P0.4: строковый approval_ref = decision_id валидной записи журнала
+        решений decisions/<YYYY-MM-DD>-<slug>.md → ворота исполнены
+        («решение зафиксировано»)."""
+        repo = make_repo(tmp_path)
+        reg = make_registry(tmp_path)
+        sha = git(repo, "rev-parse", "HEAD")  # SHA на момент решения
+        write(repo, "decisions/2026-10-02-start-add-widget.md",
+              "# Решение: старт add-widget\n\n"
+              "```decision-record\n"
+              "{\n"
+              "  \"schema_version\": \"decision-record/1\",\n"
+              "  \"decision_id\": \"2026-10-02-start-add-widget\",\n"
+              "  \"date\": \"2026-10-02\",\n"
+              "  \"scope\": {\"project\": \"proj\", \"change_id\": \"add-widget\","
+              " \"phase\": 1},\n"
+              "  \"action\": \"create_change\",\n"
+              f"  \"commit\": \"{sha}\",\n"
+              "  \"source\": \"чат-лог: «погнали» 2026-10-02\"\n"
+              "}\n"
+              "```\n")
+        commit_all(repo, "decision log entry")
+        s = snapshot_for(repo, reg)
+        d = ft.check_action(s, act(requested_action="create_change",
+                                   actor_role="sa",
+                                   approval_ref="2026-10-02-start-add-widget"))
+        assert d.status == "ALLOW", d.details
+        assert any("decisions/2026-10-02-start-add-widget.md" in x
+                   for x in d.evidence_refs)
+
+    def test_create_change_with_string_ref_not_in_log(self, tmp_path):
+        """P0.4: непустая строка approval_ref, НЕ являющаяся записью журнала,
+        больше не принимается (сужение D5 — цель P0.4): HUMAN_APPROVAL_REQUIRED
+        с подсказкой формата."""
         repo = make_repo(tmp_path)
         reg = make_registry(tmp_path)
         s = snapshot_for(repo, reg)
         d = ft.check_action(s, act(requested_action="create_change",
                                    actor_role="sa",
                                    approval_ref="PLAN.md: «Погнали» 2026-10-02"))
-        assert d.status == "ALLOW"
+        assert d.status == "DENY"
+        assert has_code(d, ft.HUMAN_APPROVAL_REQUIRED)
+        assert any("decisions/" in x for x in d.details)
 
     def test_decision_other_phase_not_transferred(self, tmp_path):
         """Спека: Решение другой фазы не переносится."""

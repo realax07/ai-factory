@@ -26,6 +26,7 @@
 | Приемка | diff ⊆ зона (renames/symlink), branch, worktree | session_check check | OUT_OF_ZONE |
 | Ворота | openspec strict + flow_check + pm_bounds + pr_validate (digest, timeout) | gate_runner run | FAIL/ERROR/SKIPPED(≠PASS) |
 | Ревью | sidecar: SHA/diff_digest/автор/ревьюер, независимость | gate_runner record-review + check | STALE_EVIDENCE, WRONG_ROLE |
+| Этапные ворота | approval_ref = decision_id записи `decisions/<YYYY-MM-DD>-<slug>.md` (action/scope/SHA/expiration сверяются) | flow_transition check + gate_runner record-decision | HUMAN_APPROVAL_REQUIRED, STALE_EVIDENCE |
 
 ## Флоу 1 — полный (фича)
 
@@ -100,4 +101,31 @@ incident_ref → emergency_stabilize (dev/pm, минимальный цикл)
 | `flowctl.py` | оркестратор: prepare/run/finish/status/reconcile |
 | `flow_mode.py` | shadow/enforcing |
 
-Контракт: `contracts/flow_control_contract.md`. Спека: `openspec/specs/deterministic-flow/` (после слияния). Прогон всего: `python3 -m pytest tests/` (348 green).
+Контракт: `contracts/flow_control_contract.md`. Спека: `openspec/specs/deterministic-flow/` (после слияния). Прогон всего: `python3 -m pytest tests/` (446 green).
+
+## Журнал решений Заказчика (P0.4)
+
+Этапные ворота (`approve_requirements`, `create_change`, `release`, …) принимают `--approval-ref` только как **decision_id** записи журнала решений:
+
+```
+# запись (append-only, не перезаписывается):
+python3 scripts/gate_runner.py record-decision --repo . \
+    --decision-id 2026-10-02-start-add-widget \
+    --project proj --change add-widget --phase 1 \
+    --action create_change --commit auto \
+    --source "чат-лог: «погнали»" --quote "погнали"
+
+# проверка действия по записи:
+python3 scripts/flow_transition.py check --repo . --project proj --flow 1 \
+    --change add-widget --action create_change --role sa \
+    --approval-ref 2026-10-02-start-add-widget
+```
+
+Запись `decisions/<YYYY-MM-DD>-<slug>.md` несет машиночитаемый блок
+`decision-record/1`: decision_id, date, scope (project/change_id/phase),
+action, commit (SHA на момент решения), source (канал/дословная цитата),
+опционально expiration. Проверяется соответствие записи запросу: action,
+scope, SHA записи — предок HEAD или равен ему («SHA в истории», не TTL),
+expiration не истек. Непустая строка без записи журнала решением НЕ является.
+Журнал — НЕ защищенная подпись: «решение зафиксировано», не «личность
+подтверждена».

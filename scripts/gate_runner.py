@@ -57,6 +57,10 @@ Usage:
     python3 scripts/gate_runner.py github-protection --repo PATH
         [--github-repo OWNER/NAME] [--github-token-env ENV_NAME] [--branch main]
         [--report PATH] [--json]
+    python3 scripts/gate_runner.py record-decision --repo PATH
+        --decision-id YYYY-MM-DD-SLUG (--project ID | --change ID | --phase N
+        | --scope-json JSON) --action ACTION --commit SHA|--auto --source SRC
+        [--quote TEXT] [--expiration ISO] [--force] [--json]
 
 Exit codes (run/status): 0 — PASS без STALE; 1 — FAIL, SKIPPED-отчет
 («не все gates выполнены») или STALE (повтор обязателен); 2 — ERROR,
@@ -88,6 +92,13 @@ import flow_mode  # noqa: E402  (enforcing: overall!=PASS → exit 1)
 GATE_REPORT_SCHEMA = "gate-report/1"
 AUDIT_SCHEMA = "audit-jsonl/1"
 PROVENANCE_SCHEMA = "review-provenance/1"
+# P0.4 (пересмотр плана Заказчика): журнал решений Заказчика —
+# decisions/<YYYY-MM-DD>-<slug>.md с машиночитаемым блоком decision-record/1.
+# record-decision записывает запись; НЕ является защищенной подписью и НЕ
+# независимым одобрением личности: «решение зафиксировано», не «личность
+# подтверждена» (контракт §10).
+DECISION_RECORD_SCHEMA = "decision-record/1"
+DECISIONS_DIR = "decisions"
 ADAPTER_VERSION = "gate-runner/1"
 
 # Решение А (P0.1): машиночитаемый факт branch protection (честная граница
@@ -959,6 +970,152 @@ def _cmd_record_review(args) -> int:
     return 0
 
 
+# ------------------------------------------------------------ decision log (P0.4)
+
+
+def write_decision_record(
+    repo: Path, decision_id: str, scope: dict, action: str | list,
+    commit: str, source: str, quote: str | None = None,
+    expiration: str | None = None, decisions_dir: str | None = None,
+    exist_ok: bool = False,
+) -> tuple[Path, dict]:
+    """Запись решения Заказчика в журнал (P0.4): decisions/<decision_id>.md.
+
+    decision_id — YYYY-MM-DD-slug (например 2026-10-02-start-add-widget);
+    обязан соответствовать шаблону, по которому flow_transition ищет запись
+    (path traversal исключен разбором). Человекочитаемая часть + обязательный
+    машиночитаемый блок ```decision-record (schema decision-record/1):
+    decision_id, date, scope (project/change_id/phase), action (какое действие
+    разрешает), commit (SHA на момент решения), source (канал/дословная
+    цитата), expiration (опционально). Журнал в том же репо — НЕ независимое
+    одобрение личности Заказчика; в отчетах «решение зафиксировано».
+    Возвращает (путь, payload); существующая запись не перезаписывается
+    (append-only история, AGENTS.md п.7) без exist_ok=True.
+    """
+    import re as _re
+    did = str(decision_id or "").strip()
+    if not _re.match(r"^\d{4}-\d{2}-\d{2}-[a-z0-9][a-z0-9._-]*$", did):
+        raise ValueError(
+            f"decision_id {did!r} не соответствует формату YYYY-MM-DD-slug "
+            f"(пример: 2026-10-02-start-add-widget)")
+    if not isinstance(scope, dict) or not scope:
+        raise ValueError("scope обязателен (словарь: project/change_id/phase)")
+    if not action:
+        raise ValueError("action обязателен (какое действие разрешает решение)")
+    commit = str(commit or "").strip()
+    if not _re.fullmatch(r"[0-9a-fA-F]{7,64}", commit):
+        raise ValueError(
+            f"commit {commit!r} не похож на SHA — запись без привязки к "
+            f"версии работы не принимается (P0.4)")
+    if not source:
+        raise ValueError("source обязателен (канал/дословная цитата Заказчика)")
+    rec_scope = {k: scope[k] for k in ("project", "change_id", "phase")
+                 if scope.get(k) is not None}
+    date_part = did[:10]
+    payload = {
+        "schema_version": DECISION_RECORD_SCHEMA,
+        "decision_id": did,
+        "date": date_part,
+        "scope": rec_scope,
+        "action": action,
+        "commit": commit,
+        "source": source,
+    }
+    if expiration:
+        payload["expiration"] = str(expiration)
+    ddir = Path(decisions_dir) if decisions_dir else Path(repo) / DECISIONS_DIR
+    ddir.mkdir(parents=True, exist_ok=True)
+    path = ddir / f"{did}.md"
+    if path.exists() and not exist_ok:
+        raise ValueError(
+            f"запись уже существует: {path} — история решений append-only, "
+            f"перезапись запрещена (AGENTS.md п.7)")
+    quote_block = (
+        f"\n> Цитата: {quote}\n" if quote else ""
+    )
+    text = (
+        f"# Решение: {did}\n\n"
+        f"- Дата: {date_part}\n"
+        f"- Scope: {rec_scope}\n"
+        f"- Действие: {action}\n"
+        f"- Commit: {commit}\n"
+        f"- Источник: {source}\n"
+        f"{quote_block}"
+        f"\nЖурнал решения: «решение зафиксировано», не «личность "
+        f"подтверждена» — журнал в том же репо НЕ является независимым "
+        f"одобрением Заказчика (контракт §10; P0.4).\n\n"
+        f"```decision-record\n"
+        f"{json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True)}\n"
+        f"```\n"
+    )
+    path.write_text(text, encoding="utf-8")
+    return path, payload
+
+
+def _cmd_record_decision(args) -> int:
+    repo = Path(args.repo).resolve()
+    if not repo.is_dir():
+        print(f"GATE-RUNNER-ERROR: репозиторий не найден: {repo}",
+              file=sys.stderr)
+        return 2
+    scope: dict = {}
+    if args.scope_json:
+        try:
+            scope = json.loads(args.scope_json)
+        except json.JSONDecodeError as exc:
+            print(f"GATE-RUNNER-ERROR: --scope-json не разбирается: {exc}",
+                  file=sys.stderr)
+            return 2
+    else:
+        if args.project:
+            scope["project"] = args.project
+        if args.change:
+            scope["change_id"] = args.change
+        if args.phase is not None:
+            scope["phase"] = args.phase
+    if not scope:
+        print("GATE-RUNNER-ERROR: scope решения обязателен (--project/--change/"
+              "--phase или --scope-json)", file=sys.stderr)
+        return 2
+    # Без явного --commit решение не привязывается к версии работы — отказ,
+    # а не молчаливая запись (P0.4: привязка к SHA обязательна).
+    commit = args.commit
+    if not commit:
+        print("GATE-RUNNER-ERROR: --commit обязателен (SHA, к которому "
+              "относится решение; 'auto' — текущий HEAD)", file=sys.stderr)
+        return 2
+    if commit == "auto":
+        commit = git_head(repo) or ""
+        if not commit:
+            print("GATE-RUNNER-ERROR: HEAD репо нечитаем — --commit auto "
+                  "невозможен", file=sys.stderr)
+            return 2
+    try:
+        # action через запятую в CLI = список разрешенных действий.
+        action = args.action
+        if "," in action:
+            action = [a.strip() for a in action.split(",") if a.strip()]
+        path, payload = write_decision_record(
+            repo, args.decision_id, scope, action, commit,
+            args.source, quote=args.quote, expiration=args.expiration,
+            exist_ok=args.force,
+        )
+    except ValueError as exc:
+        print(f"GATE-RUNNER-ERROR: {exc}", file=sys.stderr)
+        return 2
+    if args.as_json:
+        print(json.dumps({"record_path": str(path),
+                          "record_digest": sha256_text(
+                              path.read_text(encoding="utf-8")),
+                          **payload},
+                         ensure_ascii=False, indent=2, sort_keys=True))
+    else:
+        print(f"gate_runner: решение зафиксировано: {path} "
+              f"(decision_id={args.decision_id}; «решение зафиксировано», "
+              f"не «личность подтверждена»)")
+    return 0
+
+
 def _cmd_diff_digest(args) -> int:
     repo = Path(args.repo).resolve()
     print(compute_diff_digest(repo, args.base, args.head))
@@ -1104,6 +1261,41 @@ def main(argv: list[str] | None = None) -> int:
                            ".flow-evidence/github-protection.json в репо)")
     p_gp.add_argument("--json", action="store_true", dest="as_json")
     p_gp.set_defaults(func=_cmd_github_protection)
+
+    p_rd = sub.add_parser(
+        "record-decision",
+        help="P0.4: записать решение Заказчика в журнал решений/"
+             "<YYYY-MM-DD>-<slug>.md (машиночитаемый блок decision-record/1)")
+    p_rd.add_argument("--repo", required=True,
+                      help="репозиторий, в чей decisions/ пишется запись")
+    p_rd.add_argument("--decision-id", dest="decision_id", required=True,
+                      help="ID записи = имя файла без .md, формат "
+                           "YYYY-MM-DD-slug (например 2026-10-02-start-x)")
+    p_rd.add_argument("--project", default=None, help="project scope решения")
+    p_rd.add_argument("--change", default=None, help="change_id scope решения")
+    p_rd.add_argument("--phase", type=int, default=None,
+                      help="flow (фаза) scope решения")
+    p_rd.add_argument("--scope-json", default=None,
+                      help="явный scope JSON (переопределяет --project/--change/"
+                           "--phase)")
+    p_rd.add_argument("--action", required=True,
+                      help="какое действие разрешает решение (например "
+                           "create_change; или список через запятую)")
+    p_rd.add_argument("--commit", required=True,
+                      help="SHA, к которому относится решение ('auto' — "
+                           "текущий HEAD); обязателен")
+    p_rd.add_argument("--source", required=True,
+                      help="где зафиксировано решение (канал: чат-лог, "
+                           "answers_roundN.md, PLAN.md)")
+    p_rd.add_argument("--quote", default=None,
+                      help="дословная цитата Заказчика")
+    p_rd.add_argument("--expiration", default=None,
+                      help="опциональная ISO-дата истечения решения")
+    p_rd.add_argument("--force", action="store_true",
+                      help="перезаписать существующую запись (по умолчанию "
+                           "запрещено: append-only)")
+    p_rd.add_argument("--json", action="store_true", dest="as_json")
+    p_rd.set_defaults(func=_cmd_record_decision)
 
     args = ap.parse_args(argv)
     return args.func(args)
