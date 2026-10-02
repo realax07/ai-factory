@@ -42,6 +42,30 @@ COPY_FILES = [
     ".github/workflows/flow.yml",
 ]
 
+# Детерминированный Flow Control (change add-deterministic-flow, J28):
+# исполняемое ядро + контракт + скилл — устанавливается вместе с базой.
+FLOW_CONTROL_FILES = [
+    "scripts/flow_state.py",
+    "scripts/flow_transition.py",
+    "scripts/session_check.py",
+    "scripts/gate_runner.py",
+    "scripts/flowctl.py",
+    "scripts/flow_mode.py",
+    "scripts/role_zone_policy.py",
+    "contracts/flow_control_contract.md",
+]
+
+# Скиллы-скелеты (копируются целиком как каталоги).
+SKILL_DIRS = [
+    "skills/factory-flow",
+]
+
+# Каталоги журналов решений и релизов (аудит-след Flow Control).
+FLOW_CONTROL_MKDIRS = [
+    "decisions",
+    "releases",
+]
+
 MKDIRS = [
     "openspec/specs",
     "openspec/changes/archive",
@@ -68,13 +92,13 @@ def main() -> int:
         return 2
 
     # 1. Каталоги
-    for d in MKDIRS:
+    for d in MKDIRS + FLOW_CONTROL_MKDIRS:
         (target / d).mkdir(parents=True, exist_ok=True)
-    print(f"  каталоги: {len(MKDIRS)} созданы/подтверждены")
+    print(f"  каталоги: {len(MKDIRS) + len(FLOW_CONTROL_MKDIRS)} созданы/подтверждены")
 
     # 2. Файлы конвейера
     copied, skipped = 0, 0
-    for rel in COPY_FILES:
+    for rel in COPY_FILES + FLOW_CONTROL_FILES:
         src = FACTORY / rel
         dst = target / rel
         if dst.exists() and not args.force:
@@ -84,6 +108,18 @@ def main() -> int:
         shutil.copy2(src, dst)
         copied += 1
     print(f"  файлы: {copied} скопировано, {skipped} уже были (--force для перезаписи)")
+
+    # 2a. Скиллы-скелеты Flow Control (каталогами)
+    skills_copied = 0
+    for rel in SKILL_DIRS:
+        src = FACTORY / rel
+        dst = target / rel
+        if dst.is_dir():
+            skipped += 1
+            continue
+        shutil.copytree(src, dst)
+        skills_copied += 1
+    print(f"  скиллы: {skills_copied} скопировано ({', '.join(SKILL_DIRS)})")
 
     # 2b. Промпты ролей (в проект — самодостаточность установки) + README реестра
     import hashlib
