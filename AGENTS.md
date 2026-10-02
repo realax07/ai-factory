@@ -75,6 +75,19 @@
 
 Для проектных репозиториев (ekotov-wiki и последующих): скопируй `scripts/flow_check.py` и `flow.yml`, проверки те же.
 
+## Детерминированный Flow Control (J28, change add-deterministic-flow — enforcing с 2026-10-02)
+
+Помимо flow_check, порядок работы обеспечивает исполняемая state-машина (полное описание и процесс по флоу — [docs/README-flow-control.md](docs/README-flow-control.md), наследуемый контекст — [docs/process-context.md](docs/process-context.md)):
+
+1. **Перед запуском делегации:** `flowctl prepare` — снимок фактов + разрешение действия. **Режим enforcing (текущий): DENY/UNKNOWN останавливают действие** — подготовка сессии не выполняется. Shadow (`flow_mode.py set shadow`) — только для прогонов на истории.
+2. **Резервация зоны обязательна:** `session_check.py reserve` атомарно резервирует пути записи (пересечение = ZONE_CONFLICT); после работы — `session_check.py check` (diff ⊆ зона, включая renames/symlink) и `reconcile` при падениях (ничего не удаляет молча).
+3. **Ворота — через gate_runner** (`run --scope preflight|post_agent|pre_accept|pre_merge|ci`): отчет с digest каждого входа; PASS после нового коммита = STALE; SKIPPED обязательного gate ≠ PASS; `pm_bounds_check` без явного режима = ERROR.
+4. **Ревью — с provenance:** `gate_runner record-review` пишет sidecar (SHA/diff_digest/автор/ревьюер); accept_review без согласованного sidecar не проходит (легаси-review — legacy evidence, без авто-merge). Self-review и чужой approve → DENY.
+5. **Решения Заказчика — только зафиксированные артефакты** (approval_ref); «считаю согласованным» машиной не принимается: HUMAN_APPROVAL_REQUIRED.
+6. **Переключение режимов и снятие блокировок — решение Заказчика** (`flow_mode.py set enforcing|shadow --by customer`).
+
+Новые скрипты (flow_state, flow_transition, session_check, gate_runner, flowctl, flow_mode) живут в фабрике и на проект не копируются (проект — тонкий клиент: автономные CI-ворота + core на машине фабрики).
+
 ## Оркестрация: сабагенты как контекстные окна
 
 Проверено живым тестом (2026-09-16): сабагент `delegate_task` не видит диалог оркестратора и его память — только то, что явно передано в задаче. Роли запускаются так:

@@ -287,10 +287,14 @@ class TestFlowctlRunEnforcement:
         assert r.returncode == 1
         reg = json.loads(state.read_text(encoding="utf-8"))["runs"][
             "corr0001"]["registry"]
-        # Переключение режима live: enforcing → shadow.
-        set_mode_file(tmp_path / "flow_mode.json", None)
+        # Переключение режима live: enforcing → shadow (файл удален).
+        # FLOW_MODE_FILE указывает на tmp-файл ЯВНО: без этого flowctl прочитает
+        # дефолт машины (~/.hermes/state/flow_mode.json), чей режим не зависит
+        # от теста (изоляция теста от реального состояния машины).
+        mf = set_mode_file(tmp_path / "flow_mode.json", None)
         r2 = flowctl_cmd("run", "--correlation-id", "corr0001",
-                         "--registry", reg, "--state", str(state), "--json")
+                         "--registry", reg, "--state", str(state), "--json",
+                         env_mode_file=mf)
         assert r2.returncode == 0
         assert json.loads(r2.stdout)["started"] is True
 
