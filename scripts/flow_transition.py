@@ -468,6 +468,190 @@ def check_code_review(snapshot, action, ctx, flow):
     return []
 
 
+# ------------------------------------------------------- provenance (05)
+
+# Sidecar-файл review-provenance/1 пишется рядом с человекочитаемым
+# review-файлом (gate_runner.py record-review); путь по умолчанию:
+# <review>.provenance.json.
+PROVENANCE_SIDECAR_SUFFIX = ".provenance.json"
+
+
+def _sha256_text(text: str) -> str:
+    import hashlib
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def load_review_provenance(repo: Path, change_id: str, task_id: str
+                           ) -> tuple[dict | None, str | None, str | None]:
+    """Последний sidecar под задачи, покрывающие task_id (ревизия — max).
+    Возвращает (sidecar, sidecar_path|None, None). Побитый sidecar —
+    (None, path, err), чтобы проверка вернула честный UNKNOWN/AMBIGUOUS."""
+    cr_dir = repo / "code-reviews" / change_id
+    if not cr_dir.is_dir():
+        return None, None, None
+    candidates: list[tuple[int, str, Path]] = []
+    for pf in sorted(cr_dir.glob(f"review-*{PROVENANCE_SIDECAR_SUFFIX}")):
+        try:
+            data = json.loads(pf.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            return None, str(pf), f"sidecar нечитаем: {exc}"
+        if not isinstance(data, dict):
+            return None, str(pf), "sidecar не словарь"
+        tasks = data.get("task_ids")
+        if not isinstance(tasks, list):
+            return None, str(pf), "sidecar без task_ids"
+        if task_id and not any(
+            task_id in re.findall(r"\d+(?:\.\d+)*", str(t)) for t in tasks
+        ):
+            continue
+        m = re.search(r"review-(\d{3})-", pf.name)
+        rev = int(m.group(1)) if m else 0
+        candidates.append((rev, pf.name, pf))
+    if not candidates:
+        return None, None, None
+    _, name, pf = max(candidates, key=lambda x: (x[0], x[1]))
+    return json.loads(pf.read_text(encoding="utf-8")), str(pf), None
+
+
+def provenance_findings(sidecar: dict, snapshot: dict, action, ctx: dict,
+                        sidecar_path: str) -> list:
+    """Строгая проверка sidecar (ТЗ 05; спека «Provenance review»):
+    schema → task/change/SHA → digest → независимость роли.
+    Любое несоответствие = DENY; нехватка проверяемых входов = UNKNOWN."""
+    out: list = []
+    scope = snapshot.get("scope", {})
+    change_id = scope.get("change")
+    if str(sidecar.get("schema_version", "")) != "review-provenance/1":
+        out.append(Finding(
+            AMBIGUOUS_STATE,
+            f"sidecar {sidecar_path}: schema_version="
+            f"{sidecar.get('schema_version')!r} не распознана — проверка "
+            f"невозможна (контракт §2: нераспознаваемый формат не "
+            f"интерпретируется «на глаз»)", True))
+        return out
+    if sidecar.get("project") and sidecar["project"] != scope.get("project"):
+        out.append(Finding(
+            HUMAN_APPROVAL_REQUIRED,
+            f"sidecar {sidecar_path}: project {sidecar['project']} не "
+            f"соответствует scope {scope.get('project')} — approve чужого "
+            f"scope не принимается (ТЗ 05)"))
+    if sidecar.get("change") and str(sidecar["change"]) != str(change_id):
+        out.append(Finding(
+            MISSING_INPUT,
+            f"sidecar {sidecar_path}: change {sidecar['change']} ≠ scope "
+            f"{change_id} — approve другого change отклоняется (ТЗ 05)"))
+    tasks = sidecar.get("task_ids") or []
+    if action.task_id and tasks and not any(
+        action.task_id in re.findall(r"\d+(?:\.\d+)*", str(t)) for t in tasks
+    ):
+        out.append(Finding(
+            MISSING_INPUT,
+            f"sidecar {sidecar_path}: task_ids {tasks} не покрывают задачу "
+            f"{action.task_id} — approve другой задачи отклоняется (ТЗ 05)"))
+    head = str(snapshot.get("repo_head") or "")
+    sha = str(sidecar.get("reviewed_commit_sha") or "")
+    if not sha:
+        out.append(Finding(
+            MISSING_INPUT,
+            f"sidecar {sidecar_path}: reviewed_commit_sha отсутствует — "
+            f"provenance неполна, UNKNOWN (ТЗ 05)", True))
+    elif head and sha != head:
+        out.append(Finding(
+            STALE_EVIDENCE,
+            f"sidecar {sidecar_path}: approve зафиксирован для SHA {sha[:12]}…, "
+            f"текущий HEAD {head[:12]}… — после нового коммита прежний approve "
+            f"устарел; повторное review обязательно (ТЗ 05; спека «Provenance "
+            f"review»); проверка времени остаётся дополнительной, основная — "
+            f"идентичность SHA/diff"))
+    diff_digest = sidecar.get("diff_digest")
+    if diff_digest and head:
+        actual = _sha256_text(_git_diff_for_head(snapshot, head))
+        if actual != diff_digest:
+            out.append(Finding(
+                STALE_EVIDENCE,
+                f"sidecar {sidecar_path}: diff_digest не совпадает с диффом "
+                f"HEAD {head[:12]}… — утвержденная версия работы изменилась "
+                f"(ТЗ 05)"))
+    if str(sidecar.get("author_delegation") or "") == \
+            str(sidecar.get("reviewer_delegation") or ""):
+        out.append(Finding(
+            WRONG_ROLE,
+            f"sidecar {sidecar_path}: author_delegation == "
+            f"reviewer_delegation — ревью собственной работы запрещено "
+            f"(ТЗ 05; спека «Provenance review»)"))
+    if sidecar.get("verdict") not in ("approve", "return"):
+        out.append(Finding(
+            AMBIGUOUS_STATE,
+            f"sidecar {sidecar_path}: verdict={sidecar.get('verdict')!r} "
+            f"не распознан (ожидается approve|return)", True))
+    return out
+
+
+def _git_diff_for_head(snapshot: dict, head: str) -> str:
+    """Дифф, покрывающий HEAD (родитель..HEAD); при отсутствии родителя —
+    пустой коммит-дифф (пустая строка, digest пустого входа)."""
+    import subprocess
+    repo = snapshot.get("scope", {}).get("repo")
+    if not repo:
+        return ""
+    proc = subprocess.run(
+        ["git", "-C", str(repo), "diff", f"{head}^..{head}"],
+        capture_output=True, text=True,
+    )
+    return proc.stdout or ""
+
+
+def _provenance_findings(snapshot, action, ctx: dict, stage: str) -> list:
+    """Точка provenance для accept_review/merge_task (поставка 05).
+
+    - sidecar по задаче найден → строгая проверка (DENY при несоответствии
+      task/change/SHA/роли; ALLOW возможен);
+    - review-файлы есть, sidecar нет → легаси-review: compatibility mode —
+      `legacy evidence` + UNKNOWN, новый автоматический merge не разрешается,
+      старые merge задним числом незаконными не объявляются (ТЗ 05);
+    - review-файлов нет вовсе → факт уже отработан _approvals_for_task.
+    """
+    ctx["checked"].add("provenance.sidecar")
+    scope = snapshot.get("scope", {})
+    change_id = scope.get("change")
+    repo = scope.get("repo")
+    out: list = []
+    if not repo or not change_id or not action.task_id:
+        ctx["checked"].add("provenance.unverifiable")
+        return [Finding(
+            MISSING_INPUT,
+            f"provenance для {stage}: scope без repo/change/task_id — "
+            f"проверка sidecar невозможна, UNKNOWN (ТЗ 05)", True)]
+    sidecar, sidecar_path, err = load_review_provenance(
+        Path(repo), change_id, action.task_id)
+    if err:
+        out.append(Finding(AMBIGUOUS_STATE,
+                           f"provenance: {err} — {sidecar_path}", True))
+        return out
+    if sidecar is not None:
+        ctx["evidence"].add(sidecar_path or "")
+        return provenance_findings(sidecar, snapshot, action, ctx,
+                                   sidecar_path or "")
+    # Легаси: review-файлы без sidecar — compatibility mode (уже не «до
+    # поставки 05», а явный ограниченный режим для старых review).
+    cr_dir = Path(repo) / "code-reviews" / change_id
+    has_md = any(cr_dir.glob("review-*.md")) if cr_dir.is_dir() else False
+    if not has_md:
+        return []
+    ctx["evidence"].add(f"code-reviews/{change_id}/ (legacy evidence)")
+    ctx.setdefault("extra_gates", []).append(
+        "legacy evidence без provenance-sidecar: новый автоматический merge "
+        "запрещен без дополнительной проверки (ТЗ 05; compatibility mode)")
+    out.append(Finding(
+        STALE_EVIDENCE,
+        f"review без provenance-sidecar ({sidecar_path or 'sidecar не найден'}) "
+        f"— идентичность task/change/SHA/diff и независимость роли не "
+        f"подтверждаемы: legacy evidence, UNKNOWN; запиши sidecar "
+        f"(gate_runner.py record-review) или пройди отдельный консервативный "
+        f"gate (ТЗ 05; спека «Provenance review»)", True))
+    return out
+
+
 def _hotfix_debt_findings(snapshot, action, ctx, flow) -> list:
     """Хотфикс-долг Флоу 3 (review-001 R6; ТЗ 03 п.4; контракт §7 Флоу 3).
 
@@ -494,15 +678,16 @@ def _hotfix_debt_findings(snapshot, action, ctx, flow) -> list:
 
 
 def check_accept_review(snapshot, action, ctx, flow):
-    """Provenance-переход: compatibility mode → UNKNOWN (ТЗ 03 п.8; D4)."""
+    """Provenance-переход: строгая проверка по sidecar review-provenance/1
+    (поставка 05). Совместимость остаётся ТОЛЬКО для легаси-review без
+    sidecar: фиксируется как `legacy evidence` + отдельный UNKNOWN, новый
+    автоматический merge не разрешается. Согласованный sidecar с
+    task/change/SHA и независимой ролью — ALLOW (ТЗ 05; спека «Provenance
+    review»; design D4)."""
     out = _hotfix_debt_findings(snapshot, action, ctx, flow) if flow == 3 else []
     if action.task_id:
         out.extend(_approvals_for_task(snapshot, action, ctx))
-    out.append(Finding(
-        STALE_EVIDENCE,
-        "provenance (task/change/SHA/diff, независимость автора) не проверяема "
-        "до поставки 05 — accept_review в compatibility mode дает UNKNOWN "
-        "(ТЗ 03 п.8; спека «Provenance review»; design D4)", True))
+    out.extend(_provenance_findings(snapshot, action, ctx, "accept_review"))
     return out
 
 
@@ -515,11 +700,7 @@ def check_merge_task(snapshot, action, ctx, flow):
                            "dev-lead)"))
     out.extend(_approvals_for_task(snapshot, action, ctx))
     out.extend(_hotfix_debt_findings(snapshot, action, ctx, flow))
-    out.append(Finding(
-        STALE_EVIDENCE,
-        "approve-вердикт не привязан к SHA/diff/дате ≤ коммита — provenance "
-        "не проверяема до поставки 05, compatibility UNKNOWN (ТЗ 03 п.8; J10)",
-        True))
+    out.extend(_provenance_findings(snapshot, action, ctx, "merge_task"))
     out.append(Finding(
         EXTERNAL_ENFORCEMENT_UNKNOWN,
         "branch protection на main не подтверждена локальным прогоном — пометка "
