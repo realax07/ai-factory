@@ -90,7 +90,7 @@ def registry_backup_names(reg: Path) -> list[str]:
 
 class TestM1RenameEscape:
     def test_committed_rename_into_zone_caught(self, tmp_path):
-        """Проба A: файл, созданный вне зоны и переименованный в зону,
+        """TC-FLW-002: Проба A: файл, созданный вне зоны и переименованный в зону,
         виден по старому пути (git log --no-renames), check отказывает."""
         repo, base = make_repo(tmp_path)
         reg = make_registry(tmp_path)
@@ -105,7 +105,7 @@ class TestM1RenameEscape:
         assert any("docs/evil.md" in v for v in r["violations"])
 
     def test_porcelain_rename_keeps_old_path(self, tmp_path):
-        """Проба A2: staged rename — старый путь (удаление вне зоны)
+        """TC-FLW-002: Проба A2: staged rename — старый путь (удаление вне зоны)
         попадает в список измененных путей."""
         repo, _ = make_repo(tmp_path)
         write(repo, "docs/hidden.md", "h\n")
@@ -117,7 +117,7 @@ class TestM1RenameEscape:
         assert "docs/hidden.md" in uncommitted
 
     def test_committed_rename_old_path_in_changed(self, tmp_path):
-        """Net-diff пуст по рожденному-и-удаленному пути, но git log
+        """TC-FLW-002: Net-diff пуст по рожденному-и-удаленному пути, но git log
         --no-renames показывает оба пути всех коммитов диапазона."""
         repo, base = make_repo(tmp_path)
         write(repo, "docs/tmp.md", "x\n")
@@ -130,7 +130,7 @@ class TestM1RenameEscape:
         assert "src/tmp.py" in committed
 
     def test_in_zone_rename_still_passes(self, tmp_path):
-        """Renamе внутри зоны не ломает чистую сессию (нет ложных отказов)."""
+        """TC-FLW-002: Renamе внутри зоны не ломает чистую сессию (нет ложных отказов)."""
         repo, base = make_repo(tmp_path)
         reg = make_registry(tmp_path)
         write(repo, "src/a.py", "A = 1\n")
@@ -148,7 +148,7 @@ class TestM1RenameEscape:
 
 class TestM2MigrateWithBackup:
     def test_check_migrates_v1_with_backup(self, tmp_path):
-        """Проба B: первый check() на v1-реестре мигрирует с бэкапом."""
+        """TC-FLW-002: Проба B: первый check() на v1-реестре мигрирует с бэкапом."""
         repo, _ = make_repo(tmp_path)
         reg = make_registry(tmp_path)
         v1_registry(reg, "d1", repo=str(repo))
@@ -160,7 +160,7 @@ class TestM2MigrateWithBackup:
         assert len(registry_backup_names(reg)) == 1
 
     def test_reconcile_migrates_v1_with_backup(self, tmp_path):
-        """Проба B2: reconcile() на v1-реестре мигрирует с бэкапом."""
+        """TC-FLW-002: Проба B2: reconcile() на v1-реестре мигрирует с бэкапом."""
         repo, _ = make_repo(tmp_path)
         reg = make_registry(tmp_path)
         v1_registry(reg, "d1", repo=str(repo))
@@ -170,7 +170,7 @@ class TestM2MigrateWithBackup:
         assert len(registry_backup_names(reg)) == 1
 
     def test_reserve_migrates_v1_with_backup(self, tmp_path):
-        """Путь reserve не сломан: бэкап по-прежнему создается."""
+        """TC-FLW-002: Путь reserve не сломан: бэкап по-прежнему создается."""
         repo, _ = make_repo(tmp_path)
         reg = make_registry(tmp_path)
         v1_registry(reg, "d_old")  # чужой repo — конфликт зон не мешает
@@ -180,7 +180,7 @@ class TestM2MigrateWithBackup:
         assert len(registry_backup_names(reg)) == 1
 
     def test_v2_registry_no_backup_created(self, tmp_path):
-        """На v2-реестре миграции нет — бэкап не создается."""
+        """TC-FLW-002: На v2-реестре миграции нет — бэкап не создается."""
         repo, base = make_repo(tmp_path)
         p = tmp_path / "state" / "active_sessions.json"
         p.parent.mkdir(parents=True, exist_ok=True)
@@ -197,7 +197,7 @@ class TestM2MigrateWithBackup:
 
 class TestM3DeadLock:
     def test_lock_contains_pid(self, tmp_path):
-        """Проба C: внутрь лока пишется pid владельца."""
+        """TC-FLW-002: Проба C: внутрь лока пишется pid владельца."""
         reg = make_registry(tmp_path)
         lock = sc._acquire_lock(reg)
         try:
@@ -208,14 +208,15 @@ class TestM3DeadLock:
             sc._release_lock(lock)
 
     def test_dead_owner_lock_recovered(self, tmp_path):
-        """Проба P2: процесс умер с локом (SIGKILL) → мертвый лок снимается
+        """TC-FLW-002: Проба P2: процесс умер с локом (SIGKILL) → мертвый лок снимается
         автоматически, захват повторяется (не TimeoutError навсегда)."""
         reg = make_registry(tmp_path)
         crash_code = (
-            "import sys, time; sys.path.insert(0, %r); "
+            "import sys, signal, threading; sys.path.insert(0, %r); "
             "import session_check as sc; "
             "l = sc._acquire_lock(sc.Path(%r), timeout=2); "
-            "print('locked', flush=True); time.sleep(60)"
+            "print('locked', flush=True); signal.pause() if hasattr(signal, 'pause') "
+            "else threading.Event().wait()"
             % (str(SCRIPTS), str(reg)))
         p = subprocess.Popen([sys.executable, "-c", crash_code],
                              stdout=subprocess.PIPE, text=True)
@@ -233,10 +234,9 @@ class TestM3DeadLock:
                 p.wait()
 
     def test_live_owner_lock_times_out_with_pid(self, tmp_path):
-        """Живой владелец: TimeoutError, в сообщении pid владельца."""
+        """TC-FLW-002: Живой владелец: TimeoutError, в сообщении pid владельца."""
         reg = make_registry(tmp_path)
-        p = subprocess.Popen([sys.executable, "-c",
-                              "import time; time.sleep(30)"])
+        p = subprocess.Popen([sys.executable, "-c", "import signal; signal.pause()"])
         try:
             lock = sc._acquire_lock(reg)
             (lock / "pid").write_text(str(p.pid), encoding="utf-8")
@@ -248,7 +248,7 @@ class TestM3DeadLock:
             p.wait()
 
     def test_lock_without_pid_reclaimed_after_timeout(self, tmp_path):
-        """Лок без pid-файла (оставлен старой версией скрипта) снимается по
+        """TC-FLW-002: Лок без pid-файла (оставлен старой версией скрипта) снимается по
         истечении таймаута — admission не блокируется навсегда."""
         reg = make_registry(tmp_path)
         lock = reg.parent / (reg.name + ".lock")
@@ -259,7 +259,7 @@ class TestM3DeadLock:
         sc._release_lock(acquired)
 
     def test_release_lock_removes_pid_and_dir(self, tmp_path):
-        """_release_lock удаляет pid-файл и каталог (регрессия: rmdir на
+        """TC-FLW-002: _release_lock удаляет pid-файл и каталог (регрессия: rmdir на
         непустом каталоге молча оставлял лок навсегда)."""
         reg = make_registry(tmp_path)
         lock = sc._acquire_lock(reg)
@@ -275,28 +275,29 @@ class TestM3DeadLock:
 
 class TestM4ZonesOverlap:
     def test_doublestar_head_tail_vs_prefix(self, tmp_path):
-        """Пробы D/J: '**/test/**' vs 'src/**' — пересечение (путь
+        """TC-FLW-002: Пробы D/J: '**/test/**' vs 'src/**' — пересечение (путь
         src/a/test/x.py принадлежит обеим зонам), ZONE_CONFLICT срабатывает."""
         assert sc.zones_overlap(["**/test/**"], ["src/**"]) is not None
         assert sc.zones_overlap(["src/**"], ["**/test/**"]) is not None
 
     def test_no_false_positive_neighbor_prefix(self):
-        """Проба D: 'src/**' vs 'srcx/**' — общего пути нет, FN недопустим,
+        """TC-FLW-002: Проба D: 'src/**' vs 'srcx/**' — общего пути нет, FN недопустим,
         но и FP здесь не нужен."""
         assert sc.zones_overlap(["src/**"], ["srcx/**"]) is None
 
     def test_star_vs_prefix_overlaps(self):
-        """Проба D: '*' (любой один сегмент) пересекается с 'src/**' — путь
+        """TC-FLW-002: Проба D: '*' (любой один сегмент) пересекается с 'src/**' — путь
         'src/x' матчится обоими."""
         assert sc.zones_overlap(["*"], ["src/**"]) is not None
 
     def test_disjoint_zones_still_disjoint(self):
+        """TC-FLW-002: трассировка кейса (test-model/approved/add-deterministic-flow/)."""
         assert sc.zones_overlap(["src/**"], ["docs/**"]) is None
         assert sc.zones_overlap(["src/main.py"], ["src/other.py"]) is None
         assert sc.zones_overlap(["src/**"], ["tests/**"]) is None
 
     def test_zone_conflict_fires_for_middir_doublestar(self, tmp_path):
-        """Сквозной сценарий: активная сессия с '**/test/**' блокирует
+        """TC-FLW-002: Сквозной сценарий: активная сессия с '**/test/**' блокирует
         reserve 'src/**' того же repo (admission не пропускает пересечение)."""
         repo, _ = make_repo(tmp_path)
         reg = make_registry(tmp_path)
@@ -311,7 +312,7 @@ class TestM4ZonesOverlap:
 
 class TestM5InRepoSymlink:
     def test_symlink_to_in_repo_out_of_zone_target_rejected(self, tmp_path):
-        """Проба E1: src/link.py → ../docs (цель в repo, вне зоны src/**)
+        """TC-FLW-002: Проба E1: src/link.py → ../docs (цель в repo, вне зоны src/**)
         → отказ (буква приемки ТЗ 04: symlink за пределы зоны дают отказ)."""
         repo, base = make_repo(tmp_path)
         reg = make_registry(tmp_path)
@@ -324,7 +325,7 @@ class TestM5InRepoSymlink:
         assert any("src/link.py" in v for v in r["violations"])
 
     def test_symlink_to_in_zone_target_passes(self, tmp_path):
-        """Symlink на цель внутри зоны не дает ложного отказа."""
+        """TC-FLW-002: Symlink на цель внутри зоны не дает ложного отказа."""
         repo, base = make_repo(tmp_path)
         reg = make_registry(tmp_path)
         os.symlink("keep.py", repo / "src" / "link.py")
@@ -335,7 +336,7 @@ class TestM5InRepoSymlink:
         assert r["ok"] is True, r["violations"]
 
     def test_symlink_outside_repo_still_rejected(self, tmp_path):
-        """Регресс: вне-repo symlink по-прежнему отказ (проба E2)."""
+        """TC-FLW-002: Регресс: вне-repo symlink по-прежнему отказ (проба E2)."""
         repo, base = make_repo(tmp_path)
         reg = make_registry(tmp_path)
         outside = tmp_path / "outside.txt"
@@ -353,7 +354,7 @@ class TestM5InRepoSymlink:
 
 class TestMinors:
     def test_m6_reserve_cli_missing_registry_dir_exit_2(self, tmp_path, capsys):
-        """Проба I: reserve с --registry в несуществующий каталог →
+        """TC-FLW-002: Проба I: reserve с --registry в несуществующий каталог →
         REGISTRY_ERROR + exit 2, не сырой FileNotFoundError-трейсбейс."""
         repo, _ = make_repo(tmp_path)
         rc = sc.main(["reserve", "--registry",
@@ -366,7 +367,7 @@ class TestMinors:
         assert out["reason"] == sc.REGISTRY_ERROR
 
     def test_m6_registry_dir_created_when_parent_exists(self, tmp_path):
-        """Регресс m6: существующий каталог реестра не блокирует reserve —
+        """TC-FLW-002: Регресс m6: существующий каталог реестра не блокирует reserve —
         файл реестра создастся (это нормальный путь первого reserve)."""
         repo, _ = make_repo(tmp_path)
         reg = tmp_path / "state" / "active_sessions.json"
@@ -374,7 +375,7 @@ class TestMinors:
         assert reserve(reg, repo)["allowed"]
 
     def test_m7_backup_names_unique_same_second(self, tmp_path):
-        """Проба L: два бэкапа в одну секунду не перезаписывают друг друга."""
+        """TC-FLW-002: Проба L: два бэкапа в одну секунду не перезаписывают друг друга."""
         reg = make_registry(tmp_path)
         reg.write_text('{"sessions": []}', encoding="utf-8")
         b1 = sc.backup_registry(reg)
@@ -384,7 +385,7 @@ class TestMinors:
         assert b1.exists() and b2.exists()
 
     def test_m8_migrated_field_separate_from_idempotent(self, tmp_path):
-        """Проба m8: fresh reserve на v1-реестре → migrated=true,
+        """TC-FLW-002: Проба m8: fresh reserve на v1-реестре → migrated=true,
         idempotent=false; на v2-реестре — migrated=false."""
         repo, _ = make_repo(tmp_path)
         reg = make_registry(tmp_path)
@@ -399,7 +400,7 @@ class TestMinors:
         assert res2["idempotent"] is False
 
     def test_m9_reason_reflects_violation_kind(self, tmp_path):
-        """Проба m9: при WRONG_WORKTREE top-level reason — WRONG_WORKTREE,
+        """TC-FLW-002: Проба m9: при WRONG_WORKTREE top-level reason — WRONG_WORKTREE,
         а не обобщенный OUT_OF_ZONE."""
         repo, base = make_repo(tmp_path)
         reg = make_registry(tmp_path)
@@ -415,6 +416,7 @@ class TestMinors:
         assert r["reason"] == sc.WRONG_WORKTREE
 
     def test_m9_reason_ok_on_clean(self, tmp_path):
+        """TC-FLW-002: трассировка кейса (test-model/approved/add-deterministic-flow/)."""
         repo, _ = make_repo(tmp_path)
         reg = make_registry(tmp_path)
         assert reserve(reg, repo)["allowed"]
