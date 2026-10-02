@@ -61,7 +61,8 @@ Usage:
 Exit codes (run/status): 0 — PASS без STALE; 1 — FAIL, SKIPPED-отчет
 («не все gates выполнены») или STALE (повтор обязателен); 2 — ERROR,
 нет отчета или ошибка входа.
-Exit codes (github-protection): 0 — защита подтверждена (факт protection_ok);
+Exit codes (github-protection): 0 — защита подтверждена (факт protection_ok;
+ruleset enforcement=active + rules type=pull_request + без bypass always);
 1 — защита не настроена/не соответствует (факт protection_ok=False, HTTP
 404 и др.); 3 — SKIPPED по явному правилу («--github-repo/--github-token-env
 не заданы» или env-переменная отсутствует — проверка не настроена, НЕ ERROR);
@@ -654,16 +655,22 @@ def check_branch_protection(repo: Path, github_repo: str, token_env: str,
                             branch: str = PROTECTION_BRANCH,
                             report: Path | None = None,
                             token_env_os=None) -> dict:
-    """Решение А (P0.1): проверка branch protection через GitHub API.
+    """Решение А (P0.1, endpoint по пересмотру плана): проверка branch
+    protection через GitHub Rulesets API.
 
-    GET /repos/{repo}/branches/{branch}/protection с токеном, прочитанным
-    subprocess'ом из env-переменной {token_env} (имя, НЕ значение). Валидация:
-    required_pull_request_reviews присутствует + required_status_checks
-    включает flow.yml. Итог — машиночитаемый JSON-факт
-    (schema github-protection/1) с датой и HTTP-кодом.
+    GET /repos/{repo}/rules/branches/{branch} с токеном, прочитанным
+    subprocess'ом из env-переменной {token_env} (имя, НЕ значение).
+    Ожидается массив активных rulesets; защита подтверждена, когда среди них
+    есть ruleset с enforcement=active, rules содержит type=pull_request, а
+    bypass для роли не разрешает обход (bypass отсутствует ИЛИ ни у одного
+    bypass-элемента нет bypass_mode=always). Дополнительно: при наличии
+    required_status_checks в ruleset он должен включать flow.yml.
 
-    Возвращает dict факта; поле protection_ok=True только при обоих
-    условиях. Отсутствие токена/env/repo — SKIPPED-ситуация вызывающего
+    Итог — машиночитаемый JSON-факт (schema github-protection/1) с датой,
+    HTTP-кодом и машиночитаемым разбором rulesets (ruleset_report).
+
+    Возвращает dict факта; поле protection_ok=True только при выполнении
+    всех условий. Отсутствие токена/env/repo — SKIPPED-ситуация вызывающего
     (gate по явному правилу не задан), поэтому поднят ValueError с маркером
     "skip:" — CLI маппит ее в SKIPPED-отчет, не ERROR.
     token_env_os — подмена доступа к env для тестов: словарь или callable
@@ -679,12 +686,14 @@ def check_branch_protection(repo: Path, github_repo: str, token_env: str,
     fact: dict = {
         "schema_version": PROTECTION_SCHEMA,
         "adapter_version": ADAPTER_VERSION,
+        "endpoint": "rules/branches",
         "repo": github_repo,
         "branch": branch,
         "observed_at": utcnow_iso(),
         "protection_ok": False,
         "http_status": None,
         "detail": "",
+        "ruleset_report": [],
     }
     if not github_repo:
         raise ValueError("skip: --github-repo не задан — gate не настроен")
@@ -695,11 +704,11 @@ def check_branch_protection(repo: Path, github_repo: str, token_env: str,
         raise ValueError(
             f"skip: env-переменная {token_env} пуста/отсутствует — gate не настроен")
 
-    api_url = f"https://api.github.com/repos/{github_repo}/branches/{branch}/protection"
+    api_url = f"https://api.github.com/repos/{github_repo}/rules/branches/{branch}"
     code, body = _github_api_get(api_url, token)
     fact["http_status"] = code
     if code == 404:
-        fact["detail"] = "защита ветки не настроена (404)"
+        fact["detail"] = "активных rulesets для ветки нет (404) — защита не настроена"
         _write_protection_report(report or protection_report_path(repo), fact)
         return fact
     if code != 200:
@@ -710,29 +719,78 @@ def check_branch_protection(repo: Path, github_repo: str, token_env: str,
         data = json.loads(body)
     except ValueError:
         data = None
-    if not isinstance(data, dict):
-        fact["detail"] = "github api вернул несловарный ответ"
+    if not isinstance(data, list):
+        fact["detail"] = "github api вернул не массив rulesets"
         _write_protection_report(report or protection_report_path(repo), fact)
         return fact
 
     problems: list[str] = []
-    reviews = data.get("required_pull_request_reviews")
-    if not isinstance(reviews, dict):
-        problems.append("required_pull_request_reviews отсутствует")
-    checks = data.get("required_status_checks")
-    check_ctx = checks.get("contexts") if isinstance(checks, dict) else None
-    has_flow_yml = any(
-        "flow.yml" in str(c) for c in (check_ctx or []))
-    if not isinstance(checks, dict):
-        problems.append("required_status_checks отсутствует")
-    elif not has_flow_yml:
-        problems.append("required_status_checks не включает flow.yml")
+    ruleset_report: list[dict] = []
+    satisfied = False
+    for rs in data:
+        if not isinstance(rs, dict):
+            continue
+        entry = {
+            "id": rs.get("id"),
+            "name": rs.get("name"),
+            "enforcement": rs.get("enforcement"),
+            "pull_request": False,
+            "bypass_always": False,
+            "status_checks_flow_yml": None,
+        }
+        rules = rs.get("rules") if isinstance(rs.get("rules"), list) else []
+        for r in rules:
+            if not isinstance(r, dict):
+                continue
+            if r.get("type") == "pull_request":
+                entry["pull_request"] = True
+            if r.get("type") == "required_status_checks":
+                params = r.get("parameters")
+                if not isinstance(params, dict):
+                    params = {}
+                ctxs = params.get("required_status_checks")
+                if not isinstance(ctxs, list):
+                    ctxs = []
+                names = [
+                    (c.get("context") if isinstance(c, dict) else str(c))
+                    for c in ctxs
+                ]
+                entry["status_checks_flow_yml"] = any(
+                    "flow.yml" in str(n) for n in names if n)
+        bypass = rs.get("bypass") if isinstance(rs.get("bypass"), list) else []
+        entry["bypass_always"] = any(
+            isinstance(b, dict) and b.get("bypass_mode") == "always"
+            for b in bypass)
+        ruleset_report.append(entry)
+        if rs.get("enforcement") != "active":
+            continue
+        if not entry["pull_request"]:
+            continue
+        if entry["bypass_always"]:
+            continue
+        if entry["status_checks_flow_yml"] is False:
+            continue
+        satisfied = True
+    fact["ruleset_report"] = ruleset_report
+    if not ruleset_report:
+        problems.append("активных rulesets с rules не найдено")
+    if not satisfied:
+        if not any(e.get("enforcement") == "active" for e in ruleset_report):
+            problems.append("нет ruleset с enforcement=active")
+        elif not any(e.get("pull_request") for e in ruleset_report
+                     if e.get("enforcement") == "active"):
+            problems.append("нет rules c type=pull_request среди активных")
+        else:
+            problems.append(
+                "активный ruleset с pull_request обходится ролью "
+                "(bypass always) или не содержит требуемых status checks")
     if problems:
         fact["detail"] = "; ".join(problems)
     else:
         fact["protection_ok"] = True
         fact["detail"] = (
-            "required_pull_request_reviews + required_status_checks(flow.yml)")
+            "ruleset enforcement=active с rules type=pull_request, "
+            "bypass always не найден")
     _write_protection_report(report or protection_report_path(repo), fact)
     return fact
 
@@ -918,6 +976,7 @@ def _cmd_github_protection(args) -> int:
     if not args.github_repo or not args.github_token_env:
         print(json.dumps({
             "schema_version": PROTECTION_SCHEMA,
+            "endpoint": "rules/branches",
             "status": "SKIPPED",
             "reason": "--github-repo / --github-token-env не заданы — "
                       "проверка branch protection не настроена (явное "
@@ -1028,7 +1087,8 @@ def main(argv: list[str] | None = None) -> int:
     p_gp = sub.add_parser(
         "github-protection",
         help="решение А (P0.1): проверить branch protection main через "
-             "GitHub API и записать машиночитаемый факт")
+             "GitHub Rulesets API (GET /repos/{repo}/rules/branches/{branch}) "
+             "и записать машиночитаемый факт")
     p_gp.add_argument("--repo", required=True, help="локальный репозиторий "
                       "(сюда пишется факт .flow-evidence/github-protection.json)")
     p_gp.add_argument("--github-repo", dest="github_repo", default=None,

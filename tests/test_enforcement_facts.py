@@ -52,9 +52,14 @@ def write(repo: Path, rel: str, text: str) -> None:
     p.write_text(text, encoding="utf-8")
 
 
-def commit_all(repo: Path, msg: str = "init") -> str:
+def commit_all(repo: Path, msg: str = "init", amend: bool = False) -> str:
     git(repo, "add", "-A")
-    git(repo, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-m", msg)
+    if amend:
+        git(repo, "-c", "user.email=t@t", "-c", "user.name=t",
+            "commit", "--amend", "-m", msg)
+    else:
+        git(repo, "-c", "user.email=t@t", "-c", "user.name=t",
+            "commit", "-m", msg)
     return git(repo, "rev-parse", "HEAD")
 
 
@@ -151,11 +156,35 @@ def archive_change(repo: Path, change_id: str = "add-widget") -> None:
 
 
 def release_file(repo: Path, change_id: str = "add-widget",
-                 text: str | None = None) -> None:
-    write(repo, f"releases/{change_id}.md", text or (
+                 text: str | None = None,
+                 sha: str | None = "auto") -> None:
+    """Пишет releases/<id>.md. sha='auto' → актуальный HEAD; None → без
+    строки SHA (битый формат); явная строка → подставить как есть.
+    Файл пишется, коммитится, затем дописывается строка SHA с актуальным
+    HEAD и коммитится вторым коммитом (рабочее дерево чистое — HEAD при
+    проверке снимка совпадает с последним коммитом)."""
+    body = text or (
         f"# Релиз {change_id}\n\nРешение Заказчика: «разрешаю релиз "
-        f"{change_id}» (2026-10-02)\n"))
-    commit_all(repo)
+        f"{change_id}» (2026-10-02)\n")
+    write(repo, f"releases/{change_id}.md", body)
+    commit_all(repo, f"release decision {change_id}")
+    if sha == "auto":
+        sha = git(repo, "rev-parse", "HEAD")
+    if sha is not None and "SHA:" not in body and "commit:" not in body:
+        p = repo / "releases" / f"{change_id}.md"
+        # Fixpoint SHA коммита от его же содержимого не существует, поэтому
+        # строка SHA коммитится ВТОРЫМ коммитом, а незакоммиченная правка
+        # НЕ делается: файл в рабочем дереве == файлу в HEAD (снимок читает
+        # рабочее дерево), HEAD на коммит впереди — это сама природа журнала
+        # «решение о HEAD, записанного после HEAD». Сверка факта допускает
+        # строку SHA в HEAD^ (см. flow_state.release_approval_fact).
+        p.write_text(p.read_text(encoding="utf-8") + f"\nSHA: {sha}\n",
+                     encoding="utf-8")
+        commit_all(repo, f"release decision {change_id}: SHA")
+    elif sha is not None:
+        # Явный SHA в тексте: перезапись после коммита (незакоммиченный файл
+        # — снимок читает рабочее дерево, это ок для негативных сценариев).
+        write(repo, f"releases/{change_id}.md", body)
 
 
 # =========================================================================
@@ -175,13 +204,19 @@ class TestArchivedFact:
         assert f["value"] is False
         assert f["confidence"] == "verified"
 
-    def test_ready_when_archived(self, tmp_path):
+    def test_ready_when_archived(self, tmp_path, monkeypatch):
+        """Архивация при слитых дельтах и пройденном validate → ready."""
         repo = make_repo(tmp_path)
         archive_change(repo)
+        monkeypatch.setattr(flow_state, "OPENSPEC_VALIDATE_CMD",
+                            lambda repo, argv: 0)
         reg = make_registry(tmp_path)
         s = snapshot_for(repo, reg)
         f = next(f for f in s["facts"] if f["key"] == "change.archived")
-        assert f["status"] == "ready" and f["value"] is True
+        assert f["status"] == "ready"
+        assert f["value"]["archived"] is True
+        assert f["value"]["deltas_merged"] is True
+        assert f["value"]["validate"] == "ok"
 
     def test_unknown_when_symlink_outside(self, tmp_path):
         """Битый/чужой источник (symlink наружу) → unknown + проблема,
@@ -308,6 +343,27 @@ class TestProtectionFactState:
         assert f["status"] == "unknown"
 
 
+def protection_ruleset_body(enforcement="active", pull_request=True,
+                            bypass=None, checks=None):
+    """Тело ответа GET /repos/{repo}/rules/branches/main (массив rulesets)."""
+    rules = []
+    if pull_request:
+        rules.append({"type": "pull_request"})
+    if checks is not None:
+        rules.append({
+            "type": "required_status_checks",
+            "parameters": {"required_status_checks": [
+                {"context": c} for c in checks]},
+        })
+    return [{
+        "id": 24385697,
+        "name": "factory-protection",
+        "enforcement": enforcement,
+        "rules": rules,
+        "bypass": bypass or [],
+    }]
+
+
 class TestProtectionAdapter:
     """gate_runner github_protection: skip-правила + fake API (без сети)."""
 
@@ -336,10 +392,63 @@ class TestProtectionAdapter:
         loaded, err = gr.load_protection_fact(repo)
         assert err is None and loaded["protection_ok"] is False
 
-    def test_200_with_reviews_and_flow_yml(self, tmp_path):
+    def test_rulesets_endpoint_url(self, tmp_path):
+        """Endpoint — Rulesets API /rules/branches, старый /branches/.../protection
+        не вызывается."""
         repo = make_repo(tmp_path)
-        body = {"required_pull_request_reviews": {},
-                "required_status_checks": {"contexts": ["flow.yml / gate"]}}
+        captured = {}
+
+        def fake_get(url, token):
+            captured["url"] = url
+            return 200, json.dumps(protection_ruleset_body())
+
+        orig = gr._github_api_get
+        gr._github_api_get = fake_get
+        try:
+            fact = gr.check_branch_protection(repo, "o/n", "T",
+                                              token_env_os={"T": "tok"})
+        finally:
+            gr._github_api_get = orig
+        assert captured["url"].endswith("/repos/o/n/rules/branches/main")
+        assert "/branches/main/protection" not in captured["url"]
+        assert fact["protection_ok"] is True
+
+    def test_200_ruleset_active_pull_request_no_bypass(self, tmp_path):
+        repo = make_repo(tmp_path)
+        orig = gr._github_api_get
+        gr._github_api_get = lambda url, tok: (
+            200, json.dumps(protection_ruleset_body(checks=["flow.yml / gate"])))
+        try:
+            fact = gr.check_branch_protection(repo, "o/n", "T",
+                                              token_env_os={"T": "tok"})
+        finally:
+            gr._github_api_get = orig
+        assert fact["protection_ok"] is True
+        assert fact["ruleset_report"][0]["pull_request"] is True
+        assert fact["ruleset_report"][0]["bypass_always"] is False
+
+    def test_200_bypass_always_fails(self, tmp_path):
+        """bypass с bypass_mode=always у активного ruleset → защита не
+        подтверждена (роль может обходить pull_request)."""
+        repo = make_repo(tmp_path)
+        body = protection_ruleset_body(
+            bypass=[{"actor_id": 5, "bypass_mode": "always"}])
+        orig = gr._github_api_get
+        gr._github_api_get = lambda url, tok: (200, json.dumps(body))
+        try:
+            fact = gr.check_branch_protection(repo, "o/n", "T",
+                                              token_env_os={"T": "tok"})
+        finally:
+            gr._github_api_get = orig
+        assert fact["protection_ok"] is False
+        assert fact["ruleset_report"][0]["bypass_always"] is True
+
+    def test_200_bypass_not_always_ok(self, tmp_path):
+        """bypass с bypass_mode=pull_request (обход только своего PR) —
+        не отменяет защиту."""
+        repo = make_repo(tmp_path)
+        body = protection_ruleset_body(
+            bypass=[{"actor_id": 5, "bypass_mode": "pull_request"}])
         orig = gr._github_api_get
         gr._github_api_get = lambda url, tok: (200, json.dumps(body))
         try:
@@ -349,13 +458,13 @@ class TestProtectionAdapter:
             gr._github_api_get = orig
         assert fact["protection_ok"] is True
 
-    def test_200_without_reviews_or_flow_yml_fails(self, tmp_path):
+    def test_200_inactive_or_no_pull_request_fails(self, tmp_path):
         repo = make_repo(tmp_path)
         orig = gr._github_api_get
         for body in (
-            {"required_status_checks": {"contexts": ["flow.yml"]}},
-            {"required_pull_request_reviews": {},
-             "required_status_checks": {"contexts": ["ci"]}},
+            protection_ruleset_body(enforcement="evaluate"),
+            protection_ruleset_body(pull_request=False),
+            [],
         ):
             gr._github_api_get = lambda url, tok, b=body: (200, json.dumps(b))
             try:
@@ -469,7 +578,11 @@ class TestReleaseOutcomes:
         """
         repo = make_repo(tmp_path, name=name)
         archive_change(repo)
+        flow_state.OPENSPEC_VALIDATE_CMD = lambda repo, argv: 0
         return repo, make_registry(tmp_path)
+
+    def teardown_method(self):
+        flow_state.OPENSPEC_VALIDATE_CMD = None
 
     def test_no_facts_previous_behavior(self, tmp_path):
         """1) ничего нет → прежнее поведение: DENY «до архивации» +
@@ -532,8 +645,265 @@ class TestReleaseOutcomes:
 
 
 # =========================================================================
-# CLI адаптера github-protection (SKIPPED/факт), без сети
+# Усиление change.archived (пересмотр плана п.1): дельты + validate
 # =========================================================================
+
+
+class TestArchivedStrengthened:
+    """Негативные исходы усиленного факта архивации (пересмотр плана)."""
+
+    def test_not_ready_when_deltas_not_merged(self, tmp_path):
+        """Дельта не слита в openspec/specs/ → invalid (знание), не ready."""
+        repo = make_repo(tmp_path)
+        archive_change(repo)
+        # удаляем Requirement из master-spec → дельта больше не слита
+        write(repo, "openspec/specs/widget/spec.md", "# пусто\n")
+        commit_all(repo, "unmerge")
+        flow_state.OPENSPEC_VALIDATE_CMD = lambda r, a: 0
+        try:
+            s = snapshot_for(repo, make_registry(tmp_path))
+        finally:
+            flow_state.OPENSPEC_VALIDATE_CMD = None
+        f = next(f for f in s["facts"] if f["key"] == "change.archived")
+        assert f["status"] == "invalid", f
+        assert f["value"]["deltas_merged"] is False
+        assert f["value"]["delta_problems"]
+
+    def test_unknown_when_openspec_cli_unavailable(self, tmp_path):
+        """CLI недоступен → unknown с причиной, НЕ ready (нет «молчаливого
+        PASS»)."""
+        repo = make_repo(tmp_path)
+        archive_change(repo)
+        flow_state.OPENSPEC_VALIDATE_CMD = ("definitely-missing-cli",)
+        try:
+            s = snapshot_for(repo, make_registry(tmp_path))
+        finally:
+            flow_state.OPENSPEC_VALIDATE_CMD = None
+        f = next(f for f in s["facts"] if f["key"] == "change.archived")
+        assert f["status"] == "unknown", f
+        assert f["value"]["validate"] == "unavailable"
+        assert "reason" in f["value"]
+
+    def test_not_ready_when_validate_fails(self, tmp_path):
+        """validate --strict падает → unknown с причиной (не ready)."""
+        repo = make_repo(tmp_path)
+        archive_change(repo)
+        flow_state.OPENSPEC_VALIDATE_CMD = lambda r, a: 1
+        try:
+            s = snapshot_for(repo, make_registry(tmp_path))
+        finally:
+            flow_state.OPENSPEC_VALIDATE_CMD = None
+        f = next(f for f in s["facts"] if f["key"] == "change.archived")
+        assert f["status"] == "unknown", f
+        assert f["value"]["validate"] == "failed"
+        assert any(p["code"] == "OPENSPEC_VALIDATE_ERROR" for p in s["problems"])
+
+    def test_release_denied_on_unmerged_deltas(self, tmp_path):
+        """Негатив на release: архив-пакет есть, дельты не слиты → не ALLOW."""
+        repo = make_repo(tmp_path)
+        archive_change(repo)
+        write(repo, "openspec/specs/widget/spec.md", "# пусто\n")
+        commit_all(repo, "unmerge")
+        release_file(repo)
+        protect_ok_report(repo)
+        flow_state.OPENSPEC_VALIDATE_CMD = lambda r, a: 0
+        try:
+            d = ft.check_action(snapshot_for(repo, make_registry(tmp_path)), act())
+        finally:
+            flow_state.OPENSPEC_VALIDATE_CMD = None
+        assert d.status != "ALLOW"
+        assert d.local_ready != "ALLOW"
+
+
+# =========================================================================
+# Раздельный вывод local_ready / external_enforcement (пересмотр плана п.3)
+# =========================================================================
+
+
+class TestLocalExternalSplit:
+    def test_local_ready_allow_with_external_unknown(self, tmp_path):
+        """Локальные факты чисты, внешний факт нет → local_ready=ALLOW при
+        общем UNKNOWN (явное разделение, не скрытое превращение)."""
+        repo, reg = merge_snapshot(tmp_path)
+        d = ft.check_action(snapshot_for(repo, reg, task_id="2.1"),
+                            act(actor_role="dev_lead",
+                                requested_action="merge_task", task_id="2.1"))
+        assert d.status == "UNKNOWN"
+        assert d.local_ready == "ALLOW"
+        assert d.allowed_local is True
+        assert d.external_enforcement == "UNKNOWN"
+        # в JSON-представлении поля раздельны
+        as_dict = d.to_dict()
+        assert as_dict["local_ready"] == "ALLOW"
+        assert as_dict["external_enforcement"] == "UNKNOWN"
+
+    def test_local_ready_allow_with_external_pass(self, tmp_path):
+        """Полный комплект → общий ALLOW, external_enforcement=PASS."""
+        repo, reg = merge_snapshot(tmp_path)
+        protect_ok_report(repo)
+        d = ft.check_action(snapshot_for(repo, reg, task_id="2.1"),
+                            act(actor_role="dev_lead",
+                                requested_action="merge_task", task_id="2.1"))
+        assert d.status == "ALLOW"
+        assert d.local_ready == "ALLOW"
+        assert d.external_enforcement == "PASS"
+
+    def test_external_deny_shown_separately(self, tmp_path):
+        """404-факт → external_enforcement=DENY; local_ready остается ALLOW
+        (локально все чисто) — DENY именно внешний."""
+        repo, reg = merge_snapshot(tmp_path)
+        protection_404_report(repo)
+        d = ft.check_action(snapshot_for(repo, reg, task_id="2.1"),
+                            act(actor_role="dev_lead",
+                                requested_action="merge_task", task_id="2.1"))
+        assert d.status == "DENY"
+        assert d.local_ready == "ALLOW"
+        assert d.allowed_local is True
+        assert d.external_enforcement == "DENY"
+
+    def test_local_deny_not_masked_by_external_pass(self, tmp_path):
+        """Локальный DENY (нет approve) при внешнем PASS → local_ready != ALLOW,
+        общий DENY: внешний PASS не маскирует локальные проблемы."""
+        repo = make_repo(tmp_path)
+        protect_ok_report(repo)
+        d = ft.check_action(snapshot_for(repo, make_registry(tmp_path),
+                                         task_id="2.1"),
+                            act(actor_role="dev_lead",
+                                requested_action="merge_task", task_id="2.1"))
+        assert d.status == "DENY"
+        assert d.local_ready != "ALLOW"
+        assert d.external_enforcement == "PASS"
+
+    def test_human_output_shows_split(self, tmp_path):
+        """Человекочитаемый вывод содержит строку local_ready/external_
+        enforcement (явное разделение в отчете)."""
+        repo, reg = merge_snapshot(tmp_path)
+        d = ft.check_action(snapshot_for(repo, reg, task_id="2.1"),
+                            act(actor_role="dev_lead",
+                                requested_action="merge_task", task_id="2.1"))
+        human = ft._decision_human(d)
+        assert "local_ready: ALLOW" in human
+        assert "external_enforcement: UNKNOWN" in human
+
+    def test_policy_flag_false_lets_local_allow(self, tmp_path, monkeypatch):
+        """Явно выбранная политика merge_requires_external=false: решение по
+        локальным фактам (ALLOW при чистой локали), внешний UNKNOWN показан
+        рядом — не скрытое превращение, а явная политика."""
+        repo, reg = merge_snapshot(tmp_path)
+        monkeypatch.setattr(ft, "MERGE_REQUIRES_EXTERNAL", False)
+        d = ft.check_action(snapshot_for(repo, reg, task_id="2.1"),
+                            act(actor_role="dev_lead",
+                                requested_action="merge_task", task_id="2.1"))
+        assert d.status == "ALLOW", d.details
+        assert d.local_ready == "ALLOW"
+        assert d.external_enforcement == "UNKNOWN"
+        assert has_code(d, ft.EXTERNAL_ENFORCEMENT_UNKNOWN)
+
+
+# =========================================================================
+# Усиление release.approval (пересмотр плана п.4): SHA + конфликты
+# =========================================================================
+
+
+class TestReleaseApprovalSha:
+    def test_ready_with_sha_line(self, tmp_path):
+        """Файл с change-id, словом согласия и строкой SHA (HEAD или HEAD^)
+        → ready; формулировка «решение зафиксировано»."""
+        repo = make_repo(tmp_path)
+        release_file(repo)
+        reg = make_registry(tmp_path)
+        s = snapshot_for(repo, reg)
+        f = next(f for f in s["facts"] if f["key"] == "release.approval")
+        assert f["status"] == "ready", f
+        assert f["value"]["sha"]
+        assert "решение зафиксировано" in f["value"]["note"]
+
+    def test_invalid_without_sha_line(self, tmp_path):
+        """Негатив: нет строки SHA → invalid (привязка к версии работы
+        отсутствует), решение не засчитано."""
+        repo = make_repo(tmp_path)
+        release_file(repo, sha=None)
+        reg = make_registry(tmp_path)
+        s = snapshot_for(repo, reg)
+        f = next(f for f in s["facts"] if f["key"] == "release.approval")
+        assert f["status"] == "invalid", f
+        assert "SHA" in f["value"]["reason"]
+
+    def test_invalid_stale_sha(self, tmp_path):
+        """Негатив: SHA записи старше (есть коммит поверх) → invalid
+        (устаревшее решение), не ready."""
+        repo = make_repo(tmp_path)
+        release_file(repo)
+        write(repo, "unrelated.txt", "later work\n")
+        commit_all(repo, "later commit")
+        reg = make_registry(tmp_path)
+        s = snapshot_for(repo, reg)
+        f = next(f for f in s["facts"] if f["key"] == "release.approval")
+        assert f["status"] == "invalid", f
+        assert "устарело" in f["value"]["reason"]
+
+    def test_unknown_conflicting_two_sha_lines(self, tmp_path):
+        """Негатив: две строки SHA с разными хешами в одном файле → unknown
+        с AMBIGUOUS_STATE."""
+        repo = make_repo(tmp_path)
+        head = git(repo, "rev-parse", "HEAD")
+        release_file(repo, text=(
+            f"# Релиз add-widget\n\nразрешаю релиз add-widget\n\n"
+            f"SHA: {head}\nSHA: {'b' * 40}\n"))
+        reg = make_registry(tmp_path)
+        s = snapshot_for(repo, reg)
+        f = next(f for f in s["facts"] if f["key"] == "release.approval")
+        assert f["status"] == "unknown", f
+        assert "AMBIGUOUS_STATE" in f["value"]["reason"]
+        assert len(f["value"]["shas"]) == 2
+
+    def test_unknown_conflicting_two_files(self, tmp_path):
+        """Негатив: второй файл releases/<id>*.md с другим SHA → unknown
+        с AMBIGUOUS_STATE."""
+        repo = make_repo(tmp_path)
+        release_file(repo)
+        head2 = "c" * 40
+        write(repo, "releases/add-widget-2.md",
+              f"# Релиз add-widget\n\ncommit: {head2}\n")
+        reg = make_registry(tmp_path)
+        s = snapshot_for(repo, reg)
+        f = next(f for f in s["facts"] if f["key"] == "release.approval")
+        assert f["status"] == "unknown", f
+        assert "AMBIGUOUS_STATE" in f["value"]["reason"]
+
+    def test_release_blocked_by_conflicting_records(self, tmp_path):
+        """Негатив на release: конфликт записей → HUMAN_APPROVAL_REQUIRED
+        уходит, но появляется AMBIGUOUS_STATE; ALLOW недостижим без
+        approval_ref."""
+        repo = make_repo(tmp_path)
+        archive_change(repo)
+        head = git(repo, "rev-parse", "HEAD")
+        release_file(repo, text=(
+            f"# Релиз add-widget\n\nразрешаю релиз add-widget\n\n"
+            f"SHA: {head}\nSHA: {'d' * 40}\n"))
+        protect_ok_report(repo)
+        flow_state.OPENSPEC_VALIDATE_CMD = lambda r, a: 0
+        try:
+            d = ft.check_action(snapshot_for(repo, make_registry(tmp_path)),
+                                act())
+        finally:
+            flow_state.OPENSPEC_VALIDATE_CMD = None
+        assert d.status != "ALLOW"
+        assert has_code(d, ft.AMBIGUOUS_STATE)
+
+    def test_report_says_decision_recorded_not_identity(self, tmp_path):
+        """Формулировка: значение факта говорит «решение зафиксировано»,
+        не «личность подтверждена»."""
+        repo = make_repo(tmp_path)
+        release_file(repo)
+        reg = make_registry(tmp_path)
+        s = snapshot_for(repo, reg)
+        f = next(f for f in s["facts"] if f["key"] == "release.approval")
+        dumped = json.dumps(f["value"], ensure_ascii=False)
+        assert "решение зафиксировано" in dumped
+        assert "личность подтверждена" not in dumped.replace(
+            "не независимое одобрение личности", "")
+
 
 
 class TestProtectionCli:
