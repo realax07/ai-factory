@@ -114,7 +114,9 @@ def glob_matches(pattern: str, rel: str) -> bool:
             head, _, tail = pat.partition("**")
             # '**' → любое число сегментов (включая ноль).
             head_prefix = head.rstrip("/")
-            if not path.startswith(head_prefix):
+            if head_prefix and not (
+                path == head_prefix or path.startswith(head_prefix + "/")
+            ):
                 return False
             rest = path[len(head_prefix):].lstrip("/")
             tail_seg = tail.lstrip("/")
@@ -127,17 +129,54 @@ def glob_matches(pattern: str, rel: str) -> bool:
         return False
     return path == pat or path.startswith(pat + "/")
 
-
 def zone_holds(zone_patterns: list, rel: str) -> bool:
     return any(glob_matches(p, rel) for p in (zone_patterns or []))
 
 
+def _pattern_matches_pattern(pa: str, pb: str) -> bool:
+    """Матчит ли glob-паттерн pa хотя бы один путь, матчемый паттерном pb
+    (пересечение языков двух паттернов), посегментной рекурсией:
+    '**' — любое число сегментов (включая ноль), '*' — любой один сегмент
+    (fnmatch внутри сегмента), прочие сегменты — посегментный fnmatch."""
+    pa_segs, pb_segs = pa.split("/"), pb.split("/")
+
+    def seg_match(pat: str, seg: str) -> bool:
+        if any(ch in pat for ch in "*?["):
+            return fnmatch.fnmatchcase(seg, pat)
+        return pat == seg
+
+    def rec(i: int, j: int) -> bool:
+        while True:
+            if i == len(pa_segs) and j == len(pb_segs):
+                return True
+            if i == len(pa_segs) or j == len(pb_segs):
+                return False
+            a, b = pa_segs[i], pb_segs[j]
+            if a == "**":
+                # '**' съедает 0..k сегментов другой стороны (до конца).
+                return any(rec(i + 1, jj) for jj in range(j, len(pb_segs) + 1))
+            if b == "**":
+                return any(rec(ii, j + 1) for ii in range(i, len(pa_segs) + 1))
+            if not seg_match(a, b) and not seg_match(b, a):
+                return False
+            i, j = i + 1, j + 1
+
+    return rec(0, 0)
+
+
 def zones_overlap(a: list, b: list) -> tuple[str, str] | None:
-    """Пересечение двух зон: хотя бы один паттерн покрывает путь-представитель
-    другого (точный путь или префикс). Возвращает пару сошедшихся паттернов."""
+    """Пересечение двух зон: существует путь, покрываемый паттерном из a И
+    паттерном из b. Кроме прямых сравнений (паттерн-как-путь, конкретные
+    префиксы) пары паттернов сверяются пересечением их языков через
+    посегментную рекурсию — покрывает 'head/**/tail'-формы (например
+    '**/test/**' vs 'src/**': путь src/a/test/x.py принадлежит обеим зонам)
+    и не дает ложных срабатываний на 'src/**' vs 'srcx/**'. Возвращает пару
+    сошедшихся паттернов."""
     for pa in a or []:
         for pb in b or []:
             if pa == pb:
+                return pa, pb
+            if _pattern_matches_pattern(pa, pb):
                 return pa, pb
             na = _concrete_prefix(pa)
             nb = _concrete_prefix(pb)
@@ -201,6 +240,16 @@ def _migrate(data: dict) -> dict:
     return out
 
 
+def _load_or_migrate(registry_path: Path, data: dict) -> dict:
+    """Общий путь «миграция v1→v2 с бэкапом» (MUST ТЗ 04: схему менять
+    миграцией с резервной копией). Бэкап делается перед миграцией на ВСЕХ
+    путях записи (reserve/check/reconcile), а не только в reserve."""
+    if data.get("schema_version") == REGISTRY_SCHEMA:
+        return data
+    backup_registry(registry_path)
+    return _migrate(data)
+
+
 def registry_write(path: Path, data: dict) -> None:
     """Атомарная запись: tmp-файл рядом + os.replace (rename на той же ФС)."""
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -220,31 +269,82 @@ def registry_write(path: Path, data: dict) -> None:
 
 
 def backup_registry(path: Path) -> Path | None:
-    """Резервная копия перед миграцией схемы (ТЗ 04, совместимость)."""
+    """Резервная копия перед миграцией схемы (ТЗ 04, совместимость).
+
+    Имя уникально: timestamp с микросекундами + pid — два срабатывания
+    в одну секунду не перезаписывают друг друга.
+    """
     if not path.is_file():
         return None
-    bck = path.with_suffix(
-        path.suffix + f".bck-{time.strftime('%Y%m%dT%H%M%S')}")
+    stamp = (time.strftime("%Y%m%dT%H%M%S")
+             + f"-{time.time_ns() % 1_000_000_000:09d}-{os.getpid()}")
+    bck = path.with_suffix(path.suffix + f".bck-{stamp}")
     bck.write_bytes(path.read_bytes())
     return bck
 
 
 def _acquire_lock(path: Path, timeout: float = 10.0) -> Path:
-    """Лок-файл реестра: mkdir-атомарность (O_EXCL-семантика каталога)."""
+    """Лок-каталог реестра: mkdir-атомарность (O_EXCL-семантика каталога).
+
+    Внутрь лока пишется pid владельца: если владелец умер (crash/SIGKILL),
+    лок снимается автоматически и захват повторяется — мертвый лок после
+    падения процесса не держит admission навсегда. Живой владелец →
+    TimeoutError с его pid.
+    """
     lock = path.parent / (path.name + ".lock")
     deadline = time.monotonic() + timeout
     while True:
         try:
             lock.mkdir()
+            (lock / "pid").write_text(str(os.getpid()), encoding="utf-8")
             return lock
         except FileExistsError:
+            stale = False
+            pid_file = lock / "pid"
+            if pid_file.is_file():
+                try:
+                    stale = not pid_alive(pid_file.read_text(
+                        encoding="utf-8").strip())
+                except OSError:
+                    stale = False
+            else:
+                # Лок без pid-файла: либо создается прямо сейчас (не мешаем
+                # короткую границу), либо оставлен старой версией — снимаем
+                # только после полного таймаута.
+                if time.monotonic() > deadline:
+                    try:
+                        import shutil as _shutil
+                        _shutil.rmtree(lock, ignore_errors=True)
+                    except OSError:
+                        pass
+                    continue
+            if stale:
+                # Мертвый владелец — снимаем мертвый лок и пробуем снова.
+                try:
+                    import shutil as _shutil
+                    _shutil.rmtree(lock, ignore_errors=True)
+                except OSError:
+                    pass
+                continue
             if time.monotonic() > deadline:
+                owner = "?"
+                if pid_file.is_file():
+                    try:
+                        owner = pid_file.read_text(encoding="utf-8").strip()
+                    except OSError:
+                        pass
                 raise TimeoutError(
-                    f"не дождались освобождения лока реестра: {lock}")
+                    f"не дождались освобождения лока реестра {lock} "
+                    f"(владелец pid {owner} жив)")
             time.sleep(0.05)
 
 
 def _release_lock(lock: Path) -> None:
+    """Снимает лок: pid-файл удаляется первым (каталог должен стать пустым)."""
+    try:
+        (lock / "pid").unlink()
+    except OSError:
+        pass
     try:
         lock.rmdir()
     except OSError:
@@ -275,17 +375,25 @@ def git_branch(repo: Path) -> str | None:
 def changed_paths(repo: Path, base_sha: str | None) -> tuple[list[str], list[str]]:
     """(committed, uncommitted) пути: base..HEAD плюс незакоммиченные.
 
-    Имена читаются с -z (кавычки/пробелы не ломают разбор); rename-цели
-    включены как измененные пути. SESSION.md — маркер сессии
+    Имена читаются с -z (кавычки/пробелы не ломают разбор). Для committed
+    используется `git log --name-only --no-renames` — все пути всех коммитов
+    диапазона, включая созданные-и-переименованные (rename-эскейп: файл,
+    рожденный вне зоны и переехавший в зону, виден по старому пути;
+    `git diff --name-only` показал бы только новый путь внутри зоны).
+    Для porcelain-статуса `R` сохраняются ОБА пути: старый путь — удаление,
+    и удаление вне зоны само по себе нарушение. SESSION.md — маркер сессии
     (session_worktree.sh), в границах не проверяется.
     """
     committed: list[str] = []
     if base_sha:
         rc, out, err = git(
-            repo, "diff", "--name-only", "-z", f"{base_sha}..HEAD")
+            repo, "log", "--name-only", "--no-renames", "--format=%x2D", "-z",
+            f"{base_sha}..HEAD")
         if rc != 0:
-            return [], [f"git diff {base_sha}..HEAD: {err.strip()}"]
-        committed = [p for p in out.split("\0") if p]
+            return [], [f"git log {base_sha}..HEAD: {err.strip()}"]
+        committed = sorted({
+            p.strip() for p in out.split("\0")
+            if p.strip() and p.strip() != "-"})
     rc, out, err = git(repo, "status", "--porcelain", "-z", "-uall")
     if rc != 0:
         return committed, [f"git status: {err.strip()}"]
@@ -303,7 +411,12 @@ def changed_paths(repo: Path, base_sha: str | None) -> tuple[list[str], list[str
         if entry != "SESSION.md":
             uncommitted.append(entry)
         if tok[:2] in ("R ", "RM", " R") and i + 1 < len(toks):
-            i += 1  # rename: следующий токен — старый путь, пропускаем
+            i += 1
+            old = toks[i]
+            if old.startswith('"') and old.endswith('"'):
+                old = old[1:-1]
+            if old != "SESSION.md":
+                uncommitted.append(old)  # старый путь: удаление вне зоны — тоже нарушение
         i += 1
     return committed, uncommitted
 
@@ -361,8 +474,7 @@ def reserve(req: dict, registry_path: Path | str) -> dict:
                     "delegation_id": req["delegation_id"]}
         migrated = data.get("schema_version") != REGISTRY_SCHEMA
         if migrated:
-            data = _migrate(data)
-            backup_registry(registry_path)
+            data = _load_or_migrate(registry_path, data)
 
         zone_patterns = [canonical(p) for p in req["paths"]]
         sessions = data.get("sessions", [])
@@ -386,7 +498,7 @@ def reserve(req: dict, registry_path: Path | str) -> dict:
             }
             if payload_new == payload_old:
                 return {"allowed": True, "reason": REASON_OK,
-                        "idempotent": True, "details": [],
+                        "idempotent": True, "migrated": migrated, "details": [],
                         "delegation_id": req["delegation_id"],
                         "session": mine}
             return {"allowed": False, "reason": DUPLICATE_PAYLOAD,
@@ -443,9 +555,9 @@ def reserve(req: dict, registry_path: Path | str) -> dict:
         }
         sessions.append(entry)
         registry_write(registry_path, data)
-        return {"allowed": True, "reason": REASON_OK, "idempotent": migrated,
-                "details": [], "delegation_id": req["delegation_id"],
-                "session": entry}
+        return {"allowed": True, "reason": REASON_OK, "idempotent": False,
+                "migrated": migrated, "details": [],
+                "delegation_id": req["delegation_id"], "session": entry}
     finally:
         _release_lock(lock)
 
@@ -523,7 +635,7 @@ def check(session_req: dict, registry_path: Path) -> dict:
             f"{OUT_OF_ZONE}: измененные пути вне разрешенной зоны: "
             + ", ".join(out_of_zone[:20]))
 
-    # Symlink: измененный symlink не должен указывать вне repo.
+    # Symlink: измененный symlink не должен указывать вне repo И вне зоны.
     repo_resolved = repo.resolve()
     for p in sorted(set(committed + uncommitted)):
         f = repo / p
@@ -533,6 +645,16 @@ def check(session_req: dict, registry_path: Path) -> dict:
                 violations.append(
                     f"{OUT_OF_ZONE}: {p}: symlink указывает вне репозитория "
                     f"({target})")
+            elif repo_resolved != target:
+                # Цель внутри repo, но вне разрешенной зоны — тоже отказ
+                # (приемка ТЗ 04: symlink за пределы зоны дают отказ).
+                target_rel = canonical(
+                    str(target.relative_to(repo_resolved)))
+                if not zone_holds(zones, target_rel):
+                    violations.append(
+                        f"{OUT_OF_ZONE}: {p}: symlink указывает вне "
+                        f"разрешенной зоны (цель {target_rel} не в "
+                        f"{zones})")
 
     ok = not violations
     # Evidence-разметка результата в реестре (атомарно, с локом).
@@ -541,7 +663,7 @@ def check(session_req: dict, registry_path: Path) -> dict:
         data2, err2 = registry_load(registry_path)
         if not err2:
             if data2.get("schema_version") != REGISTRY_SCHEMA:
-                data2 = _migrate(data2)
+                data2 = _load_or_migrate(registry_path, data2)
             s2 = next((s for s in data2.get("sessions", [])
                        if isinstance(s, dict)
                        and s.get("delegation_id") == delegation_id), None)
@@ -571,7 +693,9 @@ def check(session_req: dict, registry_path: Path) -> dict:
                 registry_write(registry_path, data2)
     finally:
         _release_lock(lock)
-    return {"ok": ok, "reason": REASON_OK if ok else OUT_OF_ZONE,
+    return {"ok": ok,
+            "reason": REASON_OK if ok else (violations[0].split(":")[0]
+                                            if violations else OUT_OF_ZONE),
             "details": violations, "violations": violations,
             "out_of_zone": out_of_zone,
             "changed": {"committed": committed, "uncommitted": uncommitted},
@@ -647,7 +771,7 @@ def reconcile(registry_path: Path, repo: Path | None = None,
             data2, err2 = registry_load(registry_path)
             if not err2:
                 if data2.get("schema_version") != REGISTRY_SCHEMA:
-                    data2 = _migrate(data2)
+                    data2 = _load_or_migrate(registry_path, data2)
                 by_id = {r["delegation_id"]: r for r in results}
                 for s in data2.get("sessions", []):
                     if not isinstance(s, dict):
@@ -752,6 +876,14 @@ def main(argv: list[str] | None = None) -> int:
     args = ap.parse_args(argv)
 
     if args.command == "reserve":
+        registry_file = Path(args.registry)
+        if registry_file.parent != Path(".") and not registry_file.parent.is_dir():
+            result = {"allowed": False, "reason": REGISTRY_ERROR,
+                      "details": [f"каталог реестра не существует: "
+                                  f"{registry_file.parent}"],
+                      "delegation_id": args.delegation_id}
+            _emit(result, args.as_json)
+            return 2
         result = reserve(
             {"repo": args.repo, "delegation_id": args.delegation_id,
              "role": args.role, "project": args.project,
