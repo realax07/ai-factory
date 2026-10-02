@@ -23,10 +23,18 @@ prepare/run/finish/status/reconcile — исполнение разрешенн�
   несовпадение digest с моментом prepare → отказ, статус не меняется.
 - Timeout/crash не продвигают на следующий шаг: reconcile помечает
   needs_attention/stale (ничего не удаляется молча, worktree сохраняется);
-  finish на такой сессии — blocked. После завершения агентский отчет
-  рассматривается как указатель на файлы: вердикт accepted/returned/blocked
-  по фактическому Git diff, разрешенной зоне и gates; при возврате —
-  структурированный список дефектов.
+  - finish на такой сессии — blocked. После завершения агентский отчет
+    рассматривается как указатель на файлы: вердикт accepted/returned/blocked
+    по фактическому Git diff, разрешенной зоне и gates; при возврате —
+    структурированный список дефектов.
+  - P0.2 (пересмотр плана Заказчика): обязательные gates вычисляются из
+    политики (required_gates_for: DEFAULT_GATES точки запуска + машинные
+    ворота этапа из STAGE_TABLE), а не из флагов. --gates может только
+    ДОБАВИТЬ проверки — попытка заменить обязательный набор отвергается
+    с перечнем недостающих (MISSING_REQUIRED_GATES). --diagnostic прогоняет
+    сокращенный список БЕЗ права accepted: вердикт diagnostic_only, сессия
+    не закрывается. Вердикт accepted несет список реально выполненных gates
+    и их digest.
 - Никакого авто-push/merge/deploy и авто-старта фаз: только исполнение
   разрешенного; этапные ворота Заказчика — check_action
   (HUMAN_APPROVAL_REQUIRED, контракт §10).
@@ -49,7 +57,7 @@ Usage:
     flowctl.py run --correlation-id ID [--registry PATH] [--state PATH]
         [--audit PATH] [--json]
     flowctl.py finish --correlation-id ID --report PATH [--gate-scope S]
-        [--gates a,b] [--openspec-cmd CMD] [--timeout SEC] [--pm-mode M]
+        [--gates a,b] [--diagnostic] [--openspec-cmd CMD] [--timeout SEC] [--pm-mode M]
         [--pm-commits X] [--pm-range A..B] [--pm-registry PATH]
         [--pm-require-review] [--pr-id ID] [--log-dir D] [--report-dir D]
         [--registry PATH] [--state PATH] [--audit PATH] [--json]
@@ -83,6 +91,59 @@ import session_check as sc  # noqa: E402
 OUTPUT_SCHEMA = "flowctl-output/1"
 STATE_SCHEMA = "flowctl-state/1"
 ADAPTER = "manual"
+
+# ------------------------------------------------------- P0.2: политика gates
+# Источник политики (P0.2, пересмотр плана Заказчика): контракт §4/§5/§11
+# (run_gates — ворота ФАЗЫ, определяются политикой, а не вызывающим) и
+# STAGE_TABLE из flow_transition.py (машинные gates этапа действия).
+# Смысл: finish НЕ может выбрать набор проверок — обязательные gates
+# вычисляются из области (gate_scope) и действия записи; --gates умеет
+# только ДОБАВЛЯТЬ, --diagnostic прогоняет сокращенный список без accepted.
+
+# Имена этапов из STAGE_TABLE (flow_transition.py), для которых ворота этапа
+# исполнимы здесь как machine-gate (маркеры вида «flow_check (контракт 3)» —
+# человеческие формулировки контракта, их проверяет flow_check целиком).
+_STAGE_IMPLEMENTS_MACHINE_GATE = {
+    "flow_check": "flow_check",
+    "pm_bounds_check (J9/J10)": "pm_bounds_check",
+    "pm_bounds_check --require-review": "pm_bounds_check",
+    "pm_bounds_check (J3)": "pm_bounds_check",
+    "pr_validate [BUG-NNN]": "pr_validate",
+    "pr_validate check_chore": "pr_validate",
+    "pr_validate [change-id]": "pr_validate",
+    "openspec validate --strict": "openspec_validate",
+    "openspec validate": "openspec_validate",
+}
+
+# Диагностический прогон: разрешенный сокращенный список (без pm_bounds —
+# там нужны явные аргументы режима). Все равно не дает accepted.
+DIAGNOSTIC_GATES = ("flow_check",)
+
+
+def required_gates_for(scope: dict, action: str | None = None,
+                       gate_scope: str = "post_agent") -> tuple[str, ...]:
+    """Обязательный набор gates для области finish (P0.2; контракт §4/§11:
+    run_gates(scope, phase) — ворота фазы из политики, не из флагов).
+
+    Состав: DEFAULT_GATES[gate_scope] (точка запуска, gate_runner) плюс
+    машинные ворота этапа действия из STAGE_TABLE (flow 1–5), которые
+    выражаются известными исполнимыми адаптерами (см.
+    _STAGE_IMPLEMENTS_MACHINE_GATE). Порядок — как в таблице политики.
+    """
+    gates: list[str] = list(gr.DEFAULT_GATES[gate_scope])
+    flow = (scope or {}).get("flow")
+    stage_gates: tuple = ()
+    if action and flow in ft.STAGE_TABLE:
+        stage = next((s for s in ft.STAGE_TABLE[flow]
+                      if s.action == action), None)
+        if stage is not None:
+            stage_gates = stage.gates
+    for g in stage_gates:
+        machine = _STAGE_IMPLEMENTS_MACHINE_GATE.get(g)
+        if machine and machine not in gates:
+            gates.append(machine)
+    return tuple(gates)
+
 
 RECORD_ACTIVE = ("prepared", "running", "blocked", "needs_attention")
 RECORD_CLOSED = ("accepted", "returned")
@@ -739,13 +800,47 @@ def cmd_finish(args) -> int:
     worktree = Path(record["worktree"]) if record.get("worktree") else Path(
         record["scope"]["repo"])
 
+    # 0) P0.2: обязательные gates — из политики (DEFAULT_GATES точки запуска
+    #    + машинные ворота этапа из STAGE_TABLE), НЕ из флагов. --gates может
+    #    только ДОБАВИТЬ проверки; попытка заменить обязательный набор — отказ
+    #    с перечнем недостающих обязательных. --diagnostic — прогон
+    #    сокращенного списка (DIAGNOSTIC_GATES) без права accepted.
+    required = list(required_gates_for(
+        record["scope"], record.get("action"), args.gate_scope))
+    requested = ([g.strip() for g in args.gates.split(",") if g.strip()]
+                 if args.gates else [])
+    unknown = [g for g in requested if g not in gr.KNOWN_GATES]
+    if unknown:
+        print(f"FLOWCTL-ERROR: неизвестные gates: {', '.join(unknown)} "
+              f"(доступны: {', '.join(gr.KNOWN_GATES)})", file=sys.stderr)
+        return 2
+    if args.diagnostic:
+        if requested:
+            print("FLOWCTL-ERROR: --diagnostic не сочетается с --gates "
+                  "(диагностический список фиксирован политикой: "
+                  f"{', '.join(DIAGNOSTIC_GATES)})", file=sys.stderr)
+            return 2
+        gates = [str(g) for g in DIAGNOSTIC_GATES]
+        missing_required = [g for g in required if g not in gates]
+    else:
+        gates = list(dict.fromkeys(required + requested))
+        missing_required = []
+        # Явный отказ, если вызывающий пытался СУЗИТЬ набор относительно
+        # политики (достижимо только когда в будущем изменят точку запуска
+        # после prepare — защита от регрессии семантики флага).
+        if requested and set(requested) != set(required) \
+                and set(requested).issubset(set(required)):
+            print("FLOWCTL-ERROR: --gates не может заменить обязательные "
+                  f"gates ({', '.join(required)}) — недостающие обязательные: "
+                  f"{', '.join(g for g in required if g not in requested)} "
+                  "(P0.2: флаг только добавляет проверки)", file=sys.stderr)
+            return 1
+
     # 1) Зона: фактический diff против разрешенной зоны (поставка 04).
     zone_res = sc.check({"delegation_id": record["delegation_id"],
                          "repo": str(worktree)}, registry_path)
 
     # 2) Gates: реальные ворота фазы (поставка 05) на рабочем дереве.
-    gates = ([g.strip() for g in args.gates.split(",") if g.strip()]
-             if args.gates else list(gr.DEFAULT_GATES[args.gate_scope]))
     opts = argparse.Namespace(
         openspec_cmd=args.openspec_cmd, timeout=args.timeout,
         pm_mode=args.pm_mode, pm_commits=args.pm_commits,
@@ -777,13 +872,69 @@ def cmd_finish(args) -> int:
         defects.append({"source": "gate", "code": "STALE",
                         "detail": "HEAD изменился после gate-отчета — повтор обязателен"})
 
+    # P0.2: диагностический прогон НЕ дает accepted ни при каком исходе.
+    if args.diagnostic:
+        if missing_required:
+            defects.append({
+                "source": "gate", "code": "MISSING_REQUIRED_GATES",
+                "detail": "диагностический прогон выполнен без обязательных "
+                          f"gates: {', '.join(missing_required)} — "
+                          "accepted недостижим до полного прогона",
+            })
+
     if zone_res.get("reason") == sc.REGISTRY_ERROR \
             or gate_report["overall"] == gr.STATUS_ERROR:
         verdict = "blocked"
+    elif args.diagnostic:
+        # Прогон сокращенного списка: вердикт diagnostic_only (не accepted),
+        # сессия НЕ закрывается — run/finish повторяются после разбора.
+        verdict = "diagnostic_only"
     elif zone_res["ok"] and gate_exit == 0:
         verdict = "accepted"
     else:
         verdict = "returned"
+
+    executed_gates = {
+        g["gate_id"]: {"status": g["status"], "exit_code": g["exit_code"],
+                       "digest": g["input_digest"],
+                       "executed": g["executed"]}
+        for g in gate_report.get("gates", [])
+    }
+    gates_digest = gr.canonical_digest(executed_gates)
+
+    if verdict == "diagnostic_only":
+        # Только фиксация в state: сессия НЕ закрывается (статус running
+        # сохранен, реестр не тронут) — после разбора возможен штатный
+        # полный finish, но accepted этим прогоном не выносится.
+        def _mutate(st: dict) -> None:
+            rec = st["runs"][args.correlation_id]
+            rec["diagnostic"] = {
+                "at": gr.utcnow_iso(),
+                "verdict": "diagnostic_only",
+                "required_gates": required,
+                "missing_required": missing_required,
+                "gates": {"overall": gate_report["overall"],
+                          "report_ref": gate_report.get("report_ref")},
+                "gates_executed": executed_gates,
+                "gates_digest": gates_digest,
+            }
+            record.update(rec)
+
+        state_write_locked(state_path, state, _mutate)
+        _emit({
+            "schema_version": OUTPUT_SCHEMA, "command": "finish",
+            "correlation_id": args.correlation_id,
+            "verdict": "diagnostic_only", "diagnostic": True,
+            "required_gates": required,
+            "missing_required_gates": missing_required,
+            "gates_executed": executed_gates, "gates_digest": gates_digest,
+            "defects": defects, "record": record,
+            "note": "диагностический прогон сокращенного списка НЕ дает "
+                    "accepted (P0.2): сессия не закрыта, обязательные gates "
+                    f"({', '.join(required)}) подлежат полному прогону; "
+                    "вердикт выносит ПМ после разбора",
+        }, args.as_json)
+        return 2
 
     new_state = ("finished" if verdict in ("accepted", "returned")
                  else "needs_attention")
@@ -809,7 +960,9 @@ def cmd_finish(args) -> int:
             "zone": {"ok": zone_res["ok"], "reason": zone_res["reason"],
                      "violations": zone_res.get("violations", [])},
             "gates": {"overall": gate_report["overall"],
-                      "report_ref": gate_report.get("report_ref")},
+                      "report_ref": gate_report.get("report_ref"),
+                      "executed": executed_gates,
+                      "digest": gates_digest},
             "report": {"path": str(report_path),
                        "digest": gr.sha256_text(
                            report_path.read_text(encoding="utf-8",
@@ -832,6 +985,8 @@ def cmd_finish(args) -> int:
     _emit({
         "schema_version": OUTPUT_SCHEMA, "command": "finish",
         "correlation_id": args.correlation_id, "verdict": verdict,
+        "required_gates": required,
+        "gates_executed": executed_gates, "gates_digest": gates_digest,
         "defects": defects, "record": record,
         "note": "push/merge/deploy НЕ выполняются — только локальный вердикт; "
                 + ("следующий шаг (merge/review) — явное решение ПМ"
@@ -1002,7 +1157,14 @@ def main(argv: list[str] | None = None) -> int:
     p_fin.add_argument("--gate-scope", default="post_agent",
                        choices=gr.SCOPES)
     p_fin.add_argument("--gates", default=None,
-                       help="список gate через запятую (иначе набор фазы)")
+                       help="ДОПОЛНИТЕЛЬНЫЕ gates через запятую (P0.2: "
+                            "обязательный набор вычисляется из политики; "
+                            "замена набора — отказ с перечнем недостающих)")
+    p_fin.add_argument("--diagnostic", action="store_true",
+                       help="диагностический прогон сокращенного списка "
+                            f"({', '.join(DIAGNOSTIC_GATES)}) БЕЗ права "
+                            "accepted: вердикт diagnostic_only, сессия "
+                            "не закрывается")
     p_fin.add_argument("--openspec-cmd", default="npx openspec")
     p_fin.add_argument("--timeout", type=int, default=gr.DEFAULT_TIMEOUT)
     p_fin.add_argument("--pm-mode", choices=gr.PM_MODES, default=None)

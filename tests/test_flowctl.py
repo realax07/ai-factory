@@ -392,19 +392,22 @@ class TestFinish:
 
     def _finish_argv(self, tmp_path, reg, state, report,
                      openspec_cmd=None):
+        # P0.2: обязательные gates (post_agent + этап dev_task из STAGE_TABLE:
+        # flow_check + pm_bounds_check) вычисляются из политики; --gates ниже
+        # только ДОБАВЛЯЕТ openspec_validate к обязательному набору.
         argv = [
             "finish", "--correlation-id", "corr0001",
             "--report", str(report),
-            "--gate-scope", "preflight",
-            "--gates", "flow_check",
+            "--gate-scope", "post_agent",
+            "--gates", "openspec_validate",
+            "--openspec-cmd", openspec_cmd or "true",
+            "--pm-mode", "commits", "--pm-commits", "HEAD",
             "--registry", str(reg), "--state", str(state),
             "--audit", str(tmp_path / "audit.jsonl"),
             "--log-dir", str(tmp_path / "logs"),
             "--report-dir", str(tmp_path / "greports"),
             "--json",
         ]
-        if openspec_cmd:
-            argv += ["--openspec-cmd", openspec_cmd]
         return argv
 
     def test_finish_accepted_in_zone_gates_pass(self, tmp_path):
@@ -699,3 +702,147 @@ class TestUnits:
         reg = tmp_path / "x" / "active_sessions.json"
         p = flowctl.default_state_path(str(reg))
         assert p == reg.parent / "flowctl_state.json"
+
+
+# ----------------------------- P0.2: обязательные gates из политики (finish)
+
+
+class TestFinishRequiredGatesPolicy:
+    """P0.2 (пересмотр плана Заказчика): finish --gates не может заменить
+    набор проверок — обязательные gates вычисляются из политики
+    (required_gates_for), флаг только ДОБАВЛЯЕТ. Диагностический прогон
+    сокращенного списка не дает accepted (вердикт diagnostic_only)."""
+
+    def _prepare_run(self, tmp_path):
+        repo = make_repo(tmp_path)
+        reg = make_registry(tmp_path)
+        state = tmp_path / "state" / "flowctl_state.json"
+        report = TestFinish()._prepare_and_run(tmp_path, repo, reg, state)
+        return repo, reg, state, report
+
+    def _full_argv(self, tmp_path, reg, state, report, extra=()):
+        return [
+            "finish", "--correlation-id", "corr0001",
+            "--report", str(report),
+            "--gate-scope", "post_agent",
+            "--pm-mode", "commits", "--pm-commits", "HEAD",
+            "--registry", str(reg), "--state", str(state),
+            "--log-dir", str(tmp_path / "logs"),
+            "--report-dir", str(tmp_path / "greports"),
+            "--json", *extra,
+        ]
+
+    def test_gates_subset_of_required_is_rejected_with_list(self, tmp_path):
+        """--gates с одним легким gate НЕ дает accepted: попытка заменить
+        обязательные (flow_check + pm_bounds_check из политики) — отказ с
+        перечнем недостающих обязательных, вердикт не выносится."""
+        repo, reg, state, report = self._prepare_run(tmp_path)
+        r = flowctl_cmd(*self._full_argv(
+            tmp_path, reg, state, report, ("--gates", "flow_check")))
+        assert r.returncode == 1
+        assert "не может заменить обязательные" in r.stderr
+        # Перечень недостающих обязательных назван:
+        assert "pm_bounds_check" in r.stderr
+        assert "flow_check" in r.stderr
+        # Вердикта нет: сессия не закрыта, повтор finish возможен
+        rec = json.loads(state.read_text(encoding="utf-8"))["runs"]["corr0001"]
+        assert rec["status"] == "running"
+        assert registry_sessions(reg)[0]["status"] == "running"
+
+    def test_gates_only_adds_to_required_set(self, tmp_path):
+        """Штатная семантика: --gates ДОБАВЛЯЕТ проверку, обязательные из
+        политики запускаются всегда (видны в gates_executed вердикта)."""
+        repo, reg, state, report = self._prepare_run(tmp_path)
+        fake = fake_openspec(tmp_path, exit_code=0)
+        r = flowctl_cmd(*self._full_argv(
+            tmp_path, reg, state, report,
+            ("--gates", "openspec_validate", "--openspec-cmd", fake)))
+        assert r.returncode == 0, r.stdout + r.stderr
+        data = json.loads(r.stdout)
+        assert data["verdict"] == "accepted"
+        executed = data["gates_executed"]
+        # Обязательные из политики — все выполнены и PASS:
+        for g in data["required_gates"]:
+            assert executed[g]["status"] == "PASS"
+            assert executed[g]["executed"] is True
+        # Дополнительный из --gates — тоже выполнен:
+        assert executed["openspec_validate"]["status"] == "PASS"
+        # accepted несет digest реально выполненного набора:
+        assert data["gates_digest"]
+        rec = json.loads(state.read_text(encoding="utf-8"))["runs"]["corr0001"]
+        assert rec["verdict"]["gates"]["digest"] == data["gates_digest"]
+
+    def test_finish_without_additions_runs_policy_gates(self, tmp_path):
+        """finish вовсе без --gates: обязательные gates политики все равно
+        запускаются (их набор не зависит от флагов)."""
+        repo, reg, state, report = self._prepare_run(tmp_path)
+        r = flowctl_cmd(*self._full_argv(tmp_path, reg, state, report))
+        assert r.returncode == 0, r.stdout + r.stderr
+        data = json.loads(r.stdout)
+        assert data["verdict"] == "accepted"
+        assert set(data["required_gates"]) == {"flow_check", "pm_bounds_check"}
+        assert set(data["gates_executed"]) == {
+            "flow_check", "pm_bounds_check"}
+
+    def test_diagnostic_never_gives_accepted(self, tmp_path):
+        """--diagnostic: прогон сокращенного списка, verdict diagnostic_only
+        (не accepted), сессия не закрывается, missing required перечислен."""
+        repo, reg, state, report = self._prepare_run(tmp_path)
+        r = flowctl_cmd(*self._full_argv(
+            tmp_path, reg, state, report, ("--diagnostic",)))
+        assert r.returncode == 2
+        data = json.loads(r.stdout)
+        assert data["verdict"] == "diagnostic_only"
+        assert data["diagnostic"] is True
+        assert data["verdict"] != "accepted"
+        assert set(data["required_gates"]) == {"flow_check", "pm_bounds_check"}
+        assert set(data["missing_required_gates"]) == {"pm_bounds_check"}
+        assert any(d["code"] == "MISSING_REQUIRED_GATES" for d in data["defects"])
+        # Сессия НЕ закрыта: статус running и в state, и в реестре
+        rec = json.loads(state.read_text(encoding="utf-8"))["runs"]["corr0001"]
+        assert rec["status"] == "running"
+        assert "diagnostic" in rec
+        assert rec["diagnostic"]["verdict"] == "diagnostic_only"
+        assert registry_sessions(reg)[0]["status"] == "running"
+
+    def test_diagnostic_incompatible_with_gates(self, tmp_path):
+        """--diagnostic с --gates — ошибка входа (список фиксирован)."""
+        repo, reg, state, report = self._prepare_run(tmp_path)
+        r = flowctl_cmd(*self._full_argv(
+            tmp_path, reg, state, report,
+            ("--diagnostic", "--gates", "flow_check")))
+        assert r.returncode == 2
+        assert "--diagnostic не сочетается с --gates" in r.stderr
+        rec = json.loads(state.read_text(encoding="utf-8"))["runs"]["corr0001"]
+        assert rec["status"] == "running"
+
+    def test_unknown_gate_rejected(self, tmp_path):
+        """Неизвестное имя gate — отказ без прогонов (не молчаливый пропуск)."""
+        repo, reg, state, report = self._prepare_run(tmp_path)
+        r = flowctl_cmd(*self._full_argv(
+            tmp_path, reg, state, report, ("--gates", "lint_light")))
+        assert r.returncode == 2
+        assert "неизвестные gates" in r.stderr
+        assert "lint_light" in r.stderr
+
+    def test_required_gates_for_unit_from_stage_table(self, tmp_path):
+        """Юнит: обязательный набор = DEFAULT_GATES точки запуска + машинные
+        ворота этапа из STAGE_TABLE (источник — контракт §4/§11)."""
+        # preflight сам по себе: только openspec_validate
+        assert flowctl.required_gates_for({"flow": 1}, None, "preflight") \
+            == ("openspec_validate",)
+        # post_agent без этапа: flow_check
+        assert flowctl.required_gates_for({"flow": 1}, None, "post_agent") \
+            == ("flow_check",)
+        # post_agent + dev_task (Флоу 1): + pm_bounds_check (J9/J10)
+        assert flowctl.required_gates_for(
+            {"flow": 1, "change": "add-widget"}, "dev_task", "post_agent") \
+            == ("flow_check", "pm_bounds_check")
+        # merge_task: машинные pr_validate; branch protection — не machine-gate
+        gates = flowctl.required_gates_for(
+            {"flow": 1, "change": "add-widget"}, "merge_task", "pre_merge")
+        assert "pm_bounds_check" in gates and "pr_validate" in gates
+        assert "branch protection (внеш.)" not in gates
+        # Неизвестный флоу/этап: набор точки запуска, без исключения
+        assert flowctl.required_gates_for({"flow": 9}, "nope", "post_agent") \
+            == ("flow_check",)
