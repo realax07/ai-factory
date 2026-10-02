@@ -227,6 +227,9 @@ def check(repo: Path) -> int:
                 errors += errs(
                     f"openspec/changes/{d.name}/: change-пакет без requirements.md (контракт 1)"
                 )
+            # --- Решение Заказчика 2026-10-02 (3.3/S7): архивация — функция sa ---
+            # (контракт 7: автор спек сливает дельты; граф машинных правил приведен
+            #  в соответствие, см. docs/shadow-r6-scenario.md)
             if CHANGE_ID.match(d.name) is None:
                 errors += errs(
                     f"openspec/changes/{d.name}: change-id не в kebab-case из >=2 слов"
