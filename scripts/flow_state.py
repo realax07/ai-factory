@@ -358,6 +358,44 @@ def test_model_fact(repo: Path, problems: list) -> Fact:
     )
 
 
+def approved_cases_fact(repo: Path, change_id: str, problems: list) -> Fact:
+    """Решение Заказчика 3.1-А (S5, 2026-10-02): approved-кейсы ИМЕННО этого change.
+
+    Глобальная непустота test-model/approved/ (там лежат старые пакеты) не
+    доказывает завершение QA своего change — ложное разрешение S5 в shadow-R6.
+    Факт строится по содержимому test-model/approved/<change-id>/: есть файлы
+    кейсов → ready/verified; каталога нет → missing; нечитаем/symlink наружу →
+    unknown + проблема (не «пусто»).
+    """
+    key = "approved_cases_of_change"
+    rel = f"test-model/approved/{change_id}"
+    d = repo / rel
+    try:
+        resolved = d.resolve(strict=False)
+        repo_resolved = repo.resolve()
+        if repo_resolved != resolved and repo_resolved not in resolved.parents:
+            problems.append(Problem(
+                code="PATH_OUTSIDE_REPO",
+                detail=f"{rel}: symlink выходит за пределы репозитория",
+                source=rel,
+            ))
+            return Fact(key, None, rel, "", "", CONFIDENCE_UNKNOWN, STATUS_UNKNOWN)
+    except OSError as exc:
+        problems.append(Problem(
+            code="FILE_READ_ERROR", detail=f"{rel}: не читается: {exc}", source=rel,
+        ))
+        return Fact(key, None, rel, "", "", CONFIDENCE_UNKNOWN, STATUS_UNKNOWN)
+    if not resolved.is_dir():
+        return Fact(key, None, rel, "", "", CONFIDENCE_UNKNOWN, STATUS_MISSING)
+    cases = sorted(str(p.relative_to(resolved)) for p in resolved.rglob("*.md"))
+    value = {"change": change_id, "count": len(cases), "cases": cases}
+    return Fact(
+        key, value, rel, "",
+        _sha256_text(json.dumps(value, sort_keys=True, ensure_ascii=False)),
+        CONFIDENCE_VERIFIED, STATUS_READY,
+    )
+
+
 # -------------------------------------------------------------- реестр
 
 
@@ -509,6 +547,9 @@ def inspect(
     facts.append(test_model_fact(repo, problems))
     facts.extend(change_facts(repo, change_id, problems))
     facts.append(reviews_fact(repo, change_id, problems))
+    # Решение Заказчика 3.1-А (S5, 2026-10-02): факт approved-кейсов ИМЕННО
+    # этого change — по нему qa_automation допускает автоматизацию (ТЗ 04).
+    facts.append(approved_cases_fact(repo, change_id, problems))
 
     # task: независимые состояния внутри change (не один линейный статус)
     if task_id:

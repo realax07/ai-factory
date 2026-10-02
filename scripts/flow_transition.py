@@ -566,11 +566,54 @@ def check_qa_review(snapshot, action, ctx, flow):
         "нет кейсов в test-model/new/ — ревьюить нечего (контракт 4/5)"))
 
 
+def check_qa_impact_analysis(snapshot, action, ctx, flow):
+    """Роль практики qa_impact_analyst (agents/README.md, решение 3.1):
+    impact-анализ пишется в test-model/impact/<change-id>.md на основе дельт
+    или существующих спек — источника фактов достаточно, отдельного факта
+    impact-файла в снимке среза 1 нет (запись роли — зона поставки 04/05).
+    """
+    ctx["checked"].add("test_model.impact_file")
+    out: list = []
+    deltas, d_status, out0 = _fact_ready(snapshot, "change.spec_deltas", ctx)
+    out.extend(out0)
+    specs_value, specs_status, out1 = _fact_ready(snapshot, "specs.present", ctx)
+    out.extend(out1)
+    has_source = (
+        (d_status == "ready" and deltas)
+        or (specs_status == "ready" and isinstance(specs_value, dict)
+            and specs_value.get("count", 0) > 0)
+    )
+    if not has_source and not (out0 or out1):
+        out.append(Finding(INVALID_GATE,
+                           "impact-анализ требует источник (дельты change или "
+                           "существующие спеки) — проверять нечего "
+                           "(контракт 3/4; evidence: openspec/changes/<id>/specs/, "
+                           "openspec/specs/)"))
+    return out
+
+
 def check_qa_automation(snapshot, action, ctx, flow):
-    return list(_test_model_sub(
+    """Решение Заказчика 3.1-А (S5, 2026-10-02): автоматизация требует
+    approved-кейсов ИМЕННО этого change (факт approved_cases_of_change),
+    а не глобальной непустоты test-model/approved/ (ложное разрешение S5
+    shadow-R6: старые пакеты других change маскировали пустоту своего).
+    Глобальная проверка сохраняется: она проверяет сам контур test-model.
+    """
+    out = list(_test_model_sub(
         snapshot, ctx, "approved",
         "автотесты требуют approved-кейсы — test-model/approved/ пуст "
         "(контракт 5/6)"))
+    value, status, out2 = _fact_ready(snapshot, "approved_cases_of_change", ctx)
+    out.extend(out2)
+    if status == "ready":
+        if not isinstance(value, dict) or not value.get("count"):
+            out.append(Finding(
+                MISSING_INPUT,
+                "автотесты без approved-кейсов СВОЕГО change: "
+                "test-model/approved/<change-id>/ пуст или отсутствует "
+                "(решение Заказчика 3.1-А; контракт 6; evidence: "
+                "test-model/approved/<change-id>/)"))
+    return out
 
 
 def check_archive_change(snapshot, action, ctx, flow):
@@ -589,14 +632,20 @@ def check_archive_change(snapshot, action, ctx, flow):
                 f"не все задачи закрыты (open={open_n}) — архивация требует [x] "
                 f"по всем задачам (контракт 7; evidence: "
                 f"openspec/changes/<id>/tasks.md)"))
-    # TODO(3.1/S5): проверка по пакету — поставка 04, решение Заказчика
-    # 2026-10-02. Сейчас _test_model_sub проверяет глобальную непустость
-    # test-model/approved/; нужен факт approved_cases_of_change в снимке:
-    # qa_automation/archive без approved-кейсов СВОЕГО change → DENY/MISSING_INPUT.
-    out.extend(_test_model_sub(
-        snapshot, ctx, "approved",
-        "QA-контур не завершен: нет approved-кейсов — QA не сводится к одной "
-        "булевой переменной (ТЗ 03 п.2; контракты 3–6)"))
+    # Решение Заказчика 3.1-А (S5, 2026-10-02): архивация требует
+    # approved-кейсы ИМЕННО этого change — QA-контур не сводится к глобальной
+    # непустоте test-model/approved/ (ложное разрешение S5 shadow-R6).
+    ac_value, ac_status, out_ac = _fact_ready(
+        snapshot, "approved_cases_of_change", ctx)
+    out.extend(out_ac)
+    if ac_status == "ready":
+        if not isinstance(ac_value, dict) or not ac_value.get("count"):
+            out.append(Finding(
+                MISSING_INPUT,
+                "QA-контур не завершен: нет approved-кейсов СВОЕГО change — "
+                "test-model/approved/<change-id>/ пуст или отсутствует "
+                "(решение Заказчика 3.1-А; контракты 3–6; evidence: "
+                "test-model/approved/<change-id>/)"))
     if not action.approval_ref:
         out.append(Finding(
             MISSING_INPUT,
@@ -781,10 +830,17 @@ STAGE_TABLE: dict[int, tuple[Stage, ...]] = {
                "branch protection (внеш.)"), check_merge_task),
         Stage("qa_checklist", ("qa_checklist",), False,
               ("flow_check (контракт 3)",), check_qa_checklist),
-        Stage("qa_cases", ("qa_author",), False,
+        # Решение Заказчика 3.1 (S5, 2026-10-02): роли практики из
+        # agents/README.md добавлены в граф — раньше имена qa_case_author /
+        # qa (как в сценарии shadow-R6) давали MISSING_INPUT, хотя
+        # agents/README.md определяет их как легальные роли конвейера.
+        Stage("qa_cases", ("qa_author", "qa_case_author"), False,
               ("flow_check (контракт 4)",), check_qa_cases),
         Stage("qa_review", ("qa_case_reviewer",), False,
               ("flow_check (контракт 5)",), check_qa_review),
+        Stage("qa_impact_analysis", ("qa_impact_analyst",), False,
+              ("flow_check (контракт 4: impact)",),
+              check_qa_impact_analysis),
         Stage("qa_automation", ("qa_automation",), False,
               ("flow_check (контракт 6)",), check_qa_automation),
         # Решение Заказчика 3.3 (S7, 2026-10-02): sa добавлен как легальная роль
