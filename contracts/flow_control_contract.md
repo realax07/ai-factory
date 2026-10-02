@@ -129,10 +129,17 @@ Decision {
 | architecture_review | ПМ + валидация | change-пакет: proposal/design/tasks/specs-дельты, sdd.md, research.md (контракт 2) | нет (внутри запущенного change) | flow_check контракт 2 |
 | dev_task | dev | architecture review пройден; задача tasks.md; [P]/зависимости; зона свободна | нет | flow_check; pm_bounds (J9/J10) |
 | code_review | code_reviewer (≠ автор) | diff задачи; delegation автора | нет | review-файл с вердиктом (формат code_reviewer_agent.md) |
-| merge_task | интегратор/dev-lead (не ПМ: J9) | approve-вердикт, дата ≤ коммита (J10) | нет | pm_bounds_check --require-review; pr_validate; branch protection (внеш.) |
+| merge_task | интегратор/dev-lead (не ПМ: J9) | approve-вердикт + provenance-sidecar (task/change/SHA, независимая роль); легаси-review — compatibility UNKNOWN, не новый auto-merge | нет | pm_bounds_check --require-review; pr_validate; branch protection (внеш.) |
 | qa_checklist → qa_cases → qa_review → qa_automation | qa_* | цепочка контрактов 3–6: спека → чеклист → new → approved → tests | нет | flow_check (порядок new/approved/tests, TC-трассировка) |
-| archive_change | интегратор | все задачи [x]; QA-контур завершен; явное разрешение ПМ (контракт 7) | нет (фаза еще открыта) | flow_check контракт 7; openspec validate |
+| archive_change | sa | все задачи [x]; QA-контур завершен; явное разрешение ПМ (контракт 7); дельты слиты | нет (фаза еще открыта) | flow_check контракт 7; openspec validate |
 | release / новая фаза релиза | ПМ | archive завершен | **да** (старт релиза/фазы) | — |
+
+Решение Заказчика 3.3-А (2026-10-02, shadow-R6 S7; долг m10): **архивация — функция
+`sa`** (автор спек сливает дельты), а не dev_lead/integrator; последние остаются
+допустимыми, где это соответствует роли исполнителя. Практика Р6 (sa заархивировал
+f925a57 с validate 13/13 strict и слитыми дельтами) признана корректной; граф и
+`STAGE_TABLE` (flow_transition.py) приведены в соответствие. Порядок Флоу 1 — строго
+`archive_change` → `release` (решение 3.2-Б: релиз строго после архивации).
 
 Пример DENY: `dev_task` при утвержденных требованиях, но без architecture review → `INVALID_GATE` + деталь «пропущен этап architecture review, evidence: openspec/changes/<id>/ …». Параллельные задачи: обе с `[P]`, зависимости выполнены, зоны не пересекаются → обе в `next_candidates`; пересечение зон → `ZONE_CONFLICT`.
 
