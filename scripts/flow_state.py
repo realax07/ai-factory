@@ -83,6 +83,16 @@ PROTECTION_BRANCH = "main"
 # Поля JSON-отчета адаптера github_protection (gate_runner.py).
 PROTECTION_SCHEMA = "github-protection/1"
 
+# Усиление change.archived (пересмотр плана, P0.1): слитые дельты —
+# переиспользование логики контракта 7 из flow_check (импорт, не дубликат);
+# openspec validate — subprocess с таймаутом (CLI может отсутствовать).
+ARCHIVED_VALIDATE_TIMEOUT = 120  # секунд на openspec validate --strict
+# Подмена команды validate в тестах (иначе tmp-репо гоняют настоящий CLI):
+# None → обычный поиск CLI (openspec → npx); callable → подменяет запуск
+# (принимает (repo, argv), возвращает exit code); кортеж/строка → фиксированная
+# argv с поиском argv[0] в PATH (отсутствие argv[0] = CLI недоступен).
+OPENSPEC_VALIDATE_CMD: object = None
+
 
 # ---------------------------------------------------------------- модели
 
@@ -408,13 +418,73 @@ def approved_cases_fact(repo: Path, change_id: str, problems: list) -> Fact:
 # ------------------------------------------------- факты enforcement (P0.1)
 
 
-def archived_fact(repo: Path, change_id: str, problems: list) -> Fact:
-    """Решение Б: change заархивирован = пакет в openspec/changes/archive/<id>/.
+def _openspec_validate(repo: Path, problems: list) -> str:
+    """openspec validate --strict: 'ok' | 'unavailable' | 'failed'.
 
-    ready — каталог существует и читаем; missing — его нет (change еще
-    активен); unknown — чтение каталога упало (не «не заархивирован»).
-    Проверка слитости дельт остается за flow_check (контракт 7) — факт
-    здесь только о факте перемещения пакета в archive/.
+    CLI может отсутствовать (нет node/npx в среде) — тогда факт строится
+    как unknown с явной причиной (validate=unavailable), а НЕ как успех:
+    отсутствие проверки не превращается молчаливо в пройденную (контракт §2).
+    Ошибки чтения/запуска добавляются в problems (кроме 'command not found').
+    OPENSPEC_VALIDATE_CMD подменяет команду в тестах: callable (repo, argv)
+    → exit code; кортеж/строка → фиксированная argv (argv[0] ищется в PATH).
+    """
+    import shutil
+    if callable(OPENSPEC_VALIDATE_CMD):
+        rc = OPENSPEC_VALIDATE_CMD(repo, None)
+        if rc != 0:
+            problems.append(Problem(
+                code="OPENSPEC_VALIDATE_ERROR",
+                detail=f"openspec validate: exit {rc}",
+                source="openspec validate",
+            ))
+        return "ok" if rc == 0 else "failed"
+    if isinstance(OPENSPEC_VALIDATE_CMD, (list, tuple)):
+        argv = list(OPENSPEC_VALIDATE_CMD)
+        if not shutil.which(argv[0]):
+            return "unavailable"
+    elif shutil.which("openspec"):
+        argv = ["openspec", "validate", "--all", "--strict"]
+    elif shutil.which("npx"):
+        argv = ["npx", "--no-install", "openspec", "validate", "--all", "--strict"]
+    else:
+        return "unavailable"
+    try:
+        proc = subprocess.run(
+            argv, capture_output=True, text=True,
+            timeout=ARCHIVED_VALIDATE_TIMEOUT, cwd=str(repo),
+        )
+    except (subprocess.TimeoutExpired, OSError) as exc:
+        problems.append(Problem(
+            code="OPENSPEC_VALIDATE_ERROR",
+            detail=f"openspec validate не выполнен: {exc}",
+            source="openspec validate",
+        ))
+        return "failed"
+    if proc.returncode != 0:
+        problems.append(Problem(
+            code="OPENSPEC_VALIDATE_ERROR",
+            detail=(proc.stderr or proc.stdout or "").strip()[:400]
+                   or f"openspec validate: exit {proc.returncode}",
+            source="openspec validate",
+        ))
+        return "failed"
+    return "ok"
+
+
+def archived_fact(repo: Path, change_id: str, problems: list) -> Fact:
+    """Решение Б, усиленное пересмотром плана (P0.1): change заархивирован =
+    пакет в openspec/changes/archive/<id>/ И дельты слиты в openspec/specs/
+    (логика контракта 7 из flow_check, переиспользуется импортом) И
+    `openspec validate --all --strict` проходит.
+
+    ready — каталог существует, дельты слиты, validate ok; missing — каталога
+    нет (change еще активен); invalid — дельты не слиты или validate упал
+    (знание об ошибке, не незнание); unknown — чтение каталога упало или
+    openspec CLI недоступен (validate=unavailable; причина в value.reason).
+
+    До усиления факт отвечал только на вопрос «пакет перемещен?»: слитые
+    дельты и успешная проверка OpenSpec оставались за flow_check — теперь
+    они часть самого факта (пересмотр плана, п.1).
     """
     key = "change.archived"
     rel = f"openspec/changes/archive/{change_id}"
@@ -436,20 +506,55 @@ def archived_fact(repo: Path, change_id: str, problems: list) -> Fact:
         return Fact(key, None, rel, "", "", CONFIDENCE_UNKNOWN, STATUS_UNKNOWN)
     if not resolved.is_dir():
         return Fact(key, False, rel, "", "", CONFIDENCE_VERIFIED, STATUS_MISSING)
+    # Каталог есть: слитые дельты (контракт 7) + openspec validate.
+    import flow_check
+    all_problems = flow_check.archived_delta_problems(repo)
+    delta_problems = sorted(all_problems.get(change_id, []))
+    validate_result = _openspec_validate(repo, problems)
+    value: dict = {
+        "archived": True,
+        "deltas_merged": not delta_problems,
+        "delta_problems": delta_problems,
+        "validate": validate_result,
+    }
+    fp = _sha256_text(json.dumps(value, sort_keys=True, ensure_ascii=False)
+                      + str(resolved))
+    if delta_problems:
+        return Fact(key, {**value, "reason": "дельты не слиты в openspec/specs/"},
+                    rel, "", fp, CONFIDENCE_VERIFIED, STATUS_INVALID)
+    if validate_result != "ok":
+        return Fact(
+            key,
+            {**value, "reason": (
+                "openspec CLI недоступен — validate не выполнен"
+                if validate_result == "unavailable"
+                else "openspec validate --strict завершился ошибкой")},
+            rel, "", fp, CONFIDENCE_UNKNOWN, STATUS_UNKNOWN,
+        )
     return Fact(
-        key, True, rel, "",
-        _sha256_text(str(resolved)),
-        CONFIDENCE_VERIFIED, STATUS_READY,
+        key, value, rel, "", fp, CONFIDENCE_VERIFIED, STATUS_READY,
     )
 
 
-def release_approval_fact(repo: Path, change_id: str, problems: list) -> Fact:
-    """Решение В1: релизное решение Заказчика — файл releases/<change-id>.md
-    в репо, содержащий change-id и слово согласия («разрешаю»/«погнали»).
+def release_approval_fact(repo: Path, change_id: str, problems: list,
+                          head_sha: str | None = None) -> Fact:
+    """Решение В1, усиленное пересмотром плана (P0.1): релизное решение
+    Заказчика — файл releases/<change-id>.md с change-id, словом согласия
+    и привязкой к SHA.
 
-    Минимальный формат: существование файла + упоминание change-id + маркер
-    согласия. Чужой change в файле или файл без маркера согласия = invalid
-    (DENY-факт, не разрешение); нечитаемый файл = unknown; нет файла = missing.
+    Формат (минимальный, машиночитаемый): файл + упоминание change-id +
+    маркер согласия («разрешаю»/«погнали»/…) + строка «SHA: <hash>» или
+    «commit: <hash>», где hash — актуальный HEAD репо (40+ hex; допускается
+    сокращенный префикс ≥7). Журнал решения в том же репо НЕ является
+    независимым одобрением Заказчика: в отчетах «решение зафиксировано»,
+    не «личность подтверждена».
+
+    ready — все условия и SHA совпадает с HEAD; invalid — чужой change,
+    нет слова согласия, нет строки SHA или SHA чужой (DENY-факт, не
+    разрешение); AMBIGUOUS_STATE (unknown + причина) — НЕСКОЛЬКО записей
+    на один change с РАЗНЫМИ SHA (два файла releases/<id>*.md или две
+    строки SHA в одном файле): неоднозначность честнее выбора «на глаз»;
+    нечитаемый файл = unknown; нет файла = missing.
     """
     key = "release.approval"
     rel = f"releases/{change_id}.md"
@@ -464,9 +569,81 @@ def release_approval_fact(repo: Path, change_id: str, problems: list) -> Fact:
     )
     if not (mentions_change and approval_word):
         return Fact(key, None, rel, "", fp or "", CONFIDENCE_UNKNOWN, STATUS_INVALID)
+    # Привязка к SHA: строки «SHA: <hash>» / «commit: <hash>» (полный 40+ hex
+    # или сокращение ≥7; допускаются завершающие «.»/«»» — договоренность
+    # формата из примеров задачи). Пустой HEAD — сверка невозможна.
+    sha_lines = re.findall(
+        r"^\s*(?:SHA|commit)\s*:\s*`?([0-9a-fA-F]{7,64})`?[.\"']?\s*$",
+        text, re.M)
+    if not sha_lines:
+        return Fact(
+            key, {"change": change_id, "file": rel,
+                  "reason": "нет строки «SHA: <hash>»/«commit: <hash>» — "
+                            "привязка решения к версии работы отсутствует"},
+            rel, "", fp or "", CONFIDENCE_UNKNOWN, STATUS_INVALID)
+    distinct = {s.lower() for s in sha_lines}
+    if len(distinct) > 1:
+        # Конфликт записей: два разных SHA на один change — неоднозначно.
+        return Fact(
+            key, {"change": change_id, "file": rel,
+                  "conflict": "несколько записей с разными SHA",
+                  "shas": sorted(distinct),
+                  "reason": "AMBIGUOUS_STATE: конфликтующие записи релизного "
+                            "решения — выбор записи «на глаз» запрещен"},
+            rel, "", fp or "", CONFIDENCE_UNKNOWN, STATUS_UNKNOWN)
+    sha = next(iter(distinct))
+    # Конфликт файлов: другие releases/<id>*.md с иной строкой SHA на тот же
+    # change — две записи с разными SHA, выбор «на глаз» запрещен.
+    other_shas: set[str] = set()
+    rel_dir = repo / "releases"
+    if rel_dir.is_dir():
+        for cand in sorted(rel_dir.glob(f"{change_id}*.md")):
+            if cand.name == f"{change_id}.md":
+                continue
+            try:
+                cand_text = cand.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                continue
+            for s in re.findall(
+                    r"^\s*(?:SHA|commit)\s*:\s*`?([0-9a-fA-F]{7,64})`?[.\"']?\s*$",
+                    cand_text, re.M):
+                if s.lower() != sha:
+                    other_shas.add(s.lower())
+    if other_shas:
+        return Fact(
+            key, {"change": change_id, "file": rel,
+                  "conflict": "несколько файлов-записей с разными SHA",
+                  "shas": sorted({sha, *other_shas}),
+                  "reason": "AMBIGUOUS_STATE: конфликтующие записи релизного "
+                            "решения — выбор записи «на глаз» запрещен"},
+            rel, "", fp or "", CONFIDENCE_UNKNOWN, STATUS_UNKNOWN)
+    head = (head_sha if head_sha is not None
+            else _git(repo, "rev-parse", "HEAD").stdout.strip()).lower()
+    if not head:
+        return Fact(
+            key, {"change": change_id, "file": rel, "sha": sha,
+                  "reason": "HEAD репо нечитаем — сверка SHA решения "
+                            "невозможна"},
+            rel, "", fp or "", CONFIDENCE_UNKNOWN, STATUS_UNKNOWN)
+    if sha != head:
+        # Журнал «решение о HEAD, записанного после HEAD»: строка SHA о
+        # версии работы, к которой применено решение; коммит самой строки —
+        # следующий. Поэтому сверка допускает SHA в текущем HEAD ИЛИ в
+        # HEAD^ (родителе коммита, добавившего запись). Новые коммиты ПОВЕРХ
+        # записи (HEAD^^ и старше) решение устаревают.
+        parent = _git(repo, "rev-parse", "HEAD^").stdout.strip().lower()
+        if not parent or sha != parent:
+            return Fact(
+                key, {"change": change_id, "file": rel, "sha": sha,
+                      "reason": f"SHA решения {sha[:12]}… не совпадает с "
+                                f"актуальным HEAD {head[:12]}… — решение "
+                                f"устарело после нового коммита"},
+                rel, "", fp or "", CONFIDENCE_UNKNOWN, STATUS_INVALID)
     return Fact(
-        key, {"change": change_id, "file": rel}, rel, "", fp,
-        CONFIDENCE_VERIFIED, STATUS_READY,
+        key, {"change": change_id, "file": rel, "sha": head,
+              "note": "решение зафиксировано (журнал в репо, не независимое "
+                      "одобрение личности)"},
+        rel, "", fp or "", CONFIDENCE_VERIFIED, STATUS_READY,
     )
 
 

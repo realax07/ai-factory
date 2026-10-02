@@ -105,21 +105,39 @@ DENY с кодом `HUMAN_APPROVAL_REQUIRED` при отсутствии заф�
 доказывает защиту main (branch protection). При недоступности подтверждения внешней
 защиты релевантные решения MUST получать пометку `EXTERNAL_ENFORCEMENT_UNKNOWN`, не
 повышающую статус разрешения. Подтверждение внешней защиты — машиночитаемый факт:
-адаптер `gate_runner.py github_protection` (решение А) вызывает GitHub API
-`GET /repos/{repo}/branches/{branch}/protection` и пишет JSON-отчет
+адаптер `gate_runner.py github_protection` (решение А) вызывает GitHub Rulesets API
+`GET /repos/{repo}/rules/branches/{branch}` и пишет JSON-отчет
 `.flow-evidence/github-protection.json` (дата + HTTP-код + привязка к repo/branch/
-HEAD); факт учитывается только при свежести ≤ 24ч и совпадении привязки.
-Отрицательное подтверждение (404 / требуемые проверки не настроены) MUST давать
+HEAD + машиночитаемый разбор rulesets); факт учитывается только при свежести ≤ 24ч
+и совпадении привязки. Защита подтверждена, когда среди активных rulesets есть
+ruleset с `enforcement=active`, rules содержит `type=pull_request`, а обход ролью
+не разрешен (`bypass` отсутствует или ни у одного элемента нет
+`bypass_mode=always`).
+Отрицательное подтверждение (404 / нет такого ruleset) MUST давать
 DENY на merge/release с кодом `EXTERNAL_ENFORCEMENT_UNKNOWN` и деталью «защита
-main не настроена» — это знание, а не незнание. Архивация change доказывается
-фактом `change.archived` (пакет `openspec/changes/archive/<id>/` в репо,
-решение Б): его отсутствие при release MUST давать DENY/INVALID_GATE «release
-до архивации». Релизное решение Заказчика фиксируется файлом
-`releases/<change-id>.md` (change-id + слово согласия, решение В1) — при готовом
-факте `release.approval` требование approval_ref на release считается
-исполненным. При полном комплекте фактов (архивация + релизное решение +
-свежее подтверждение branch protection) переходы merge_task/release MUST
-достигать статуса ALLOW.
+main не настроена» — это знание, а не незнание. Решения merge_task/release MUST
+раздельно показывать локальную готовность (`local_ready` — ALLOW/DENY/UNKNOWN
+по локальным фактам) и внешний enforcement (`external_enforcement` — PASS/DENY/
+UNKNOWN по факту защиты). Если действие требует внешний факт (политика
+`merge_requires_external`, по умолчанию включена), внешний UNKNOWN оставляет
+общий статус UNKNOWN — скрытое превращение UNKNOWN в ALLOW запрещено. Архивация
+change доказывается фактом `change.archived` (пакет
+`openspec/changes/archive/<id>/` в репо, решение Б) при выполнении ВСЕХ условий:
+каталог существует, каждый Requirement дельт пакета присутствует в
+`openspec/specs/` (логика контракта 7, переиспользуется из flow_check), и
+`openspec validate --all --strict` проходит; недоступность openspec CLI дает
+unknown с причиной, не ready. Его отсутствие при release MUST давать
+DENY/INVALID_GATE «release до архивации». Релизное решение Заказчика фиксируется
+файлом `releases/<change-id>.md` (change-id + слово согласия + строка
+«SHA: <hash>»/«commit: <hash>», решение В1): hash сверяется с актуальным HEAD
+(допускается родитель коммита с записью — журнал фиксирует решение после
+факта); при ready требование approval_ref на release считается исполненным.
+Конфликт записей (два файла/две строки на один change с разными SHA) MUST давать
+unknown с формулировкой AMBIGUOUS_STATE, а не молчаливый выбор одной записи.
+Журнал решения в том же репо НЕ является независимым одобрением Заказчика:
+в отчетах пишется «решение зафиксировано», не «личность подтверждена». При
+полном комплекте фактов (архивация + релизное решение + свежее подтверждение
+branch protection) переходы merge_task/release MUST достигать статуса ALLOW.
 
 #### Scenario: Локальный PASS без подтверждения branch protection
 - **GIVEN** все локальные gates прошли, подтверждение branch protection недоступно
@@ -127,16 +145,26 @@ main не настроена» — это знание, а не незнание
 - **THEN** decision содержит EXTERNAL_ENFORCEMENT_UNKNOWN и не выдает защиту main
   за доказанную
 
+#### Scenario: Раздельный вывод local_ready и external_enforcement
+- **GIVEN** все локальные факты merge чисты, факт branch protection отсутствует
+- **WHEN** формируется decision на merge_task или release
+- **THEN** вывод содержит local_ready=ALLOW и external_enforcement=UNKNOWN
+  раздельно; общий статус UNKNOWN (политика merge_requires_external), а не
+  скрытый ALLOW
+
 #### Scenario: Полный комплект фактов
-- **GIVEN** change заархивирован (openspec/changes/archive/<id>/), релизное
-  решение зафиксировано (releases/<change-id>.md с change-id и словом согласия),
-  branch protection подтверждена свежим отчетом github_protection
+- **GIVEN** change заархивирован (openspec/changes/archive/<id>/ с слитыми
+  дельтами и пройденным openspec validate --strict), релизное решение
+  зафиксировано (releases/<change-id>.md с change-id, словом согласия и строкой
+  SHA, совпадающей с HEAD), branch protection подтверждена свежим отчетом
+  github_protection (ruleset enforcement=active + pull_request + без bypass always)
 - **WHEN** запрошены действия merge_task (с чистым provenance) и release
 - **THEN** оба решения имеют статус ALLOW без EXTERNAL_ENFORCEMENT_UNKNOWN
 
 #### Scenario: Защита main не настроена
-- **GIVEN** адаптер github_protection получил HTTP 404 (или ответ без
-  required_pull_request_reviews / required_status_checks с flow.yml)
+- **GIVEN** адаптер github_protection получил HTTP 404 (или среди активных
+  rulesets нет ruleset с enforcement=active + rules type=pull_request +
+  без bypass always)
 - **WHEN** запрошены действия merge_task или release
 - **THEN** decision = DENY с кодом EXTERNAL_ENFORCEMENT_UNKNOWN и деталью
   «защита main не настроена»
@@ -146,6 +174,39 @@ main не настроена» — это знание, а не незнание
   repo/branch/HEAD
 - **WHEN** запрошено действие merge_task
 - **THEN** пометка EXTERNAL_ENFORCEMENT_UNKNOWN сохраняется (статус не выше UNKNOWN)
+
+#### Scenario: Защита обходится ролью (bypass always)
+- **GIVEN** активный ruleset содержит rules type=pull_request, но bypass
+  элемент с bypass_mode=always
+- **WHEN** адаптер github_protection разбирает ответ Rulesets API
+- **THEN** protection_ok=False — защита, обходуемая ролью всегда, не считается
+  подтвержденной
+
+#### Scenario: Архивированный пакет с неслитыми дельтами
+- **GIVEN** пакет в openspec/changes/archive/<id>/, но Requirement дельты
+  отсутствует в openspec/specs/ (или openspec validate --strict падает)
+- **WHEN** строится факт change.archived
+- **THEN** факт invalid (дельты не слиты) или unknown (CLI недоступен, причина
+  в значении факта), но не ready
+
+#### Scenario: Конфликт записей релизного решения
+- **GIVEN** на один change есть две записи с разными SHA (второй файл
+  releases/<id>*.md или вторая строка SHA)
+- **WHEN** строится факт release.approval
+- **THEN** факт unknown с причиной AMBIGUOUS_STATE; release не разрешен выбором
+  записи «на глаз»
+
+#### Scenario: Решение без привязки к SHA или с чужим SHA
+- **GIVEN** releases/<change-id>.md с change-id и словом согласия, но без
+  строки SHA — или с SHA, которому предшествуют новые коммиты
+- **WHEN** строится факт release.approval
+- **THEN** факт invalid (привязка к версии работы отсутствует или устарела)
+
+#### Scenario: Формулировка решения в отчете
+- **GIVEN** факт release.approval ready
+- **WHEN** формируется человекочитаемый отчет о release
+- **THEN** решение описано как «решение зафиксировано», без утверждений о
+  подтвержденной личности Заказчика
 
 ### Requirement: Provenance review (строгий режим)
 Approve ревью MUST приниматься только при соответствии task/change/SHA/diff и

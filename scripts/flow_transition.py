@@ -62,6 +62,21 @@ REASON_CODES = (
     EXTERNAL_ENFORCEMENT_UNKNOWN,
 )
 
+# Политика перехода к merge/release (пересмотр плана P0.1, п.3; вопрос ПМ —
+# дефолт true): действие, требующее внешний факт (branch protection),
+# достижимо до ALLOW только при external_enforcement=PASS. При true внешний
+# UNKNOWN не превращается скрыто в ALLOW (общий статус остается UNKNOWN,
+# разделение local_ready/external_enforcement показывается явно); внешний
+# DENY («защита не настроена» — знание) остается DENY. При false решение
+# принимается по локальным фактам, а внешний статус показывается рядом
+# (явно выбранная политика, не молчаливое упрощение).
+MERGE_REQUIRES_EXTERNAL = True
+
+# Статусы external_enforcement в Decision.
+EXTERNAL_PASS = "PASS"
+EXTERNAL_DENY = "DENY"
+EXTERNAL_UNKNOWN = "UNKNOWN"
+
 # Защищенные пути конвейера (Флоу 4, J3 pm_bounds_check).
 PROTECTED_PATHS = ("openspec/", "contracts/", "AGENTS.md", "agents/README.md")
 
@@ -150,6 +165,14 @@ class Decision:
     required_gates: list = field(default_factory=list)
     evidence_refs: list = field(default_factory=list)
     next_candidates: list = field(default_factory=list)
+    # Пересмотр плана P0.1 п.3: локальная готовность и внешний enforcement
+    # раздельно. local_ready — ALLOW/DENY по локальным фактам; allowed_local
+    # — True, когда локальные находки не содержат DENY-причин.
+    # external_enforcement — PASS/DENY/UNKNOWN по факту защиты (или None,
+    # когда действие внешний факт не проверяет).
+    local_ready: str = ""
+    allowed_local: bool | None = None
+    external_enforcement: str | None = None
 
     def to_dict(self) -> dict:
         return {
@@ -166,6 +189,9 @@ class Decision:
             "required_gates": self.required_gates,
             "evidence_refs": self.evidence_refs,
             "next_candidates": self.next_candidates,
+            "local_ready": self.local_ready or None,
+            "allowed_local": self.allowed_local,
+            "external_enforcement": self.external_enforcement,
         }
 
 
@@ -757,39 +783,63 @@ def _optional_fact(snapshot: dict, key: str, ctx: dict) -> tuple[object, str]:
     return f.get("value"), f.get("status", "unknown")
 
 
-def _external_protection_findings(snapshot, ctx) -> list:
-    """Факт branch protection (решение А) для merge/release.
+def _external_protection_status(snapshot, ctx: dict) -> str:
+    """Статус внешнего enforcement (branch protection, решение А).
 
-    ready (свежий ≤24ч отчет, protection_ok, привязка сошлась) → пометка
-    EXTERNAL_ENFORCEMENT_UNKNOWN не добавляется: внешний enforcement
-    подтвержден, полный ALLOW достижим. missing/unknown (проверка не
-    проводилась или отчет нечитаем) → честный UNKNOWN, как раньше.
-    invalid (адаптер ответил 404 / отчет чужой, протухший или привязан
-    к другому HEAD) → DENY: отрицательный факт, не незнание
-    (контракт §9, §12).
+    PASS — свежий (≤24ч) положительный факт с сошедшейся привязкой;
+    DENY — отрицательный факт (защита не настроена: 404/нет ruleset с
+    enforcement=active + pull_request) — знание, не незнание; UNKNOWN —
+    проверки не было или факт нечитаем/чужой/протухший.
     """
     ctx["checked"].add("github.protection")
     value, status = _optional_fact(snapshot, "github.protection", ctx)
     if status == "ready":
-        return []
+        return EXTERNAL_PASS
     if status == "invalid" and isinstance(value, dict) \
             and value.get("protection_ok") is False:
+        return EXTERNAL_DENY
+    return EXTERNAL_UNKNOWN
+
+
+def _external_protection_findings(snapshot, ctx: dict) -> tuple[list, str]:
+    """Находки + статус внешнего enforcement для merge/release.
+
+    ready (свежий ≤24ч отчет, protection_ok, привязка сошлась) → PASS,
+    пометка EXTERNAL_ENFORCEMENT_UNKNOWN не добавляется: внешний enforcement
+    подтвержден, полный ALLOW достижим. missing/unknown (проверка не
+    проводилась или отчет нечитаем) → честный UNKNOWN-пометка, как раньше.
+    invalid (адаптер ответил 404 / отчет чужой, протухший или привязан
+    к другому HEAD) → DENY-находка: отрицательный факт, не незнание
+    (контракт §9, §12).
+    """
+    ext = _external_protection_status(snapshot, ctx)
+    if ext == EXTERNAL_PASS:
+        return [], EXTERNAL_PASS
+    if ext == EXTERNAL_DENY:
         return [Finding(
             EXTERNAL_ENFORCEMENT_UNKNOWN,
             "branch protection main не настроена: проверка github_protection "
-            "ответила отрицательно (404/требуемые проверки отсутствуют) — "
-            "настрой защиту main и запиши отчет адаптером (контракт §12)")]
-    if status == "invalid":
-        return [Finding(
-            EXTERNAL_ENFORCEMENT_UNKNOWN,
-            "факт github.protection не привязан к этому repo/branch/HEAD или "
-            "старше 24ч — подтверждением защиты main не считается; "
-            "перезапусти gate_runner.py github_protection (контракт §12)",
-            True)]
+            "ответила отрицательно (нет ruleset с enforcement=active + "
+            "pull_request) — настрой защиту main и запиши отчет адаптером "
+            "(контракт §12)")], EXTERNAL_DENY
     return [Finding(
         EXTERNAL_ENFORCEMENT_UNKNOWN,
         "branch protection на main не подтверждена локальным прогоном — пометка "
-        "не повышает статус разрешения (FR-7; контракт §12)", True)]
+        "не повышает статус разрешения (FR-7; контракт §12)", True)], EXTERNAL_UNKNOWN
+
+
+def _set_external_enforcement(ctx: dict, status: str,
+                              findings: list | None = None) -> None:
+    """Фиксирует статус внешнего enforcement в ctx (поле Decision).
+
+    detail первой внешней находки запоминается как маркер — так _decide
+    отделяет внешние находки от локальных для local_ready, даже если
+    EXTERNAL_ENFORCEMENT_UNKNOWN добавлен и другими проверками.
+    """
+    ctx["external_enforcement"] = status
+    ctx["external_enforcement_seen"] = True
+    if findings:
+        ctx["external_enforcement_detail"] = findings[0].detail
 
 
 def check_merge_task(snapshot, action, ctx, flow):
@@ -802,10 +852,13 @@ def check_merge_task(snapshot, action, ctx, flow):
     out.extend(_approvals_for_task(snapshot, action, ctx))
     out.extend(_hotfix_debt_findings(snapshot, action, ctx, flow))
     out.extend(_provenance_findings(snapshot, action, ctx, "merge_task"))
-    # P0.1 (решение А): свежий положительный факт branch protection →
-    # пометка не добавляется (полный ALLOW достижим); missing → UNKNOWN;
-    # отрицательный/чужой факт → DENY.
-    out.extend(_external_protection_findings(snapshot, ctx))
+    # P0.1 (решение А + пересмотр п.3): локальные факты и внешний enforcement
+    # раздельно. Статус внешнего факта пишется в ctx и попадает в Decision
+    # (external_enforcement); политика MERGE_REQUIRES_EXTERNAL решает,
+    # блокирует ли внешний не-PASS общий статус.
+    ext_findings, ext_status = _external_protection_findings(snapshot, ctx)
+    out.extend(ext_findings)
+    _set_external_enforcement(ctx, ext_status, ext_findings)
     return out
 
 
@@ -968,21 +1021,37 @@ def check_release(snapshot, action, ctx, flow):
             "не читается — закрытые чекбоксы tasks.md не равны архивации; "
             "UNKNOWN (ТЗ 03 п.2; design D3; контракт 7)",
             True))
-    # P0.1 (решение В1): релизное решение Заказчика — файл releases/<id>.md
-    # с change-id и словом согласия. ready → часть HUMAN_APPROVAL_REQUIRED
-    # уходит; missing/invalid/unknown → требование решения остается.
+    # P0.1 (решение В1, усилено пересмотром): релизное решение Заказчика —
+    # файл releases/<id>.md с change-id, словом согласия и привязкой к SHA.
+    # ready («решение зафиксировано») → часть HUMAN_APPROVAL_REQUIRED уходит;
+    # missing/invalid/unknown (в т.ч. конфликт записей AMBIGUOUS_STATE и
+    # устаревший SHA) → требование решения остается. Журнал в том же репо —
+    # НЕ независимое одобрение личности Заказчика.
     rel_value, rel_status = _optional_fact(snapshot, "release.approval", ctx)
     if rel_status != "ready" and not action.approval_ref:
-        out.append(Finding(
-            HUMAN_APPROVAL_REQUIRED,
-            "релиз/старт релизной фазы требует решения Заказчика: файла "
-            "releases/<change-id>.md нет (или он без change-id/слова "
-            "согласия), approval_ref не передан — формат решения: "
-            "контракт §10 (этапные ворота Заказчика)"))
+        if rel_status == "unknown" and isinstance(rel_value, dict) \
+                and rel_value.get("conflict"):
+            out.append(Finding(
+                AMBIGUOUS_STATE,
+                "релизное решение неоднозначно: " +
+                str(rel_value.get("reason")) + " — устраните конфликт записей "
+                "(releases/<change-id>.md) или передайте approval_ref",
+                True))
+        else:
+            out.append(Finding(
+                HUMAN_APPROVAL_REQUIRED,
+                "релиз/старт релизной фазы требует решения Заказчика: файла "
+                "releases/<change-id>.md нет (или он без change-id/слова "
+                "согласия/строки SHA или SHA не совпадает с HEAD), "
+                "approval_ref не передан — формат решения: "
+                "контракт §10 (этапные ворота Заказчика)"))
     # approval_ref без файла: строковая ссылка срез 1 принимает (D5) —
     # ворота Заказчика считаются пройденными, файл — усиление, не дубликат.
-    # P0.1 (решение А): branch protection — тот же факт, что для merge.
-    out.extend(_external_protection_findings(snapshot, ctx))
+    # P0.1 (решение А + пересмотр п.3): branch protection — тот же факт,
+    # что для merge; статус пишется в ctx раздельно от локальных фактов.
+    ext_findings, ext_status = _external_protection_findings(snapshot, ctx)
+    out.extend(ext_findings)
+    _set_external_enforcement(ctx, ext_status, ext_findings)
     return out
 
 
@@ -1198,10 +1267,62 @@ STAGE_TABLE: dict[int, tuple[Stage, ...]] = {
 # --------------------------------------------------------------- check_action
 
 
+ACTION_REQUIRES_EXTERNAL = {
+    # Пересмотр плана P0.1 п.3: действия, для которых внешний факт branch
+    # protection обязателен (политика MERGE_REQUIRES_EXTERNAL применяется).
+    "merge_task": True,
+    "release": True,
+}
+
+
+def _action_requires_external(action) -> bool:
+    """Действие требует внешний факт (branch protection) по политике."""
+    return bool(ACTION_REQUIRES_EXTERNAL.get(
+        getattr(action, "requested_action", ""), False))
+
+
+def _split_external_findings(findings: list, ctx: dict) -> list:
+    """Находки БЕЗ внешне-фактных (EXTERNAL_ENFORCEMENT_UNKNOWN, добавленных
+    _external_protection_findings, когда внешний статус уже вынесен в
+    external_enforcement и деталь совпадает с зафиксированной в ctx).
+    Локальные находки остаются для local_ready."""
+    if not ctx.get("external_enforcement_seen"):
+        return findings
+    marker = ctx.get("external_enforcement_detail")
+    return [f for f in findings
+            if not (f.code == EXTERNAL_ENFORCEMENT_UNKNOWN
+                    and marker is not None and f.detail == marker)]
+
+
 def _decide(snapshot, action, findings, ctx, stage, include_next) -> Decision:
     scope = dict(snapshot.get("scope", {})) if isinstance(snapshot, dict) else {}
-    status = DENY if any(not f.unknown for f in findings) else (
-        UNKNOWN if findings else ALLOW)
+    ext_status = ctx.get("external_enforcement")
+    ext_seen = bool(ctx.get("external_enforcement_seen"))
+    # local_ready: ALLOW/DENY только по локальным находкам (внешние находки
+    # исключены — у них код EXTERNAL_ENFORCEMENT_UNKNOWN и источник факт
+    # github.protection, статус которого уже отражен в external_enforcement).
+    local_findings = _split_external_findings(findings, ctx)
+    local_deny = any(not f.unknown for f in local_findings)
+    local_ready = DENY if local_deny else (
+        ALLOW if not local_findings else UNKNOWN)
+    allowed_local = not local_deny
+    # Политика действия (пересмотр п.3): требует ли действие внешний факт.
+    requires_external = ext_seen and _action_requires_external(action)
+    if requires_external and ext_status != EXTERNAL_PASS:
+        if ext_status == EXTERNAL_DENY or local_deny:
+            # Отрицательный внешний факт — знание: общий DENY (находка уже
+            # в findings); локальный DENY сильнее любой внешней политики.
+            status = DENY
+        elif MERGE_REQUIRES_EXTERNAL:
+            # UNKNOWN внешний при политике strict — общий UNKNOWN
+            # (не скрытое превращение в ALLOW).
+            status = UNKNOWN
+        else:
+            # Явно выбранная политика: решают локальные факты.
+            status = local_ready
+    else:
+        status = DENY if any(not f.unknown for f in findings) else (
+            UNKNOWN if findings else ALLOW)
     blocking: list = []
     for f in findings:
         if f.code not in blocking:
@@ -1246,6 +1367,9 @@ def _decide(snapshot, action, findings, ctx, stage, include_next) -> Decision:
         required_gates=gates,
         evidence_refs=sorted(ctx["evidence"]),
         next_candidates=next_candidates,
+        local_ready=local_ready,
+        allowed_local=allowed_local,
+        external_enforcement=(ext_status if ext_seen else None),
     )
 
 
@@ -1345,6 +1469,13 @@ def _decision_human(d: Decision) -> str:
         f"flow={scope.get('flow')} change={scope.get('change')}"
         + (f" task={scope.get('task')}" if scope.get("task") else "")
     ]
+    # Пересмотр плана P0.1 п.3: локальная готовность и внешний enforcement
+    # показываются раздельно (если действие внешний факт проверяет).
+    if d.local_ready or d.external_enforcement is not None:
+        lines.append(
+            f"local_ready: {d.local_ready or UNKNOWN}"
+            + (f"; external_enforcement: {d.external_enforcement}"
+               if d.external_enforcement is not None else ""))
     if d.details:
         lines.append("причины/замечания:")
         lines.extend(f"  {x}" for x in d.details)

@@ -27,6 +27,47 @@ VERDICT_RETURN_RE = re.compile(r"\b(return|доработк\w*)\b", re.I)
 QA_SECTION = "6"  # раздел 6.x — QA-цикл, не dev (J10)
 
 
+def archived_delta_problems(repo: Path) -> dict[str, list[str]]:
+    """Контракт 7: Requirements дельт archived-пакетов против master-spec.
+
+    Для каждого каталога openspec/changes/archive/<id>/ со дельтами specs/
+    проверяет: каждый Requirement дельты присутствует в openspec/specs/,
+    а Requirements из блока «## REMOVED Requirements» — отсутствуют.
+    Возвращает {change_id: [проблемы]} (пустой список = дельты слиты).
+
+    Выделено из run_check для переиспользования фактом change.archived
+    в flow_state (усиление P0.1): логика одна, парсеры не дублируются.
+    """
+    problems: dict[str, list[str]] = {}
+    arch_dir = repo / "openspec" / "changes" / "archive"
+    if not arch_dir.is_dir():
+        return problems
+    specs_root = repo / "openspec" / "specs"
+    master_text = "\n".join(
+        sf.read_text(encoding="utf-8") for sf in specs_root.rglob("spec.md")
+    ) if specs_root.is_dir() else ""
+    for d in sorted(p for p in arch_dir.iterdir() if p.is_dir()):
+        missing: list[str] = []
+        delta_specs = d / "specs"
+        if delta_specs.is_dir():
+            for ds in sorted(delta_specs.rglob("spec.md")):
+                delta_text = ds.read_text(encoding="utf-8")
+                for m in re.finditer(r"^### Requirement:\s*(.+)$", delta_text, re.M):
+                    title = m.group(1).strip()
+                    removed = re.search(
+                        r"##\s*REMOVED Requirements.*?(?=^##\s|\Z)",
+                        delta_text,
+                        re.M | re.S,
+                    )
+                    if removed and f"### Requirement: {title}" in removed.group(0):
+                        if f"### Requirement: {title}" in master_text:
+                            missing.append(f"REMOVED '{title}' все еще в master-spec")
+                    elif f"### Requirement: {title}" not in master_text:
+                        missing.append(f"'{title}' не слит в master-spec")
+        problems[d.name] = missing
+    return problems
+
+
 def closed_dev_tasks(tasks_text: str) -> list[str]:
     """Закрытые dev-задачи ([x]) tasks.md; QA-раздел 6.x исключен (J10)."""
     out = []
@@ -189,32 +230,11 @@ def check(repo: Path) -> int:
     # --- Контракт 7: archived change должен быть слит в master-spec ---
     if specs_dir_check := (openspec / "specs"):
         for d in archived_changes:
-            master_text = "\n".join(
-                sf.read_text(encoding="utf-8") for sf in specs_dir_check.rglob("spec.md")
-            )
-            delta_specs = d / "specs"
-            if not delta_specs.is_dir():
-                continue
-            missing = []
-            for ds in sorted(delta_specs.rglob("spec.md")):
-                for m in re.finditer(
-                    r"^### Requirement:\s*(.+)$", ds.read_text(encoding="utf-8"), re.M
-                ):
-                    title = m.group(1).strip()
-                    removed = re.search(
-                        r"##\s*REMOVED Requirements.*?(?=^##\s|\Z)",
-                        ds.read_text(encoding="utf-8"),
-                        re.M | re.S,
-                    )
-                    if removed and f"### Requirement: {title}" in removed.group(0):
-                        if f"### Requirement: {title}" in master_text:
-                            missing.append(f"REMOVED '{title}' все еще в master-spec")
-                    elif f"### Requirement: {title}" not in master_text:
-                        missing.append(f"'{title}' не слит в master-spec")
-            if missing:
+            delta_problems = archived_delta_problems(repo).get(d.name, [])
+            if delta_problems:
                 errors += errs(
                     f"openspec/changes/archive/{d.name}: master-spec не соответствует дельтам (контракт 7): "
-                    + "; ".join(missing[:5])
+                    + "; ".join(delta_problems[:5])
                 )
 
     if ch_dir.is_dir():
