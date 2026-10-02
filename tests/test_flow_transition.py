@@ -505,17 +505,31 @@ class TestParallelDeps:
         repo = make_repo(tmp_path)
         reg = make_registry(tmp_path)
         s = snapshot_for(repo, reg, task_id="1.2")
-        d1 = ft.check_action(s, act(task_id="1.2", task_parallel=True))
+        # [P]-подтверждение из tasks.md (парсер CLI / вызывающий API) → ALLOW:
+        d1 = ft.check_action(s, act(task_id="1.2", task_parallel=True,
+                                    parallel_confirmed=True))
         assert d1.status == "ALLOW"
         # вторая независимая [P]-задача (3.1 зависит от 1.2 — зависимая, не она):
         # независимость проверяем на задаче без deps
         tasks2 = "- [x] 1.1 готово\n- [ ] 1.3 [P] вторая независимая\n"
         repo2 = make_repo(tmp_path / "b", tasks=tasks2)
         s2 = snapshot_for(repo2, reg, task_id="1.3")
-        d2 = ft.check_action(s2, act(task_id="1.3", task_parallel=True))
+        d2 = ft.check_action(s2, act(task_id="1.3", task_parallel=True,
+                                     parallel_confirmed=True))
         assert d2.status == "ALLOW"
         # admit_session-ворота зон присутствуют как required_gates
         assert any("admit_session" in g for g in d1.required_gates)
+
+    def test_parallel_without_marker_confirmation_unknown(self, tmp_path):
+        """R5/ТЗ 03 п.1: параллельная задача допускается только при [P] —
+        флаг API «на веру» не принимается, неподтвержденный [P] → UNKNOWN."""
+        repo = make_repo(tmp_path)
+        reg = make_registry(tmp_path)
+        s = snapshot_for(repo, reg, task_id="1.2")
+        d = ft.check_action(s, act(task_id="1.2", task_parallel=True))
+        assert d.status == "UNKNOWN"
+        assert has_code(d, ft.MISSING_INPUT)
+        assert any("admit_session" in g for g in d.required_gates)
 
     def test_dependent_waits_for_merge(self, tmp_path):
         """Спека/приёмка: зависимая ждёт merge предшественницы."""
@@ -1005,3 +1019,189 @@ class TestShadowReadOnly:
                 "--flow", "1", "--change", "add-widget",
                 "--registry", str(reg))
         assert reg.read_text(encoding="utf-8") == before
+
+
+# ---------------------- review-001: негативные тесты фиксов R4/R5/R6, R8, R9
+
+
+class TestR4TransitiveFlow1Order:
+    """R4 (major): транзитивный порядок Флоу 1 «утв. требования → change/SDD →
+    architecture review → dev task»; release отличает архивацию от [x]."""
+
+    def test_dev_task_blocked_by_draft_requirements(self, tmp_path):
+        """Обязательный негативный: dev_task при draft requirements → DENY."""
+        repo = make_repo(tmp_path, req=REQ_DRAFT)
+        reg = make_registry(tmp_path)
+        s = snapshot_for(repo, reg, task_id="1.2")
+        d = ft.check_action(s, act(task_id="1.2"))
+        assert d.status == "DENY"
+        assert has_code(d, ft.INVALID_GATE)
+        assert any("requirements.md" in x for x in d.details)
+
+    def test_dev_task_blocked_by_missing_requirements(self, tmp_path):
+        """requirements.md отсутствует — факт missing тоже должен блокировать
+        dev-путь (review-001: «факт missing не читается ни одной проверкой»)."""
+        repo = make_repo(tmp_path, req=None)
+        reg = make_registry(tmp_path)
+        s = snapshot_for(repo, reg, task_id="1.2")
+        d = ft.check_action(s, act(task_id="1.2"))
+        assert d.status == "DENY"
+        assert has_code(d, ft.MISSING_INPUT)
+
+    def test_release_unknown_without_archive_fact(self, tmp_path):
+        """R4 release: «просто все чекбоксы [x]» ≠ завершенный archive_change —
+        факт архивации в снимке среза 1 отсутствует → UNKNOWN, не молчаливое
+        ALLOW (D3)."""
+        repo = make_repo(tmp_path)
+        write(repo, "openspec/changes/add-widget/tasks.md",
+              "- [x] 1.1\n- [x] 1.2\n- [x] 2.1\n- [x] 6.1\n")
+        write(repo, "test-model/approved/add-widget/TC-WID-001.md", "# TC\n")
+        commit_all(repo)
+        reg = make_registry(tmp_path)
+        s = snapshot_for(repo, reg)
+        d = ft.check_action(s, act(requested_action="release", actor_role="pm",
+                                   approval_ref="чат-лог: «погнали»"))
+        assert d.status == "UNKNOWN"
+        assert not has_code(d, ft.INVALID_GATE)  # задачи закрыты — это учтено
+        assert has_code(d, ft.MISSING_INPUT)
+        assert any("archive_change" in x for x in d.details)
+
+
+class TestR5ParallelMechanism:
+    """R5 (major): [P]-механизм работает в CLI-пути (основном пользовательском)."""
+
+    def test_cli_p_marker_autodetected_admit_session_gate(self, tmp_path):
+        """Обязательный негативный/позитивный: [P]-задача через CLI БЕЗ флага
+        --parallel получает admit_session-пометку зон (live-проба B)."""
+        repo = make_repo(tmp_path)
+        reg = make_registry(tmp_path)
+        r = run_cli("check", "--repo", str(repo), "--project", "proj",
+                    "--flow", "1", "--change", "add-widget", "--task", "1.2",
+                    "--action", "dev_task", "--role", "dev",
+                    "--registry", str(reg), "--json")
+        assert r.returncode == 0, r.stdout + r.stderr
+        d = json.loads(r.stdout)
+        assert any("admit_session" in g for g in d["required_gates"]), \
+            d["required_gates"]
+
+    def test_cli_parallel_flag_without_p_marker_unknown(self, tmp_path):
+        """--parallel на задаче БЕЗ [P]: флаг на веру не принимается → UNKNOWN,
+        admit_session-пометка присутствует."""
+        repo = make_repo(tmp_path)
+        reg = make_registry(tmp_path)
+        r = run_cli("check", "--repo", str(repo), "--project", "proj",
+                    "--flow", "1", "--change", "add-widget", "--task", "2.1",
+                    "--action", "dev_task", "--role", "dev", "--parallel",
+                    "--registry", str(reg), "--json")
+        d = json.loads(r.stdout)
+        assert d["status"] == "UNKNOWN"
+        assert any("admit_session" in g for g in d["required_gates"])
+        assert any("[P]" in x for x in d["details"])
+
+    def test_non_parallel_task_unaffected(self, tmp_path):
+        """Обычная (не [P]) задача: без флага прежний ALLOW — семантика
+        ALLOW/DENY/UNKNOWN для непараллельного пути не изменилась."""
+        repo = make_repo(tmp_path)
+        reg = make_registry(tmp_path)
+        s = snapshot_for(repo, reg, task_id="2.1")
+        ev = ft._dep_evidence(repo, "add-widget", ("1.1",))
+        d = ft.check_action(
+            s, act(task_id="2.1", task_dependencies=("1.1",),
+                   dependency_evidence={"1.1": ev["1.1"]}))
+        assert d.status == "ALLOW", d.details
+
+
+class TestR6HotfixDebt:
+    """R6 (major): незакрытый PR-цикл хотфикса — STALE_EVIDENCE-долг на всех
+    последующих действиях Флоу 3 (ТЗ 03 п.4; контракт §7 Флоу 3)."""
+
+    def test_flow3_merge_task_carries_debt_marker(self, tmp_path):
+        """Обязательный негативный: merge_task Флоу 3 с маркером долга."""
+        repo = make_repo(tmp_path)
+        write(repo, "code-reviews/BUG-042/review-001-1.1.md",
+              "## Вердикт: approve\n")
+        commit_all(repo)
+        reg = make_registry(tmp_path)
+        s = snapshot_for(repo, reg, flow=3, change_id="BUG-042", task_id="1.1")
+        d = ft.check_action(s, act(requested_action="merge_task",
+                                   actor_role="dev_lead", task_id="1.1"))
+        assert has_code(d, ft.STALE_EVIDENCE)
+        assert any("незакрытый долг хотфикса" in x for x in d.details)
+        assert any("PR-цикл" in g for g in d.required_gates)
+        assert d.allowed is False
+
+    def test_flow3_accept_review_carries_debt_marker(self, tmp_path):
+        repo = make_repo(tmp_path)
+        reg = make_registry(tmp_path)
+        s = snapshot_for(repo, reg, flow=3, change_id="BUG-042")
+        d = ft.check_action(s, act(requested_action="accept_review",
+                                   actor_role="code_reviewer"))
+        assert d.status == "UNKNOWN"
+        assert any("незакрытый долг хотфикса" in x for x in d.details)
+
+    def test_flow2_merge_has_no_hotfix_debt(self, tmp_path):
+        """Долг — только Флоу 3: merge_task Флоу 2 без маркера хотфикс-долга."""
+        repo = make_repo(tmp_path)
+        reg = make_registry(tmp_path)
+        s = snapshot_for(repo, reg, task_id="1.1")
+        d = ft.check_action(s, act(requested_action="merge_task",
+                                   actor_role="dev_lead", task_id="1.1"))
+        assert not any("незакрытый долг хотфикса" in x for x in d.details)
+        assert not any("долг хотфикса" in g for g in d.required_gates)
+
+
+class TestR8RolesAndEvidenceFlows2to5:
+    """R8 (minor): приемка ТЗ 03 — wrong-role и STALE_SNAPSHOT на каждом флоу."""
+
+    CASES = [
+        (2, "BUG-042", "bug_fix", "dev"),
+        (3, "BUG-042", "emergency_stabilize", "dev"),
+        (4, "chore", "chore_task", "dev"),
+        (5, "quick-widget", "express_task", "dev"),
+    ]
+
+    def test_wrong_role_on_each_flow(self, tmp_path):
+        for flow, change, action, role in self.CASES:
+            repo = make_repo(tmp_path / f"r{flow}")
+            reg = make_registry(tmp_path / f"r{flow}")
+            s = snapshot_for(repo, reg, flow=flow, change_id=change)
+            d = ft.check_action(s, act(requested_action=action,
+                                       actor_role="dev_lead",
+                                       incident_ref="inc-1" if flow == 3 else None))
+            assert d.status == "DENY", (flow, d.details)
+            assert has_code(d, ft.WRONG_ROLE), flow
+
+    def test_stale_snapshot_on_each_flow(self, tmp_path):
+        for flow, change, action, role in self.CASES:
+            repo = make_repo(tmp_path / f"s{flow}")
+            reg = make_registry(tmp_path / f"s{flow}")
+            s = snapshot_for(repo, reg, flow=flow, change_id=change)
+            d = ft.check_action(s, act(requested_action=action, actor_role=role,
+                                       expected_snapshot_digest="deadbeef" * 8,
+                                       incident_ref="inc-1" if flow == 3 else None))
+            assert d.status == "DENY", (flow, d.details)
+            assert has_code(d, ft.STALE_SNAPSHOT), flow
+
+
+class TestR9ActionRequestSerialization:
+    """R9 (minor): to_dict не теряет вход решения (digest + evidence)."""
+
+    def test_to_dict_contains_digest_and_evidence(self):
+        a = ft.ActionRequest(
+            actor_role="dev", requested_action="dev_task", task_id="2.1",
+            expected_snapshot_digest="abc123",
+            task_dependencies=("1.1",),
+            dependency_evidence={"1.1": {"task_closed": True,
+                                         "review_approved": True}},
+        )
+        d = a.to_dict()
+        assert d["expected_snapshot_digest"] == "abc123"
+        assert d["dependency_evidence"] == {
+            "1.1": {"task_closed": True, "review_approved": True}}
+        assert d["parallel_confirmed"] is None
+
+    def test_to_dict_evidence_none_when_absent(self):
+        d = ft.ActionRequest(actor_role="dev",
+                             requested_action="dev_task").to_dict()
+        assert d["dependency_evidence"] is None
+        assert d["expected_snapshot_digest"] is None

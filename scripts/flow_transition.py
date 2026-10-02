@@ -96,6 +96,9 @@ class ActionRequest:
     expected_snapshot_digest: str | None = None
     # параллель/зависимости ([P], AGENTS.md п.10):
     task_parallel: bool | None = None
+    # подтверждение маркера [P] в tasks.md (R5): CLI ставит после разбора
+    # tasks.md; API-вызывающий — после собственной проверки маркера.
+    parallel_confirmed: bool | None = None
     task_dependencies: tuple = ()
     dependency_evidence: dict | None = None  # {dep: {task_closed, review_approved}}
     # Флоу 2: фиксирует ввод нового поведения/API (эскалация):
@@ -117,7 +120,13 @@ class ActionRequest:
             "approval_ref": self.approval_ref
             if isinstance(self.approval_ref, (str, type(None))) else "<decision>",
             "task_parallel": self.task_parallel,
+            "parallel_confirmed": self.parallel_confirmed,
             "task_dependencies": list(self.task_dependencies),
+            "dependency_evidence": {
+                str(k): dict(v) if isinstance(v, dict) else v
+                for k, v in (self.dependency_evidence or {}).items()
+            } or None,
+            "expected_snapshot_digest": self.expected_snapshot_digest,
             "spec_delta": self.spec_delta,
             "incident_ref": self.incident_ref,
             "paths": list(self.paths),
@@ -347,6 +356,11 @@ def _approval_finding(action: ActionRequest, scope: dict, stage_name: str) -> Fi
     Срез 1: строковый approval_ref (ссылка на фиксацию в PLAN/BACKLOG/чат-логе)
     принимается как есть; строгая верификация формата — follow-up. Словарь
     проверяется по customer_decision v1: grants и привязка к scope/фазе.
+
+    Упрощение среза 1 (review-001 R7): «фаза» привязывается к номеру флоу
+    (bindings: phase == scope.flow). Фазы ВНУТРИ процесса одного флоу (например
+    фаза А/Б релиза одного change) не различаются — расширение scope_ref
+    (фаза ≠ flow) — follow-up; зафиксировано в design D5.
     """
     ref = action.approval_ref
     if not ref:
@@ -416,7 +430,12 @@ def check_needs_arch(snapshot, action, ctx, flow):
 
 
 def check_dev_task(snapshot, action, ctx, flow):
-    out = list(_arch_review_done(snapshot, ctx))
+    # Транзитивный порядок Флоу 1 (ТЗ 03 п.2 дословно): «утверждённые требования
+    # → change/SDD → architecture review → dev task». dev_task проверяет ВСЕХ
+    # предшественников, а не только ближайшего этапа — иначе цепочка рвется
+    # (review-001 R4: dev_task при draft requirements молчаливо ALLOW).
+    out = list(_requirements_approved(snapshot, ctx))
+    out.extend(_arch_review_done(snapshot, ctx))
     out.extend(_require_task(snapshot, action, ctx))
     out.extend(_deps_findings(action, ctx))
     if action.task_parallel:
@@ -425,6 +444,19 @@ def check_dev_task(snapshot, action, ctx, flow):
         # в required_gates, не блокировка (контракт §7 «Параллель и зоны»).
         ctx.setdefault("extra_gates", []).append(
             "admit_session: непересекающиеся зоны записи (поставка 04; AGENTS.md п.10–11)")
+        # ТЗ 03 п.1: параллельная задача допускается только при [P] в tasks.md
+        # (review-001 R5). Снимок среза 1 не несет факт маркера — подтверждение
+        # должно прийти извне (CLI-парсер tasks.md: parallel_confirmed); флаг
+        # «на веру» не принимается — без подтверждения UNKNOWN (D3), не ALLOW.
+        if action.parallel_confirmed is not True:
+            ctx["checked"].add("task.parallel_marker")
+            out.append(Finding(
+                MISSING_INPUT,
+                "task_parallel=True без подтвержденного маркера [P] в tasks.md — "
+                "параллельная задача допускается только при [P] (ТЗ 03 п.1); факт "
+                "маркера отсутствует в снимке (координация с поставкой 02) → "
+                "UNKNOWN честнее доверия флагу (контракт §2, §9; design D3)",
+                True))
     return out
 
 
@@ -436,9 +468,36 @@ def check_code_review(snapshot, action, ctx, flow):
     return []
 
 
+def _hotfix_debt_findings(snapshot, action, ctx, flow) -> list:
+    """Хотфикс-долг Флоу 3 (review-001 R6; ТЗ 03 п.4; контракт §7 Флоу 3).
+
+    Пока PR-цикл хотфикса не закрыт, ВСЕ последующие действия этого scope
+    получают STALE_EVIDENCE-пометку незакрытого долга. Факт `hotfix.pr_pending`
+    в срезе 1 не строится (координация с поставкой 02), поэтому на срезе 1 —
+    честный fallback: пометка долга на каждый post-emergency шаг accept_review/
+    merge_task Флоу 3 (по D3 — пометка/UNKNOWN, не молчаливое ALLOW).
+    """
+    if flow != 3:
+        return []
+    ctx["checked"].add("hotfix.pr_pending")
+    ctx.setdefault("extra_gates", []).append(
+        "незакрытый долг хотфикса: PR-цикл (review + pr_validate) после "
+        "emergency_stabilize обязателен до завершения (контракт §7 Флоу 3; "
+        "ТЗ 03 п.4)")
+    return [Finding(
+        STALE_EVIDENCE,
+        "незакрытый долг хотфикса: PR-цикл после emergency_stabilize не "
+        "подтвержден закрытым (факт hotfix.pr_pending отсутствует в снимке "
+        "среза 1, координация с поставкой 02) — хотфикс не «завершен» merge "
+        "без последующего PR (ТЗ 03 п.4; контракт §7 Флоу 3)",
+        True)]
+
+
 def check_accept_review(snapshot, action, ctx, flow):
     """Provenance-переход: compatibility mode → UNKNOWN (ТЗ 03 п.8; D4)."""
-    out = list(_approvals_for_task(snapshot, action, ctx)) if action.task_id else []
+    out = _hotfix_debt_findings(snapshot, action, ctx, flow) if flow == 3 else []
+    if action.task_id:
+        out.extend(_approvals_for_task(snapshot, action, ctx))
     out.append(Finding(
         STALE_EVIDENCE,
         "provenance (task/change/SHA/diff, независимость автора) не проверяема "
@@ -455,6 +514,7 @@ def check_merge_task(snapshot, action, ctx, flow):
                            "pm_bounds_check --product-commits; merge — через "
                            "dev-lead)"))
     out.extend(_approvals_for_task(snapshot, action, ctx))
+    out.extend(_hotfix_debt_findings(snapshot, action, ctx, flow))
     out.append(Finding(
         STALE_EVIDENCE,
         "approve-вердикт не привязан к SHA/diff/дате ≤ коммита — provenance "
@@ -550,6 +610,18 @@ def check_release(snapshot, action, ctx, flow):
             INVALID_GATE,
             f"архивация не завершена (open={value.get('open')}) — релиз требует "
             f"закрытого change (ТЗ 03 п.2: release gate после archive)"))
+    # Транзитивность Флоу 1 (review-001 R4): release различает «все чекбоксы [x]»
+    # и завершенный archive_change (дельты слиты, openspec validate). Факт
+    # архивации (change.archived) в срезе 1 не строится — без него UNKNOWN,
+    # не молчаливое ALLOW (D3: отсутствие критерия = UNKNOWN).
+    ctx["checked"].add("change.archived")
+    out.append(Finding(
+        MISSING_INPUT,
+        "факт завершенного archive_change (дельты слиты в openspec/specs/, "
+        "openspec validate --strict пройден) отсутствует в снимке среза 1 — "
+        "закрытые чекбоксы tasks.md не равны архивации; проверка невозможна → "
+        "UNKNOWN (ТЗ 03 п.2; design D3; координация с поставкой 02)",
+        True))
     out.append(Finding(
         EXTERNAL_ENFORCEMENT_UNKNOWN,
         "деплой-полномочия вне локальной проверки — branch protection/окружение "
@@ -974,7 +1046,8 @@ def _snapshot_ctx(args) -> tuple[dict, Path]:
 
 
 def _action_from_args(args, deps: tuple = (), dep_ev: dict | None = None,
-                      task_parallel: bool | None = None) -> ActionRequest:
+                      task_parallel: bool | None = None,
+                      parallel_confirmed: bool | None = None) -> ActionRequest:
     paths = tuple(p for p in (args.paths or "").split(",") if p) \
         if getattr(args, "paths", None) else ()
     return ActionRequest(
@@ -984,6 +1057,7 @@ def _action_from_args(args, deps: tuple = (), dep_ev: dict | None = None,
         approval_ref=args.approval_ref,
         expected_snapshot_digest=args.expected_digest,
         task_parallel=task_parallel if task_parallel is not None else args.parallel,
+        parallel_confirmed=parallel_confirmed,
         task_dependencies=deps,
         dependency_evidence=dep_ev,
         spec_delta=args.spec_delta,
@@ -1003,15 +1077,23 @@ def _cmd_check(args) -> int:
         return 2
     deps: tuple = ()
     dep_ev = None
-    parallel = args.parallel
+    parallel = args.parallel          # None | True | False (три состояния, R5)
+    parallel_confirmed = None
     if args.flow == 1 and args.task:
         info, parallel_auto = _task_deps_from_repo(repo, args.change, args.task)
         deps = tuple(info.get("deps", ()))
         if parallel is None:
             parallel = parallel_auto
+        # Маркер [P] подтвержден разбором tasks.md (read-only) — тогда
+        # parallel_confirmed=True; флаг --parallel вручную без маркера —
+        # остается неподтвержденным → UNKNOWN в check_dev_task (R5).
+        if parallel:
+            parallel_confirmed = bool(info.get("parallel"))
     if deps:
         dep_ev = _dep_evidence(repo, args.change, deps)
-    action = _action_from_args(args, deps=deps, dep_ev=dep_ev, task_parallel=parallel)
+    action = _action_from_args(args, deps=deps, dep_ev=dep_ev,
+                               task_parallel=parallel,
+                               parallel_confirmed=parallel_confirmed)
     decision = check_action(snapshot, action)
     if args.as_json:
         print(json.dumps(decision.to_dict(), ensure_ascii=False, indent=2,
@@ -1086,6 +1168,7 @@ def _cmd_next(args) -> int:
                 probe_and_add(ActionRequest(
                     actor_role="dev", requested_action="dev_task", task_id=tid,
                     task_parallel=info["parallel"],
+                    parallel_confirmed=info["parallel"],  # маркер из tasks.md
                     task_dependencies=deps,
                     dependency_evidence={d: dep_ev[d] for d in deps} if deps else None,
                 ))
@@ -1135,8 +1218,9 @@ def main(argv: list[str] | None = None) -> int:
                            help="ссылка/цитата решения Заказчика (или JSON decision v1)")
             p.add_argument("--expected-digest", default=None,
                            help="ожидаемый snapshot_digest (STALE_SNAPSHOT)")
-            p.add_argument("--parallel", action="store_true",
-                           help="[P]-параллельная задача")
+            p.add_argument("--parallel", action="store_true", default=None,
+                           help="[P]-параллельная задача (без флага — автодетект "
+                                "из tasks.md; флаг без [P] в tasks.md → UNKNOWN)")
             p.add_argument("--spec-delta", action="store_true",
                            help="Флоу 2: фикс вводит новое поведение/API")
             p.add_argument("--incident-ref", default=None,
@@ -1159,7 +1243,7 @@ def main(argv: list[str] | None = None) -> int:
     p_next = sub.add_parser("next", help="допустимые следующие действия")
     common(p_next, need_action=False)
     p_next.add_argument("--approval-ref", default=None)
-    p_next.add_argument("--parallel", action="store_true")
+    p_next.add_argument("--parallel", action="store_true", default=None)
     p_next.add_argument("--spec-delta", action="store_true")
     p_next.add_argument("--incident-ref", default=None)
     p_next.add_argument("--paths", default=None)
