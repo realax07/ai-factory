@@ -22,8 +22,14 @@ jobs:
       - name: Install pytest
         run: python -m pip install --upgrade pip pytest
 
+      # GITHUB_EVENT_PATH очищается намеренно: без этого pr_validate (через
+      # gate_runner) видит «PR-контекст» и на push-событии дает FAIL вместо
+      # ожидаемого тестами SKIPPED (tests/test_gate_runner.py, негативные
+      # сценарии P0.2–P0.4). Локально переменной нет — тесты зеленые.
       - name: Run tests
         run: python -m pytest tests/ -q
+        env:
+          GITHUB_EVENT_PATH: ""
 
   flow:
     runs-on: ubuntu-latest
