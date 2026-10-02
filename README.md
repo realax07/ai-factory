@@ -18,6 +18,15 @@
 | GitHub-репозиторий с Actions | — | CI-ворота (flow.yml) |
 | Hermes Agent (или среда с `delegate_task`) | — | запуск сабагентов-ролей |
 
+### Установка на новую машину — bootstrap
+
+```bash
+git clone <ai-factory> && cd ai-factory
+python3 scripts/factory_bootstrap.py            # окружение + state + крон вотчдога + приемочные тесты
+```
+
+Bootstrap: проверяет окружение (python ≥ 3.10, git, npx для openspec), создает state-каталоги (`~/.hermes/state/`, реестр, `flow_mode.json` с **дефолтом shadow**), ставит крон вотчдога, гоняет приемочные тесты (348). Секреты НЕ переносит — кладутся вручную в `~/.hermes/.env`. Режим enforcing включается явно (`flow_mode.py set enforcing`), после shadow-прогона.
+
 ### Развертывание на новый проект — одна команда
 
 ```bash
@@ -27,6 +36,8 @@ python3 ~/ai-factory/scripts/factory_init.py \
 ```
 
 Скрипт: создает структуру каталогов (openspec, test-model, architecture, docs/ba), копирует ворота и скрипты (flow_check, pr_validate, codegraph, smoke_static, session_archive, session_worktree), CI-workflow, контракты, шаблоны; создает `CONSTITUTION.md` из шаблона; проверяет среду; прогоняет **post-init ворота** — `flow_check` на пустом проекте обязан вернуть OK. Идемпотентен: повторный запуск без `--force` ничего не перезапишет.
+
+**Отношение «фабрика ↔ проект»: проект — тонкий клиент.** В проекте живут его код, спеки, артефакты и автономные CI-ворота (flow_check + flow.yml — работают без машины). Ядро детерминированного слоя (flow_state, flow_transition, session_check, gate_runner, flowctl, flow_mode, реестр сессий) — в фабрике, в одном экземпляре, и обслуживает все проекты по путям (`--repo`/`--registry` — параметры). Обновление правил = обновление фабрики в одном месте; проектные ворота синхронизируются factory_init (`--force`), рассинхрон промптов ловится flow_check.
 
 Промпты ролей **копируются в проект при установке** — фабрика самодостаточна и не зависит от каталога `~/ai-factory` после установки. Рассинхрон с фабрикой ловится воротами: каждый промпт несет версию в шапке, `flow_check` сравнивает с эталоном фабрики при наличии машины-фабрики (WARNING) — обновление конвейера в проекте всегда осознанный шаг (`--force`).
 
@@ -150,6 +161,7 @@ AI Factory отвечает на каждую: **каждая роль — из�
 | Ворота | Что ловит |
 |---|---|
 | [scripts/flow_check.py](scripts/flow_check.py) | Порядок артефактов: чеклист без спеки, кейсы без чеклиста, approved без ревью, автотесты без TC-трассировки, archive без слияния дельт; **I3**: API-эндпоинт вне спек; качество ТЗ (7 разделов, уникальность FR/NFR, запрет TBD, оценочные формулировки); **H1** «1 кейс = 1 файл». Exit 0/1/2. |
+| **Детерминированный Flow Control** ([docs/README-flow-control.md](docs/README-flow-control.md)) | Исполняемая state-машина: `flow_state` (снимок фактов) → `flow_transition` (ALLOW/DENY/UNKNOWN по графам Флоу 1–5, этапные ворота Заказчика) → `session_check` (атомарная резервация зон, границы записи: renames/symlink) → `gate_runner` (ворота с digest/STALE, provenance review, audit JSONL) → `flowctl` (оркестратор). Режимы shadow/enforcing (`flow_mode.py`); **enforcing включен 2026-10-02** — DENY/UNKNOWN блокируют действие. 348 тестов, 7 ревью-циклов. |
 | [scripts/pr_validate.py](scripts/pr_validate.py) | PR без маркера (BUG-NNN / change-id / [chore]) и без обязательных файлов; распознает пост-релизные работы по заархивированным пакетам. |
 | [scripts/check_auth_timing.py](scripts/check_auth_timing.py) | AST-контроль auth: bcrypt, dummy-логины, secrets вместо `==`. |
 | [scripts/smoke_static.py](scripts/smoke_static.py) | Класс DEF-002: статик-ресурс, на который ссылается UI, но который не отдается (сверка ссылок с диском + прод-URL требует 200). |
@@ -191,10 +203,18 @@ AI Factory отвечает на каждую: **каждая роль — из�
 |---|---|
 | `AGENTS.md` | Оперативные правила, роутинг ревью, здоровье сабагентов, уроки E16 |
 | `PLAN.md` / `BACKLOG.md` | Статус + журнал делегаций / уроки и тюны |
+| `docs/process-context.md` | Наследуемый процессный контекст (среда, дисциплина, уроки) — читается при входе |
+| `docs/README-flow-control.md` | Производственный процесс всех флоу с развилками и валидациями |
 | `agents/*.md` | Промпты 13 ролей + [реестр](agents/README.md) |
-| `contracts/artifact_contract.md` | Контракты 1–7 |
+| `contracts/artifact_contract.md` + `contracts/flow_control_contract.md` | Контракты 1–7 + контракт Flow Control |
+| `scripts/factory_bootstrap.py` | **Установка фабрики на новую машину** (окружение, state, вотчдог, приемка) |
 | `scripts/factory_init.py` | **Развертывание конвейера на проект** (E15) |
 | `scripts/flow_check.py` | Ворота флоу (state machine) |
+| `scripts/flow_state.py` / `flow_transition.py` | Снимок фактов / разрешение действий (Flow Control) |
+| `scripts/session_check.py` | Резервация зон, post-check, reconcile |
+| `scripts/gate_runner.py` | Единый запуск ворот, provenance, audit JSONL |
+| `scripts/flowctl.py` | Оркестратор: prepare/run/finish/status/reconcile |
+| `scripts/flow_mode.py` | Переключатель shadow/enforcing |
 | `scripts/pr_validate.py` | PR-ворота |
 | `scripts/codegraph.py` | Граф зависимостей кода |
 | `scripts/smoke_static.py` | Смоук статики (класс DEF-002) |

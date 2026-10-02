@@ -134,6 +134,7 @@ def check(repo: Path) -> int:
             errors += errs(
                 "requirements.md: в преамбуле нет поля «Автор:» (контракт 1, C1)"
             )
+        change_req_preamble = (preamble is not None and "Автор:" in req_head)
 
         # --- Контракт 1 (E3): структурная валидация ТЗ скриптом ---
         # 1) Все 7 разделов (допускаются вариации заголовков с «##»).
@@ -167,13 +168,16 @@ def check(repo: Path) -> int:
                 )
         # 4) Оценочные формулировки в строках FR (эвристика, контракт 1).
         for ln in req_text.splitlines():
-            if re.match(r"^[-*\d].*\bFR-\d+", ln) and re.search(
+            if re.match(r"^[-\d].*\bFR-\d+", ln) and re.search(
                 r"\b(быстро|удобно|просто|понятно)\b", ln, re.I
             ):
                 errors += errs(
                     f"requirements.md: оценочная формулировка без критерия в FR-строке "
                     f"(контракт 1, E3): {ln.strip()[:80]}"
                 )
+    else:
+        change_req_preamble = False
+    change_req_ok = change_req_preamble and req.is_file()
     active_changes = []
     archived_changes = []
     ch_dir = openspec / "changes"
@@ -218,10 +222,14 @@ def check(repo: Path) -> int:
             if d.name == "archive":
                 continue
             active_changes.append(d)
-            if not req.is_file():
+            change_req = d / "requirements.md"
+            if not change_req.is_file() and not change_req_ok:
                 errors += errs(
                     f"openspec/changes/{d.name}/: change-пакет без requirements.md (контракт 1)"
                 )
+            # --- Решение Заказчика 2026-10-02 (3.3/S7): архивация — функция sa ---
+            # (контракт 7: автор спек сливает дельты; граф машинных правил приведен
+            #  в соответствие, см. docs/shadow-r6-scenario.md)
             if CHANGE_ID.match(d.name) is None:
                 errors += errs(
                     f"openspec/changes/{d.name}: change-id не в kebab-case из >=2 слов"
@@ -259,7 +267,13 @@ def check(repo: Path) -> int:
 
     # --- sdd.md: активный change требует SDD (контракт 2) ---
     sdd = repo / "sdd.md"
-    if active_changes and not sdd.is_file():
+    change_sdd = None
+    for d in active_changes:
+        cand = d / "sdd.md"
+        if cand.is_file():
+            change_sdd = cand
+            break
+    if active_changes and not sdd.is_file() and change_sdd is None:
         errors += errs("активный change-пакет без sdd.md (контракт 2)")
 
     # --- Спеки: каждый Requirement должен иметь сценарий ---
