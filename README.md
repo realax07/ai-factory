@@ -27,6 +27,18 @@ python3 scripts/factory_bootstrap.py            # окружение + state + �
 
 Bootstrap: проверяет окружение (python ≥ 3.10, git, npx для openspec), создает state-каталоги (`~/.hermes/state/`, реестр, `flow_mode.json` с **дефолтом shadow**), ставит крон вотчдога, гоняет приемочные тесты (348). Секреты НЕ переносит — кладутся вручную в `~/.hermes/.env`. Режим enforcing включается явно (`flow_mode.py set enforcing`), после shadow-прогона.
 
+### Настройка GitHub (вручную, один раз на репозиторий)
+
+Обязательная часть установки — без этого внешний контур не замкнут (машина честно рапортует `external_enforcement: UNKNOWN`):
+
+1. **Ruleset на main** (Settings → Rules → Rulesets → New branch ruleset):
+   - Enforcement: **Active**; Bypass: **Never** (даже админ не обходит);
+   - Rules: **Require a pull request before merging**; **Block force pushes**; **Required status checks** → добавить `test-flow-control` (после первого прогона CI, иначе чека еще нет в списке) и `flow`.
+2. **Проверка факта:** `gh api repos/<owner>/<repo>/rules/branches/main` — должен вернуть массив с `pull_request` и `required_status_checks` (содержащим `test-flow-control`); живой тест — прямой push в main отклоняется (GH013 «repository rule violations»).
+3. **Токен машины** (`realax1990-boop`): права `write` достаточно для чтения rules через `/rules/branches/{branch}` (admin НЕ нужен для нового Rulesets API — в отличие от legacy protection endpoint, который дает 404).
+
+Эталонная конфигурация (проверено живым пушем 2026-10-02): ruleset `main` — rules `pull_request`, `non_fast_forward`, `required_status_checks: [test-flow-control]`, bypass never.
+
 ### Развертывание на новый проект — одна команда
 
 ```bash
