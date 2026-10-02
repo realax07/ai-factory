@@ -35,6 +35,12 @@ prepare/run/finish/status/reconcile — исполнение разрешенн�
     сокращенный список БЕЗ права accepted: вердикт diagnostic_only, сессия
     не закрывается. Вердикт accepted несет список реально выполненных gates
     и их digest.
+- P0.3 (пересмотр плана Заказчика): --zone ограничен политикой роли
+  (ROLE_ZONE_POLICY — таблица зон agents/README.md): CLI может только
+  СУЗИТЬ. Запрос пути вне политики роли — отказ (ZONE_OUTSIDE_POLICY) с
+  перечнем недопустимых путей; сужение прозрачно (в выводе — фактические
+  суженные зоны и policy_version). finish сверяет diff ИМЕННО с суженной
+  (политико-валидной) зоной; реестр хранит policy_version для аудита.
 - Никакого авто-push/merge/deploy и авто-старта фаз: только исполнение
   разрешенного; этапные ворота Заказчика — check_action
   (HUMAN_APPROVAL_REQUIRED, контракт §10).
@@ -86,11 +92,31 @@ import flow_mode  # noqa: E402
 import flow_state  # noqa: E402
 import flow_transition as ft  # noqa: E402
 import gate_runner as gr  # noqa: E402
+import role_zone_policy as rzp  # noqa: E402
 import session_check as sc  # noqa: E402
 
 OUTPUT_SCHEMA = "flowctl-output/1"
 STATE_SCHEMA = "flowctl-state/1"
 ADAPTER = "manual"
+
+# ------------------------------------------- P0.3: политика зон записи ролей
+# Источник политики — ROLE_ZONE_POLICY (role_zone_policy.py) из таблицы
+# «Зона записи (только она)» agents/README.md. --zone (CLI) может ТОЛЬКО
+# СУЗИТЬ политику роли: запрос пути вне политики — отказ с перечнем
+# недопустимых путей; сужение — прозрачно (выводит фактические зоны).
+ZONE_OUTSIDE_POLICY = "ZONE_OUTSIDE_POLICY"
+
+
+def zone_policy_check(role: str, requested: list) -> dict:
+    """Сужение запрошенных --zone до политики роли + прозрачный план
+    (запрошено → сужено, версия политики)."""
+    narrowed = rzp.narrow_zones(role, requested)
+    return {
+        "narrowed": narrowed,
+        "requested": [sc.canonical(p) for p in (requested or [])],
+        "policy_version": narrowed["policy_version"],
+        "policy_source": rzp.POLICY_SOURCE,
+    }
 
 # ------------------------------------------------------- P0.2: политика gates
 # Источник политики (P0.2, пересмотр плана Заказчика): контракт §4/§5/§11
@@ -274,8 +300,10 @@ def build_goal_text(record: dict, decision: ft.Decision,
         f"Scope: project={scope['project']} flow={scope['flow']} "
         f"change={scope['change']} task={scope.get('task')}",
         f"Рабочее дерево: {wt}",
-        f"Зона записи: {', '.join(record['zones']) or '—'} — "
+        f"Зона записи (сужена до политики роли): {', '.join(record['zones']) or '—'} — "
         "запись вне зоны запрещена; push НЕТ",
+        "Версия политики зон: "
+        f"{record.get('policy_version') or rzp.policy_version()}",
         f"Решения Заказчика: {_approval_summary(record.get('approval_ref'))}",
         f"Параллельные сессии и их зоны: "
         f"{_active_parallel_note(registry_path, record['delegation_id'])}",
@@ -356,12 +384,25 @@ def cmd_prepare(args) -> int:
     action = _build_action(args, repo, args.flow)
     decision = ft.check_action(snapshot, action)
 
-    zones = [sc.canonical(p) for p in (args.zone or [])]
+    # 1a) P0.3: сужение --zone до политики роли (agents/README.md). CLI
+    #     не может расширить политику: запрос пути вне зоны роли — отказ
+    #     с перечнем недопустимых путей; сужение прозрачно (выводит
+    #     фактические (суженные) зоны и policy_version).
+    requested_zones = [sc.canonical(p) for p in (args.zone or [])]
+    zp = zone_policy_check(args.role, requested_zones)
+    narrowed = zp["narrowed"]
+    zones = narrowed["zones"]
+    policy_violations = narrowed["violations"]
+    policy_version = narrowed["policy_version"]
     plan = {
         "role": args.role,
         "action": args.action,
         "task": args.task,
         "zones": zones,
+        "requested_zones": zp["requested"],
+        "policy_version": policy_version,
+        "policy_source": zp["policy_source"],
+        "zone_violations": policy_violations,
         "worktree": args.worktree
         or (f"<repo>-worktrees/{delegation_id}" if args.create_worktree else None),
         "branch": args.branch,
@@ -369,6 +410,26 @@ def cmd_prepare(args) -> int:
         "human_gate": _approval_summary(args.approval_ref),
         "decision": decision.to_dict(),
     }
+
+    # 1b) P0.3: запрос пути вне политики роли — отказ ДО side effects
+    #     (записи в реестре/state нет, reservation не создается).
+    if policy_violations:
+        _emit({
+            "schema_version": OUTPUT_SCHEMA, "command": "prepare",
+            "correlation_id": correlation, "prepared": False,
+            "reason": ZONE_OUTSIDE_POLICY,
+            "role": args.role,
+            "requested_zones": zp["requested"],
+            "zone_violations": policy_violations,
+            "policy_version": policy_version,
+            "policy_source": zp["policy_source"],
+            "note": "запрошенные пути вне зоны записи роли "
+                    f"«{args.role}» (политика: {rzp.POLICY_SOURCE}, таблица "
+                    "«Зона записи (только она)»; CLI может только сузить "
+                    "политику) — отклонены пути: "
+                    f"{', '.join(policy_violations)}; reservation не создавалась",
+        }, args.as_json)
+        return 1
 
     # 2) dry-run: только показать план, без side effects (ТЗ 06).
     if args.dry_run:
@@ -432,6 +493,7 @@ def cmd_prepare(args) -> int:
             "scope": snapshot["scope"],
             "prepared_digest": snapshot["snapshot_digest"],
             "zones": zones,
+            "policy_version": policy_version,
             "worktree": None,
             "branch": args.branch,
             "goal_path": None,
@@ -498,6 +560,7 @@ def cmd_prepare(args) -> int:
         "project": args.project,
         "owner_pm": args.owner_pm,
         "paths": zones,
+        "policy_version": policy_version,
         "worktree": worktree,
         "branch": args.branch,
         "base_sha": _git_head(base_tree),
@@ -536,6 +599,7 @@ def cmd_prepare(args) -> int:
             "scope": snapshot2["scope"],
             "prepared_digest": snapshot2["snapshot_digest"],
             "zones": zones,
+            "policy_version": policy_version,
             "worktree": worktree,
             "branch": args.branch,
             "goal_path": None,
@@ -578,6 +642,9 @@ def cmd_prepare(args) -> int:
         "scope": snapshot2["scope"],
         "prepared_digest": snapshot2["snapshot_digest"],
         "zones": zones,
+        "policy_version": policy_version,
+        "requested_zones": zp["requested"],
+        "zone_violations": policy_violations,
         "worktree": worktree,
         "branch": args.branch,
         "goal_path": str(goal_path),
@@ -602,6 +669,7 @@ def cmd_prepare(args) -> int:
                               scope=record["scope"],
                               delegation_id=delegation_id,
                               zones=zones, adapter=ADAPTER,
+                              policy_version=policy_version,
                               prepared_digest=record["prepared_digest"])
     _emit({
         "schema_version": OUTPUT_SCHEMA, "command": "prepare",
@@ -836,9 +904,46 @@ def cmd_finish(args) -> int:
                   "(P0.2: флаг только добавляет проверки)", file=sys.stderr)
             return 1
 
-    # 1) Зона: фактический diff против разрешенной зоны (поставка 04).
+    # 1) Зона (P0.3): сверка фактического diff с СУЖЕННОЙ (политико-валидной)
+    #    зоной из резервации, а не с исходной просьбой --path. Резервация
+    #    создавалась уже суженной (prepare), поэтому sc.check сверяет с ней;
+    #    дополнительно контролируем, что редакция политики в резервации —
+    #    та же, что вычислил бы prepare сейчас (аудит policy_version), и что
+    #    зона резервации по-прежнему валидна текущей политикой роли.
     zone_res = sc.check({"delegation_id": record["delegation_id"],
                          "repo": str(worktree)}, registry_path)
+
+    # 3) Вердикт по фактам, не по самоотчету агента.
+    #    (P0.3: zone-дефекты собираются здесь же — из суженной зоны резервации
+    #    и сверки policy_version; gates исполняются в п.2 ниже.)
+    defects = []
+    reg = sc.registry_load(registry_path)[0]
+    session = next(
+        (s for s in reg.get("sessions", [])
+         if isinstance(s, dict)
+         and s.get("delegation_id") == record["delegation_id"]), None)
+    stored_zones = [sc.canonical(p) for p in
+                    ((session or {}).get("zones")
+                     or (session or {}).get("paths") or [])]
+    stored_policy_version = (session or {}).get("policy_version")
+    # P0.3: зона резервации должна подтверждаться политикой роли —
+    # сверяется именно суженная (политико-валидная) зона, а не исходная
+    # просьба --path; расхождение редакции политики — дефект аудита.
+    current_policy = rzp.narrow_zones(record.get("actor_role"), stored_zones)
+    policy_stale = bool(stored_policy_version) and \
+        stored_policy_version != rzp.policy_version()
+    policy_invalid = bool(stored_zones) and (
+        not current_policy["zones"] or current_policy["violations"])
+    if policy_stale or policy_invalid:
+        defects.append({
+            "source": "zone", "code": "ZONE_POLICY_MISMATCH",
+            "detail": "зона резервации не подтверждается текущей политикой "
+                      f"роли «{record.get('actor_role')}» (policy_version "
+                      f"резервации: {stored_policy_version or '—'}; текущая: "
+                      f"{rzp.policy_version()}; непокрытые запросы: "
+                      f"{', '.join(current_policy['violations']) or '—'}); "
+                      "политика: " + rzp.POLICY_SOURCE,
+        })
 
     # 2) Gates: реальные ворота фазы (поставка 05) на рабочем дереве.
     opts = argparse.Namespace(
@@ -853,8 +958,6 @@ def cmd_finish(args) -> int:
     gate_report, gate_exit = gr.run_gates(
         worktree, args.gate_scope, gates, opts)
 
-    # 3) Вердикт по фактам, не по самоотчету агента.
-    defects = []
     for v in zone_res.get("violations", []):
         defects.append({"source": "zone", "code": v.split(":")[0], "detail": v})
     if zone_res.get("reason") == sc.REGISTRY_ERROR:
@@ -889,7 +992,10 @@ def cmd_finish(args) -> int:
         # Прогон сокращенного списка: вердикт diagnostic_only (не accepted),
         # сессия НЕ закрывается — run/finish повторяются после разбора.
         verdict = "diagnostic_only"
-    elif zone_res["ok"] and gate_exit == 0:
+    elif zone_res["ok"] and gate_exit == 0 and not any(
+            d["code"] == "ZONE_POLICY_MISMATCH" for d in defects):
+        # P0.3: зона резервации подтверждена политикой роли — обязательное
+        # условие accepted наравне с diff⊆зона и gates.
         verdict = "accepted"
     else:
         verdict = "returned"
@@ -958,7 +1064,10 @@ def cmd_finish(args) -> int:
         rec["verdict"] = {
             "verdict": verdict,
             "zone": {"ok": zone_res["ok"], "reason": zone_res["reason"],
-                     "violations": zone_res.get("violations", [])},
+                     "violations": zone_res.get("violations", []),
+                     "zones": stored_zones,
+                     "policy_version": stored_policy_version,
+                     "policy_confirmed": not (policy_stale or policy_invalid)},
             "gates": {"overall": gate_report["overall"],
                       "report_ref": gate_report.get("report_ref"),
                       "executed": executed_gates,

@@ -41,8 +41,11 @@ sys.path.insert(0, str(SCRIPTS))
 import flow_check  # noqa: E402
 import flow_state  # noqa: E402
 import flow_transition as ft  # noqa: E402
+import role_zone_policy as rzp  # noqa: E402
 import session_check as sc  # noqa: E402
 import gate_runner as gr  # noqa: E402
+
+PV = rzp.policy_version()  # P0.3: резервация фиксирует редакцию политики зон
 
 
 # --------------------------------------------------------------- helpers
@@ -291,12 +294,14 @@ class TestBP02DepsAndZones:
         reg = make_registry(tmp_path)
         first = sc.reserve(
             {"repo": str(repo), "delegation_id": "deleg-A", "role": "dev",
-             "project": "proj", "owner_pm": "pm", "paths": ["src/**"]},
+             "project": "proj", "owner_pm": "pm", "paths": ["src/**"], "policy_version": PV,
+                          "policy_version": PV},
             reg)
         assert first["allowed"]
         second = sc.reserve(
             {"repo": str(repo), "delegation_id": "deleg-B", "role": "dev",
-             "project": "proj", "owner_pm": "pm", "paths": ["src/main.py"]},
+             "project": "proj", "owner_pm": "pm", "paths": ["src/main.py"],
+                          "policy_version": PV},
             reg)
         assert not second["allowed"]
         assert second["reason"] == "ZONE_CONFLICT"
@@ -539,7 +544,7 @@ class TestBP06RegistryWorktreeSymlink:
         reg = make_registry(tmp_path, payload="{broken json!!")
         res = sc.reserve({"repo": str(repo), "delegation_id": "d1",
                           "role": "dev", "project": "proj",
-                          "owner_pm": "pm", "paths": ["src/**"]}, reg)
+                          "owner_pm": "pm", "paths": ["src/**"], "policy_version": PV}, reg)
         assert not res["allowed"]
         assert res["reason"] == sc.REGISTRY_ERROR
         assert res["delegation_id"] == "d1"
@@ -556,7 +561,7 @@ class TestBP06RegistryWorktreeSymlink:
         wt = make_worktree(repo, "s1", "flow/s1")
         res = sc.reserve({"repo": str(repo), "delegation_id": "dw",
                           "role": "dev", "project": "proj",
-                          "owner_pm": "pm", "paths": ["src/**"],
+                          "owner_pm": "pm", "paths": ["src/**"], "policy_version": PV,
                           "worktree": str(wt), "branch": "flow/s1",
                           "base_sha": git(repo, "rev-parse", "HEAD")}, reg)
         assert res["allowed"]
@@ -572,7 +577,7 @@ class TestBP06RegistryWorktreeSymlink:
         wt = make_worktree(repo, "s2", "flow/s2")
         res = sc.reserve({"repo": str(repo), "delegation_id": "db",
                           "role": "dev", "project": "proj",
-                          "owner_pm": "pm", "paths": ["src/**"],
+                          "owner_pm": "pm", "paths": ["src/**"], "policy_version": PV,
                           "worktree": str(wt), "branch": "flow/other",
                           "base_sha": git(repo, "rev-parse", "HEAD")}, reg)
         assert res["allowed"]
@@ -586,7 +591,7 @@ class TestBP06RegistryWorktreeSymlink:
         wt = make_worktree(repo, "s3", "flow/s3")
         res = sc.reserve({"repo": str(repo), "delegation_id": "dz",
                           "role": "dev", "project": "proj",
-                          "owner_pm": "pm", "paths": ["src/**"],
+                          "owner_pm": "pm", "paths": ["src/**"], "policy_version": PV,
                           "worktree": str(wt), "branch": "flow/s3",
                           "base_sha": git(repo, "rev-parse", "HEAD")}, reg)
         assert res["allowed"]
@@ -604,7 +609,7 @@ class TestBP06RegistryWorktreeSymlink:
         wt = make_worktree(repo, "s4", "flow/s4")
         res = sc.reserve({"repo": str(repo), "delegation_id": "ds",
                           "role": "dev", "project": "proj",
-                          "owner_pm": "pm", "paths": ["src/**"],
+                          "owner_pm": "pm", "paths": ["src/**"], "policy_version": PV,
                           "worktree": str(wt), "branch": "flow/s4",
                           "base_sha": git(repo, "rev-parse", "HEAD")}, reg)
         assert res["allowed"]
@@ -633,7 +638,7 @@ class TestBP06RegistryWorktreeSymlink:
             results.append(sc.reserve(
                 {"repo": str(repo), "delegation_id": f"dc-{i}",
                  "role": "dev", "project": "proj", "owner_pm": "pm",
-                 "paths": ["src/**"]}, reg))
+                 "paths": ["src/**"], "policy_version": PV}, reg))
         allowed = [r for r in results if r["allowed"]]
         assert len(allowed) == 1
         other = next(r for r in results if not r["allowed"])
@@ -753,7 +758,7 @@ class TestBP08CrashRecovery:
         reg = make_registry(tmp_path)
         res = sc.reserve({"repo": str(repo), "delegation_id": "crash-1",
                           "role": "dev", "project": "proj",
-                          "owner_pm": "pm", "paths": ["src/**"],
+                          "owner_pm": "pm", "paths": ["src/**"], "policy_version": PV,
                           "base_sha": git(repo, "rev-parse", "HEAD")}, reg)
         assert res["allowed"]
         # runner «умер»: PID не записан/мертв; записи файлов нет
@@ -770,7 +775,7 @@ class TestBP08CrashRecovery:
         reg = make_registry(tmp_path)
         sc.reserve({"repo": str(repo), "delegation_id": "crash-2",
                     "role": "dev", "project": "proj",
-                    "owner_pm": "pm", "paths": ["src/**"],
+                    "owner_pm": "pm", "paths": ["src/**"], "policy_version": PV,
                     "base_sha": git(repo, "rev-parse", "HEAD")}, reg)
         write(repo, "src/main.py", "X = 42\n")  # агент успел записать файлы
         rec = sc.reconcile(reg, repo=repo, delegation_id="crash-2")
@@ -789,7 +794,7 @@ class TestBP08CrashRecovery:
         reg = make_registry(tmp_path)
         req = {"repo": str(repo), "delegation_id": "crash-3",
                "role": "dev", "project": "proj", "owner_pm": "pm",
-               "paths": ["src/**"]}
+               "paths": ["src/**"], "policy_version": PV}
         assert sc.reserve(req, reg)["allowed"]
         sc.reconcile(reg, repo=repo, delegation_id="crash-3")
         n_before = len(sc.status(reg)["sessions"])
