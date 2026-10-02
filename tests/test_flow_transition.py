@@ -1081,10 +1081,11 @@ class TestR4TransitiveFlow1Order:
         assert d.status == "DENY"
         assert has_code(d, ft.MISSING_INPUT)
 
-    def test_release_unknown_without_archive_fact(self, tmp_path):
-        """R4 release: «просто все чекбоксы [x]» ≠ завершенный archive_change —
-        факт архивации в снимке среза 1 отсутствует → UNKNOWN, не молчаливое
-        ALLOW (D3)."""
+    def test_release_without_archive_fact_deny(self, tmp_path):
+        """R4 release + решение Б (P0.1): «просто все чекбоксы [x]» ≠
+        завершенный archive_change — отсутствие пакета archive/<id>/ →
+        DENY/INVALID_GATE «release до архивации» (решение 3.2-Б), а не
+        UNKNOWN: отсутствие archive — проверяемый отрицательный факт."""
         repo = make_repo(tmp_path)
         write(repo, "openspec/changes/add-widget/tasks.md",
               "- [x] 1.1\n- [x] 1.2\n- [x] 2.1\n- [x] 6.1\n")
@@ -1094,10 +1095,9 @@ class TestR4TransitiveFlow1Order:
         s = snapshot_for(repo, reg)
         d = ft.check_action(s, act(requested_action="release", actor_role="pm",
                                    approval_ref="чат-лог: «погнали»"))
-        assert d.status == "UNKNOWN"
-        assert not has_code(d, ft.INVALID_GATE)  # задачи закрыты — это учтено
-        assert has_code(d, ft.MISSING_INPUT)
-        assert any("archive_change" in x for x in d.details)
+        assert d.status == "DENY"
+        assert has_code(d, ft.INVALID_GATE)
+        assert any("release до архивации" in x for x in d.details)
 
 
 class TestR5ParallelMechanism:

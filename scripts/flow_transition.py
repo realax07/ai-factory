@@ -748,6 +748,50 @@ def check_accept_review(snapshot, action, ctx, flow):
     return out
 
 
+def _optional_fact(snapshot: dict, key: str, ctx: dict) -> tuple[object, str]:
+    """(value, status) факта без DENY-находки _fact_ready: отсутствующий
+    или missing-факт — «нет данных» (missing), а не блокирующий вход."""
+    f = _fact(snapshot, key, ctx)
+    if f is None or f.get("status") == "missing":
+        return None, "missing"
+    return f.get("value"), f.get("status", "unknown")
+
+
+def _external_protection_findings(snapshot, ctx) -> list:
+    """Факт branch protection (решение А) для merge/release.
+
+    ready (свежий ≤24ч отчет, protection_ok, привязка сошлась) → пометка
+    EXTERNAL_ENFORCEMENT_UNKNOWN не добавляется: внешний enforcement
+    подтвержден, полный ALLOW достижим. missing/unknown (проверка не
+    проводилась или отчет нечитаем) → честный UNKNOWN, как раньше.
+    invalid (адаптер ответил 404 / отчет чужой, протухший или привязан
+    к другому HEAD) → DENY: отрицательный факт, не незнание
+    (контракт §9, §12).
+    """
+    ctx["checked"].add("github.protection")
+    value, status = _optional_fact(snapshot, "github.protection", ctx)
+    if status == "ready":
+        return []
+    if status == "invalid" and isinstance(value, dict) \
+            and value.get("protection_ok") is False:
+        return [Finding(
+            EXTERNAL_ENFORCEMENT_UNKNOWN,
+            "branch protection main не настроена: проверка github_protection "
+            "ответила отрицательно (404/требуемые проверки отсутствуют) — "
+            "настрой защиту main и запиши отчет адаптером (контракт §12)")]
+    if status == "invalid":
+        return [Finding(
+            EXTERNAL_ENFORCEMENT_UNKNOWN,
+            "факт github.protection не привязан к этому repo/branch/HEAD или "
+            "старше 24ч — подтверждением защиты main не считается; "
+            "перезапусти gate_runner.py github_protection (контракт §12)",
+            True)]
+    return [Finding(
+        EXTERNAL_ENFORCEMENT_UNKNOWN,
+        "branch protection на main не подтверждена локальным прогоном — пометка "
+        "не повышает статус разрешения (FR-7; контракт §12)", True)]
+
+
 def check_merge_task(snapshot, action, ctx, flow):
     out: list = []
     if action.actor_role == "pm":
@@ -758,10 +802,10 @@ def check_merge_task(snapshot, action, ctx, flow):
     out.extend(_approvals_for_task(snapshot, action, ctx))
     out.extend(_hotfix_debt_findings(snapshot, action, ctx, flow))
     out.extend(_provenance_findings(snapshot, action, ctx, "merge_task"))
-    out.append(Finding(
-        EXTERNAL_ENFORCEMENT_UNKNOWN,
-        "branch protection на main не подтверждена локальным прогоном — пометка "
-        "не повышает статус разрешения (FR-7; контракт §12)", True))
+    # P0.1 (решение А): свежий положительный факт branch protection →
+    # пометка не добавляется (полный ALLOW достижим); missing → UNKNOWN;
+    # отрицательный/чужой факт → DENY.
+    out.extend(_external_protection_findings(snapshot, ctx))
     return out
 
 
@@ -894,29 +938,51 @@ def check_archive_change(snapshot, action, ctx, flow):
 
 def check_release(snapshot, action, ctx, flow):
     out: list = []
-    value, status, out0 = _fact_ready(snapshot, "change.tasks", ctx)
-    out.extend(out0)
-    if status == "ready" and isinstance(value, dict) and value.get("open", 1) > 0:
+    # P0.1 (решение Б): факт архивации — пакет openspec/changes/archive/<id>/.
+    # ready → UNKNOWN-пометка архивации не добавляется; missing → DENY
+    # (релиз до архивации запрещен, решение 3.2-Б); unknown → честный UNKNOWN.
+    arch_value, arch_status = _optional_fact(snapshot, "change.archived", ctx)
+    if arch_status == "ready":
+        pass  # change заархивирован: активного tasks.md нет — это и есть цель
+    else:
+        # change еще активен (или факт нечитаем): закрытость чекбоксов
+        # активного пакета проверяется как раньше.
+        value, status, out0 = _fact_ready(snapshot, "change.tasks", ctx)
+        out.extend(out0)
+        if status == "ready" and isinstance(value, dict) and value.get("open", 1) > 0:
+            out.append(Finding(
+                INVALID_GATE,
+                f"архивация не завершена (open={value.get('open')}) — релиз требует "
+                f"закрытого change (ТЗ 03 п.2: release gate после archive)"))
+    if arch_status == "missing":
         out.append(Finding(
             INVALID_GATE,
-            f"архивация не завершена (open={value.get('open')}) — релиз требует "
-            f"закрытого change (ТЗ 03 п.2: release gate после archive)"))
-    # Транзитивность Флоу 1 (review-001 R4): release различает «все чекбоксы [x]»
-    # и завершенный archive_change (дельты слиты, openspec validate). Факт
-    # архивации (change.archived) в срезе 1 не строится — без него UNKNOWN,
-    # не молчаливое ALLOW (D3: отсутствие критерия = UNKNOWN).
-    ctx["checked"].add("change.archived")
-    out.append(Finding(
-        MISSING_INPUT,
-        "факт завершенного archive_change (дельты слиты в openspec/specs/, "
-        "openspec validate --strict пройден) отсутствует в снимке среза 1 — "
-        "закрытые чекбоксы tasks.md не равны архивации; проверка невозможна → "
-        "UNKNOWN (ТЗ 03 п.2; design D3; координация с поставкой 02)",
-        True))
-    out.append(Finding(
-        EXTERNAL_ENFORCEMENT_UNKNOWN,
-        "деплой-полномочия вне локальной проверки — branch protection/окружение "
-        "не подтверждены (FR-7; контракт §12)", True))
+            "release до архивации: пакет openspec/changes/archive/<id>/ не "
+            "найден — порядок Флоу 1 строго archive_change → release "
+            "(решение Заказчика 3.2-Б; контракт §7)"))
+    elif arch_status != "ready":
+        out.append(Finding(
+            MISSING_INPUT,
+            "факт завершенного archive_change (дельты слиты в openspec/specs/, "
+            "openspec validate --strict пройден) не проверяем: пакет archive/"
+            "не читается — закрытые чекбоксы tasks.md не равны архивации; "
+            "UNKNOWN (ТЗ 03 п.2; design D3; контракт 7)",
+            True))
+    # P0.1 (решение В1): релизное решение Заказчика — файл releases/<id>.md
+    # с change-id и словом согласия. ready → часть HUMAN_APPROVAL_REQUIRED
+    # уходит; missing/invalid/unknown → требование решения остается.
+    rel_value, rel_status = _optional_fact(snapshot, "release.approval", ctx)
+    if rel_status != "ready" and not action.approval_ref:
+        out.append(Finding(
+            HUMAN_APPROVAL_REQUIRED,
+            "релиз/старт релизной фазы требует решения Заказчика: файла "
+            "releases/<change-id>.md нет (или он без change-id/слова "
+            "согласия), approval_ref не передан — формат решения: "
+            "контракт §10 (этапные ворота Заказчика)"))
+    # approval_ref без файла: строковая ссылка срез 1 принимает (D5) —
+    # ворота Заказчика считаются пройденными, файл — усиление, не дубликат.
+    # P0.1 (решение А): branch protection — тот же факт, что для merge.
+    out.extend(_external_protection_findings(snapshot, ctx))
     return out
 
 
@@ -1251,9 +1317,20 @@ def check_action(snapshot: dict, action: ActionRequest,
             f"{'/'.join(sorted(stage.roles))}, фактическая «{action.actor_role}» "
             f"(agents/README.md; контракт §7)"))
     if stage.approval:
-        af = _approval_finding(action, scope, action.requested_action)
-        if af is not None:
-            findings.append(af)
+        # P0.1 (решение В1): для release зафиксированным решением Заказчика
+        # является и файл releases/<change-id>.md (уровень 2: файл в репо с
+        # change-id и словом согласия). Если такой факт ready — этапные
+        # ворота считаются пройденными без approval_ref.
+        waived = False
+        if action.requested_action == "release":
+            rel_fact = next(
+                (f for f in snapshot.get("facts", [])
+                 if f.get("key") == "release.approval"), None)
+            waived = bool(rel_fact and rel_fact.get("status") == "ready")
+        if not waived:
+            af = _approval_finding(action, scope, action.requested_action)
+            if af is not None:
+                findings.append(af)
     findings.extend(stage.check(snapshot, action, ctx, flow))
     return _decide(snapshot, action, findings, ctx, stage, include_next)
 

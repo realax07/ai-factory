@@ -54,10 +54,18 @@ Usage:
         --reviewer-delegation ID --commit SHA --verdict approve
         --diff-digest D [--diff-base B] [--repo PATH] [--sidecar PATH] [--json]
     python3 scripts/gate_runner.py diff-digest --repo PATH --base B --head H [--json]
+    python3 scripts/gate_runner.py github-protection --repo PATH
+        [--github-repo OWNER/NAME] [--github-token-env ENV_NAME] [--branch main]
+        [--report PATH] [--json]
 
 Exit codes (run/status): 0 — PASS без STALE; 1 — FAIL, SKIPPED-отчет
 («не все gates выполнены») или STALE (повтор обязателен); 2 — ERROR,
 нет отчета или ошибка входа.
+Exit codes (github-protection): 0 — защита подтверждена (факт protection_ok);
+1 — защита не настроена/не соответствует (факт protection_ok=False, HTTP
+404 и др.); 3 — SKIPPED по явному правилу («--github-repo/--github-token-env
+не заданы» или env-переменная отсутствует — проверка не настроена, НЕ ERROR);
+2 — ошибка входа (репо не найден).
 """
 
 from __future__ import annotations
@@ -80,6 +88,14 @@ GATE_REPORT_SCHEMA = "gate-report/1"
 AUDIT_SCHEMA = "audit-jsonl/1"
 PROVENANCE_SCHEMA = "review-provenance/1"
 ADAPTER_VERSION = "gate-runner/1"
+
+# Решение А (P0.1): машиночитаемый факт branch protection (честная граница
+# enforcement, контракт §12). Адаптер вызывает GitHub API только через
+# subprocess (curl или python urllib); токен читается subprocess'ом из env по
+# ИМЕНИ переменной — сам токен в argv/env/отчет не попадает.
+PROTECTION_SCHEMA = "github-protection/1"
+PROTECTION_BRANCH = "main"
+PROTECTION_API_TIMEOUT = 30  # секунд на HTTP-запрос
 
 SCRIPTS = Path(__file__).resolve().parent
 
@@ -627,6 +643,160 @@ def write_review_provenance(
     return path, payload
 
 
+# ------------------------------------------------------------ github_protection
+
+
+def protection_report_path(repo: Path) -> Path:
+    return Path(repo) / ".flow-evidence" / "github-protection.json"
+
+
+def check_branch_protection(repo: Path, github_repo: str, token_env: str,
+                            branch: str = PROTECTION_BRANCH,
+                            report: Path | None = None,
+                            token_env_os=None) -> dict:
+    """Решение А (P0.1): проверка branch protection через GitHub API.
+
+    GET /repos/{repo}/branches/{branch}/protection с токеном, прочитанным
+    subprocess'ом из env-переменной {token_env} (имя, НЕ значение). Валидация:
+    required_pull_request_reviews присутствует + required_status_checks
+    включает flow.yml. Итог — машиночитаемый JSON-факт
+    (schema github-protection/1) с датой и HTTP-кодом.
+
+    Возвращает dict факта; поле protection_ok=True только при обоих
+    условиях. Отсутствие токена/env/repo — SKIPPED-ситуация вызывающего
+    (gate по явному правилу не задан), поэтому поднят ValueError с маркером
+    "skip:" — CLI маппит ее в SKIPPED-отчет, не ERROR.
+    token_env_os — подмена доступа к env для тестов: словарь или callable
+    (по умолчанию os.environ.get).
+    """
+    import os as _os
+    if token_env_os is None:
+        getenv = _os.environ.get
+    elif callable(token_env_os):
+        getenv = token_env_os
+    else:
+        getenv = token_env_os.get
+    fact: dict = {
+        "schema_version": PROTECTION_SCHEMA,
+        "adapter_version": ADAPTER_VERSION,
+        "repo": github_repo,
+        "branch": branch,
+        "observed_at": utcnow_iso(),
+        "protection_ok": False,
+        "http_status": None,
+        "detail": "",
+    }
+    if not github_repo:
+        raise ValueError("skip: --github-repo не задан — gate не настроен")
+    if not token_env:
+        raise ValueError("skip: --github-token-env не задан — gate не настроен")
+    token = str(getenv(token_env) or "")
+    if not token:
+        raise ValueError(
+            f"skip: env-переменная {token_env} пуста/отсутствует — gate не настроен")
+
+    api_url = f"https://api.github.com/repos/{github_repo}/branches/{branch}/protection"
+    code, body = _github_api_get(api_url, token)
+    fact["http_status"] = code
+    if code == 404:
+        fact["detail"] = "защита ветки не настроена (404)"
+        _write_protection_report(report or protection_report_path(repo), fact)
+        return fact
+    if code != 200:
+        fact["detail"] = f"github api недоступен (HTTP {code})"
+        _write_protection_report(report or protection_report_path(repo), fact)
+        return fact
+    try:
+        data = json.loads(body)
+    except ValueError:
+        data = None
+    if not isinstance(data, dict):
+        fact["detail"] = "github api вернул несловарный ответ"
+        _write_protection_report(report or protection_report_path(repo), fact)
+        return fact
+
+    problems: list[str] = []
+    reviews = data.get("required_pull_request_reviews")
+    if not isinstance(reviews, dict):
+        problems.append("required_pull_request_reviews отсутствует")
+    checks = data.get("required_status_checks")
+    check_ctx = checks.get("contexts") if isinstance(checks, dict) else None
+    has_flow_yml = any(
+        "flow.yml" in str(c) for c in (check_ctx or []))
+    if not isinstance(checks, dict):
+        problems.append("required_status_checks отсутствует")
+    elif not has_flow_yml:
+        problems.append("required_status_checks не включает flow.yml")
+    if problems:
+        fact["detail"] = "; ".join(problems)
+    else:
+        fact["protection_ok"] = True
+        fact["detail"] = (
+            "required_pull_request_reviews + required_status_checks(flow.yml)")
+    _write_protection_report(report or protection_report_path(repo), fact)
+    return fact
+
+
+def _github_api_get(url: str, token: str) -> tuple[int, str]:
+    """GitHub API GET через subprocess (urllib в дочернем процессе).
+
+    Токен передается дочернему процессу через его env (не argv, не файлы,
+    не stdout родителя). Возвращает (HTTP-код, тело).
+    """
+    child = (
+        "import os, sys, urllib.request, urllib.error\n"
+        "url, name = sys.argv[1], sys.argv[2]\n"
+        "token = os.environ[name]\n"
+        "req = urllib.request.Request(url, headers={\n"
+        "    'Authorization': 'Bearer ' + token,\n"
+        "    'Accept': 'application/vnd.github+json',\n"
+        "    'X-GitHub-Api-Version': '2022-11-28',\n"
+        "    'User-Agent': 'ai-factory-gate-runner',\n"
+        "})\n"
+        "try:\n"
+        "    with urllib.request.urlopen(req, timeout=30) as resp:\n"
+        "        print(resp.status); print(resp.read().decode('utf-8', errors='replace'))\n"
+        "except urllib.error.HTTPError as e:\n"
+        "    print(e.code); print(e.read().decode('utf-8', errors='replace'))\n"
+        "except Exception as e:\n"
+        "    print(0); print(str(e))\n"
+    )
+    env = dict(os.environ)
+    env["_FLOW_PROTECTION_TOKEN"] = token
+    try:
+        proc = subprocess.run(
+            [sys.executable, "-c", child, url, "_FLOW_PROTECTION_TOKEN"],
+            capture_output=True, text=True, timeout=PROTECTION_API_TIMEOUT + 10,
+            env=env,
+        )
+    except subprocess.TimeoutExpired:
+        return 0, "timeout"
+    lines = (proc.stdout or "").split("\n", 1)
+    try:
+        code = int(lines[0].strip())
+    except (ValueError, IndexError):
+        return 0, "unparseable response"
+    return code, lines[1] if len(lines) > 1 else ""
+
+
+def _write_protection_report(path: Path, fact: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(fact, ensure_ascii=False, indent=2, sort_keys=True),
+        encoding="utf-8")
+
+
+def load_protection_fact(repo: Path) -> tuple[dict | None, str | None]:
+    """Читает последний JSON-факт github_protection (для проверок/тестов)."""
+    path = protection_report_path(repo)
+    if not path.is_file():
+        return None, f"факт не найден: {path}"
+    try:
+        return json.loads(path.read_text(encoding="utf-8")), None
+    except (OSError, ValueError) as exc:
+        return None, f"факт нечитаем: {exc}"
+
+
 # ------------------------------------------------------------------- CLI
 
 
@@ -737,6 +907,52 @@ def _cmd_diff_digest(args) -> int:
     return 0
 
 
+def _cmd_github_protection(args) -> int:
+    repo = Path(args.repo).resolve()
+    if not repo.is_dir():
+        print("GATE-RUNNER-ERROR: репозиторий не найден: {repo}".format(repo=repo),
+              file=sys.stderr)
+        return 2
+    # SKIPPED — только по явному правилу «параметр не задан» (аналог
+    # pr_validate без PR-контекста): отсутствие настройки gate не ERROR.
+    if not args.github_repo or not args.github_token_env:
+        print(json.dumps({
+            "schema_version": PROTECTION_SCHEMA,
+            "status": "SKIPPED",
+            "reason": "--github-repo / --github-token-env не заданы — "
+                      "проверка branch protection не настроена (явное "
+                      "правило неприменимости, не ERROR)",
+        }, ensure_ascii=False))
+        return 3
+    try:
+        fact = check_branch_protection(
+            repo, args.github_repo, args.github_token_env,
+            branch=args.branch,
+            report=Path(args.report) if args.report else None,
+        )
+    except ValueError as exc:
+        msg = str(exc)
+        if msg.startswith("skip:"):
+            print(json.dumps({
+                "schema_version": PROTECTION_SCHEMA,
+                "status": "SKIPPED",
+                "reason": msg[len("skip:"):].strip(),
+            }, ensure_ascii=False))
+            return 3
+        print(f"GATE-RUNNER-ERROR: {msg}", file=sys.stderr)
+        return 2
+    ok = fact.get("protection_ok") is True
+    if args.as_json:
+        print(json.dumps({"status": "PASS" if ok else "FAIL", **fact},
+                         ensure_ascii=False, indent=2, sort_keys=True))
+    else:
+        print(f"gate_runner: github-protection "
+              f"{'PASS' if ok else 'FAIL'} HTTP={fact.get('http_status')} "
+              f"— {fact.get('detail')}")
+        print(f"  факт: {args.report or protection_report_path(repo)}")
+    return 0 if ok else 1
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(
         prog="gate_runner.py",
@@ -808,6 +1024,26 @@ def main(argv: list[str] | None = None) -> int:
     p_dd.add_argument("--base", required=True)
     p_dd.add_argument("--head", required=True)
     p_dd.set_defaults(func=_cmd_diff_digest)
+
+    p_gp = sub.add_parser(
+        "github-protection",
+        help="решение А (P0.1): проверить branch protection main через "
+             "GitHub API и записать машиночитаемый факт")
+    p_gp.add_argument("--repo", required=True, help="локальный репозиторий "
+                      "(сюда пишется факт .flow-evidence/github-protection.json)")
+    p_gp.add_argument("--github-repo", dest="github_repo", default=None,
+                      help="GitHub репозиторий OWNER/NAME (не задан → SKIPPED)")
+    p_gp.add_argument("--github-token-env", dest="github_token_env", default=None,
+                      help="ИМЯ env-переменной с токеном (НЕ сам токен); "
+                           "переменная читается subprocess'ом (не задана → "
+                           "SKIPPED)")
+    p_gp.add_argument("--branch", default=PROTECTION_BRANCH,
+                      help=f"ветка защиты (по умолчанию {PROTECTION_BRANCH})")
+    p_gp.add_argument("--report", default=None,
+                      help="явный путь JSON-факта (по умолчанию "
+                           ".flow-evidence/github-protection.json в репо)")
+    p_gp.add_argument("--json", action="store_true", dest="as_json")
+    p_gp.set_defaults(func=_cmd_github_protection)
 
     args = ap.parse_args(argv)
     return args.func(args)

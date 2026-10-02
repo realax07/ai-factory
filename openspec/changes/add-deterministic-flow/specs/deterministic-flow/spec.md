@@ -104,13 +104,48 @@ DENY с кодом `HUMAN_APPROVAL_REQUIRED` при отсутствии заф�
 Система MUST различать локально проверяемое и внешнее: локальный PASS gates не
 доказывает защиту main (branch protection). При недоступности подтверждения внешней
 защиты релевантные решения MUST получать пометку `EXTERNAL_ENFORCEMENT_UNKNOWN`, не
-повышающую статус разрешения.
+повышающую статус разрешения. Подтверждение внешней защиты — машиночитаемый факт:
+адаптер `gate_runner.py github_protection` (решение А) вызывает GitHub API
+`GET /repos/{repo}/branches/{branch}/protection` и пишет JSON-отчет
+`.flow-evidence/github-protection.json` (дата + HTTP-код + привязка к repo/branch/
+HEAD); факт учитывается только при свежести ≤ 24ч и совпадении привязки.
+Отрицательное подтверждение (404 / требуемые проверки не настроены) MUST давать
+DENY на merge/release с кодом `EXTERNAL_ENFORCEMENT_UNKNOWN` и деталью «защита
+main не настроена» — это знание, а не незнание. Архивация change доказывается
+фактом `change.archived` (пакет `openspec/changes/archive/<id>/` в репо,
+решение Б): его отсутствие при release MUST давать DENY/INVALID_GATE «release
+до архивации». Релизное решение Заказчика фиксируется файлом
+`releases/<change-id>.md` (change-id + слово согласия, решение В1) — при готовом
+факте `release.approval` требование approval_ref на release считается
+исполненным. При полном комплекте фактов (архивация + релизное решение +
+свежее подтверждение branch protection) переходы merge_task/release MUST
+достигать статуса ALLOW.
 
 #### Scenario: Локальный PASS без подтверждения branch protection
 - **GIVEN** все локальные gates прошли, подтверждение branch protection недоступно
 - **WHEN** формируется decision на merge
 - **THEN** decision содержит EXTERNAL_ENFORCEMENT_UNKNOWN и не выдает защиту main
   за доказанную
+
+#### Scenario: Полный комплект фактов
+- **GIVEN** change заархивирован (openspec/changes/archive/<id>/), релизное
+  решение зафиксировано (releases/<change-id>.md с change-id и словом согласия),
+  branch protection подтверждена свежим отчетом github_protection
+- **WHEN** запрошены действия merge_task (с чистым provenance) и release
+- **THEN** оба решения имеют статус ALLOW без EXTERNAL_ENFORCEMENT_UNKNOWN
+
+#### Scenario: Защита main не настроена
+- **GIVEN** адаптер github_protection получил HTTP 404 (или ответ без
+  required_pull_request_reviews / required_status_checks с flow.yml)
+- **WHEN** запрошены действия merge_task или release
+- **THEN** decision = DENY с кодом EXTERNAL_ENFORCEMENT_UNKNOWN и деталью
+  «защита main не настроена»
+
+#### Scenario: Отчет branch protection устарел или чужой
+- **GIVEN** отчет github-protection старше 24ч, без даты или привязан к другому
+  repo/branch/HEAD
+- **WHEN** запрошено действие merge_task
+- **THEN** пометка EXTERNAL_ENFORCEMENT_UNKNOWN сохраняется (статус не выше UNKNOWN)
 
 ### Requirement: Provenance review (строгий режим)
 Approve ревью MUST приниматься только при соответствии task/change/SHA/diff и

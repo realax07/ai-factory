@@ -35,6 +35,7 @@ import re
 import subprocess
 import sys
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 SCHEMA_VERSION = "flow-snapshot/1"
@@ -73,6 +74,14 @@ STATUS_MISSING = "missing"
 STATUS_INVALID = "invalid"
 STATUS_UNKNOWN = "unknown"
 STATUS_READY = "ready"
+
+# Факт branch protection (решение Б): машиночитаемый JSON gate_runner.py
+# github_protection (--report). Свежесть ≤ 24ч; привязка к repo/branch и HEAD.
+PROTECTION_REPORT_NAME = "github-protection.json"
+PROTECTION_TTL_HOURS = 24
+PROTECTION_BRANCH = "main"
+# Поля JSON-отчета адаптера github_protection (gate_runner.py).
+PROTECTION_SCHEMA = "github-protection/1"
 
 
 # ---------------------------------------------------------------- модели
@@ -396,6 +405,161 @@ def approved_cases_fact(repo: Path, change_id: str, problems: list) -> Fact:
     )
 
 
+# ------------------------------------------------- факты enforcement (P0.1)
+
+
+def archived_fact(repo: Path, change_id: str, problems: list) -> Fact:
+    """Решение Б: change заархивирован = пакет в openspec/changes/archive/<id>/.
+
+    ready — каталог существует и читаем; missing — его нет (change еще
+    активен); unknown — чтение каталога упало (не «не заархивирован»).
+    Проверка слитости дельт остается за flow_check (контракт 7) — факт
+    здесь только о факте перемещения пакета в archive/.
+    """
+    key = "change.archived"
+    rel = f"openspec/changes/archive/{change_id}"
+    d = repo / rel
+    try:
+        resolved = d.resolve(strict=False)
+        repo_resolved = repo.resolve()
+        if repo_resolved != resolved and repo_resolved not in resolved.parents:
+            problems.append(Problem(
+                code="PATH_OUTSIDE_REPO",
+                detail=f"{rel}: symlink выходит за пределы репозитория",
+                source=rel,
+            ))
+            return Fact(key, None, rel, "", "", CONFIDENCE_UNKNOWN, STATUS_UNKNOWN)
+    except OSError as exc:
+        problems.append(Problem(
+            code="FILE_READ_ERROR", detail=f"{rel}: не читается: {exc}", source=rel,
+        ))
+        return Fact(key, None, rel, "", "", CONFIDENCE_UNKNOWN, STATUS_UNKNOWN)
+    if not resolved.is_dir():
+        return Fact(key, False, rel, "", "", CONFIDENCE_VERIFIED, STATUS_MISSING)
+    return Fact(
+        key, True, rel, "",
+        _sha256_text(str(resolved)),
+        CONFIDENCE_VERIFIED, STATUS_READY,
+    )
+
+
+def release_approval_fact(repo: Path, change_id: str, problems: list) -> Fact:
+    """Решение В1: релизное решение Заказчика — файл releases/<change-id>.md
+    в репо, содержащий change-id и слово согласия («разрешаю»/«погнали»).
+
+    Минимальный формат: существование файла + упоминание change-id + маркер
+    согласия. Чужой change в файле или файл без маркера согласия = invalid
+    (DENY-факт, не разрешение); нечитаемый файл = unknown; нет файла = missing.
+    """
+    key = "release.approval"
+    rel = f"releases/{change_id}.md"
+    text, fp = safe_read(repo, rel, problems)
+    if text is None:
+        had_problem = any(p.source == rel for p in problems)
+        status = STATUS_UNKNOWN if had_problem else STATUS_MISSING
+        return Fact(key, None, rel, "", "", CONFIDENCE_UNKNOWN, status)
+    mentions_change = bool(re.search(rf"\b{re.escape(change_id)}\b", text))
+    approval_word = bool(
+        re.search(r"\b(разрешаю|погнали|запускай|утверждаю|approved)\b", text, re.I)
+    )
+    if not (mentions_change and approval_word):
+        return Fact(key, None, rel, "", fp or "", CONFIDENCE_UNKNOWN, STATUS_INVALID)
+    return Fact(
+        key, {"change": change_id, "file": rel}, rel, "", fp,
+        CONFIDENCE_VERIFIED, STATUS_READY,
+    )
+
+
+def _parse_iso_utc(text: str) -> datetime | None:
+    try:
+        dt = datetime.fromisoformat(str(text).strip().replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt
+
+
+def github_protection_fact(repo: Path, problems: list) -> Fact:
+    """Решение А: машиночитаемый факт адаптера gate_runner.py github_protection.
+
+    Источник — JSON-отчет <repo>/.flow-evidence/github-protection.json
+    (записывается адаптером после GET /repos/{repo}/branches/main/protection).
+    Свежесть ≤ 24ч (observed_at); привязка к repo/branch/HEAD обязательна:
+    отчет про другой repo/branch или старый HEAD = invalid (не разрешение).
+    Отчета нет = missing (проверка не проводилась → UNKNOWN на merge);
+    нечитаем/битый/не та схема = unknown + проблема.
+    """
+    key = "github.protection"
+    rel = f".flow-evidence/{PROTECTION_REPORT_NAME}"
+    text, fp = safe_read(repo, rel, problems)
+    if text is None:
+        had_problem = any(p.source == rel for p in problems)
+        status = STATUS_UNKNOWN if had_problem else STATUS_MISSING
+        return Fact(key, None, rel, "", "", CONFIDENCE_UNKNOWN, status)
+    try:
+        data = json.loads(text)
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        problems.append(Problem(
+            code="FILE_READ_ERROR",
+            detail=f"{rel}: битый JSON — факт protection нечитаем",
+            source=rel,
+        ))
+        return Fact(key, None, rel, "", fp, CONFIDENCE_UNKNOWN, STATUS_UNKNOWN)
+    if not isinstance(data, dict) or data.get("schema_version") != PROTECTION_SCHEMA:
+        problems.append(Problem(
+            code="FILE_READ_ERROR",
+            detail=f"{rel}: schema_version не {PROTECTION_SCHEMA} — факт не "
+                   f"распознан, не интерпретируется «на глаз»",
+            source=rel,
+        ))
+        return Fact(key, None, rel, "", fp or "", CONFIDENCE_UNKNOWN, STATUS_UNKNOWN)
+    ok = data.get("protection_ok") is True
+    if not ok:
+        # Адаптер добрался до GitHub, но защита не настроена/не соответствует:
+        # это отрицательный факт (invalid), а не незнание.
+        detail = str(data.get("detail") or "защита main не настроена")
+        return Fact(
+            key, {"protection_ok": False, "detail": detail}, rel, "", fp or "",
+            CONFIDENCE_VERIFIED, STATUS_INVALID,
+        )
+    # Привязка: repo (origin), branch, HEAD репо на момент проверки.
+    binding: dict = {}
+    try:
+        origin = _git(repo, "remote", "get-url", "origin").stdout.strip()
+    except (subprocess.TimeoutExpired, OSError):
+        origin = ""
+    branch = str(data.get("branch") or "")
+    if origin and data.get("repo") and str(data["repo"]) not in origin:
+        binding["repo"] = f"{data['repo']} != origin {origin}"
+    if branch and branch != PROTECTION_BRANCH:
+        binding["branch"] = f"{branch} != {PROTECTION_BRANCH}"
+    head_now = _git(repo, "rev-parse", "HEAD").stdout.strip()
+    if head_now and data.get("repo_head") and str(data["repo_head"]) != head_now:
+        binding["repo_head"] = f"{data['repo_head']} != HEAD {head_now}"
+    observed = _parse_iso_utc(str(data.get("observed_at") or ""))
+    stale = observed is None or (
+        datetime.now(timezone.utc) - observed > timedelta(hours=PROTECTION_TTL_HOURS)
+    )
+    if stale:
+        binding["observed_at"] = (
+            f"отчет старше {PROTECTION_TTL_HOURS}ч или без даты"
+        )
+    if binding:
+        return Fact(
+            key,
+            {"protection_ok": True,
+             "binding_problems": sorted(binding.values())},
+            rel, "", fp or "", CONFIDENCE_UNKNOWN, STATUS_INVALID,
+        )
+    return Fact(
+        key,
+        {"protection_ok": True, "observed_at": str(data.get("observed_at") or ""),
+         "branch": branch or PROTECTION_BRANCH},
+        rel, "", fp or "", CONFIDENCE_VERIFIED, STATUS_READY,
+    )
+
+
 # -------------------------------------------------------------- реестр
 
 
@@ -550,6 +714,12 @@ def inspect(
     # Решение Заказчика 3.1-А (S5, 2026-10-02): факт approved-кейсов ИМЕННО
     # этого change — по нему qa_automation допускает автоматизацию (ТЗ 04).
     facts.append(approved_cases_fact(repo, change_id, problems))
+    # P0.1 (факты enforcement): archive (решение Б), релизное решение
+    # Заказчика (решение В1) и машиночитаемый факт branch protection
+    # (решение А). Все три — read-only факты репозитория.
+    facts.append(archived_fact(repo, change_id, problems))
+    facts.append(release_approval_fact(repo, change_id, problems))
+    facts.append(github_protection_fact(repo, problems))
 
     # task: независимые состояния внутри change (не один линейный статус)
     if task_id:
