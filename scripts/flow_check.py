@@ -69,11 +69,18 @@ def archived_delta_problems(repo: Path) -> dict[str, list[str]]:
 
 
 def closed_dev_tasks(tasks_text: str) -> list[str]:
-    """Закрытые dev-задачи ([x]) tasks.md; QA-раздел 6.x исключен (J10)."""
+    """Закрытые dev-задачи ([x]) tasks.md; QA-раздел 6.x исключен (J10).
+
+    Исключены также ops/docs-задачи (маркер `[ops]`/`[docs]` после чекбокса):
+    боевая приемка Заказчика / верификация фактов вместо code-review
+    (контракт flow_control: ops_task/docs_task, J10 не применяется).
+    """
     out = []
-    for m in re.finditer(r"^[-*]\s*\[x\]\s*(\d+(?:\.\d+)*)", tasks_text, re.M):
+    for m in re.finditer(r"^[-*]\s*\[x\]\s*(\d+(?:\.\d+)*)(?:\s+\[[SP]\])?(\s+\[([a-z]+)\])?", tasks_text, re.M):
         num = m.group(1)
         if num.split(".")[0] == QA_SECTION:
+            continue
+        if m.group(3) in ("ops", "docs"):
             continue
         out.append(num)
     return out
