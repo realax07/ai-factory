@@ -93,7 +93,21 @@ def check_change(repo: Path, change_id: str, marker: str = "") -> list[str]:
     pr_tasks = extract_pr_tasks(marker + " " + os.environ.get("GITHUB_HEAD_REF", ""))
     if pr_tasks:
         covered = approved_review_tasks(repo, change_id)
-        unreviewed = [t for t in pr_tasks if t not in covered]
+        # J10 требует review только для DEV-задач: ops/docs-задачи ([ops]/[docs])
+        # и незакрытые задачи tasks.md исключаются (контракт flow_control:
+        # ops_task/docs_task; упоминание незакрытой задачи в тексте PR —
+        # контекст, не требование ревью). Урок add-containerization: «задачи
+        # 2.3/2.4» в body при [ops]-маркере давали ложный FAIL.
+        try:
+            from flow_check import closed_dev_tasks
+            tasks_md = repo / "openspec" / "changes" / change_id / "tasks.md"
+            dev_closed = set(closed_dev_tasks(tasks_md.read_text(encoding="utf-8", errors="replace"))) if tasks_md.is_file() else set()
+        except Exception:
+            dev_closed = None  # файл недоступен — прежнее поведение
+        unreviewed = [
+            t for t in pr_tasks
+            if t not in covered and (dev_closed is None or t in dev_closed)
+        ]
         if unreviewed:
             missing.append(
                 f"code-reviews/{change_id}/: нет review-файла с вердиктом approve "
