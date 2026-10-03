@@ -18,6 +18,7 @@
 - Автотесты пишутся только по одобренным ревью кейсам; красный тест на корректном коде = баг-репорт, не правка теста.
 - Правила конвейера формализованы как спеки OpenSpec в самом ai-factory (openspec/specs/{pipeline,artifacts,qa-pipeline}); agents/*.md и contracts/*.md подчинены спекам. CLI: openspec validate --all --strict.
 - Детерминизм флоу: AGENTS.md (входной файл агента) + scripts/flow_check.py (state-machine проверка порядка артефактов, exit 1 при нарушении) + CI (.github/workflows/flow.yml: openspec strict + flow_check на каждый push). Скиллы установлены в ~/.hermes/skills/ai-factory, роли собираются бандлами /af-*.
+- Эволюция фабрики — три стадии (v1.0 релиз → v2.0 детерминированная оркестрация → v3.0 декомпозиция вместо ролей): см. docs/factory-evolution-stages.md (источник — Заказчик; рамка, не бэклог).
 
 ## Статус
 
