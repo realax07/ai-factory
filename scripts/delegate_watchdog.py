@@ -28,6 +28,7 @@ REGISTRY_DB = Path.home() / ".hermes" / "state.db"   # async_delegations — п�
 FLOWCTL_STATE = Path.home() / ".hermes" / "state" / "flowctl_state.json"
 INCIDENTS = Path.home() / ".hermes" / "state" / "delegate_bypass_incidents.json"
 PM_NUDGE_STATE = Path.home() / ".hermes" / "state" / "delegate_watchdog_pm_nudge.json"
+ACK_STATE = Path.home() / ".hermes" / "state" / "delegate_watchdog_ack.json"
 GRACE_SECONDS = 120  # делегациям младше 2 минут даем время на prepare (гонка старт)
 # Анти-рекурсия (требование Заказчика 2026-10-04): [PM-INSTRUCTION] доставляется
 # ПМ как OUT-OF-BAND; ПМ в ответе может триггерить новые делегации → новый
@@ -154,46 +155,59 @@ def main() -> int:
               "bypass": bypasses, "stale_finish": stale}
     if bypasses or stale:
         INCIDENTS.write_text(json.dumps(report, ensure_ascii=False, indent=2))
-        # Решение Заказчика 2026-10-04, вторая редакция: два канала.
-        #   Канал 1 — ПМ (main-сессия): инструкция [PM-INSTRUCTION], которую
-        #     шлюз доставляет в main-чат как OUT-OF-BAND (как правка
-        #     Заказчика посреди задачи). Анти-рекурсия — тройная (см.
-        #     константы выше): fingerprint-дедуп + cooldown + часовой потолок.
-        #   Канал 2 — Заказчику: сухой машинный отчет «как раньше»
-        #     (без обращений к ПМ — ему не нужно читать нареканий в свой
-        #     адрес, это между машиной и ПМ).
+        # Решение Заказчика 2026-10-04, третья редакция («постоянно срет в
+        # чат» — не норма): каналу Заказчика — только НОВЫЕ инциденты.
+        # Принятые (ack) обходы не репортятся; no_agent-крон с пустым stdout
+        # ничего не отправляет. Признание — ACK-файл (ids + decision_ref);
+        # полная история всегда в INCIDENTS.
         now_ts = time.time()
+        ack = load(ACK_STATE) or {"acknowledged": []}
+        acked = set(ack.get("acknowledged", []))
+        new_bypasses = [b for b in bypasses if b["delegation_id"] not in acked]
+        new_stale = [s for s in stale if (s["delegation_id"] or "") not in acked]
         prev_nudge = load(PM_NUDGE_STATE) or {}
         fingerprint = json.dumps(
-            sorted(b["delegation_id"] for b in bypasses)
-            + sorted((s["delegation_id"] or "") for s in stale),
+            sorted(b["delegation_id"] for b in new_bypasses)
+            + sorted((s["delegation_id"] or "") for s in new_stale),
             sort_keys=True)
         changed = prev_nudge.get("fingerprint") != fingerprint
         in_cooldown = (now_ts - prev_nudge.get("last_sent", 0)) < PM_COOLDOWN_SECONDS
         history = [t for t in prev_nudge.get("sent_history", [])
                    if now_ts - t < 3600]
         over_budget = len(history) >= MAX_NUDGES_PER_HOUR
-        if changed and not in_cooldown and not over_budget:
-            history.append(now_ts)
-            PM_NUDGE_STATE.parent.mkdir(parents=True, exist_ok=True)
-            PM_NUDGE_STATE.write_text(json.dumps(
-                {"fingerprint": fingerprint, "last_sent": now_ts,
-                 "sent_history": history}, indent=2))
-            ids = ", ".join(sorted(b["delegation_id"] for b in bypasses)) or "—"
-            print("[PM-INSTRUCTION] (watchdog → ПМ, вне очереди) Обнаружены "
-                  f"делегации мимо delegate_gate: {ids}. Действуй немедленно, "
-                  "не дожидаясь текущего шага: (1) активные/будущие диспатчи — "
-                  "только через scripts/delegate_gate.py prepare → run → finish "
-                  "с валидным approval_ref; (2) по каждому bypass-id оформи "
-                  "ворота задним числом (decision-record) или доложи "
-                  "Заказчику, почему их нет; (3) подтверждение — ответ в "
-                  "main-чат. Детали: " + str(INCIDENTS))
-        elif over_budget:
-            print(f"PM-INSTRUCTION suppressed: лимит {MAX_NUDGES_PER_HOUR}/ч "
-                  "исчерпан — см. файл инцидентов (канал Заказчика работает)")
-        print(f"BYPASS DETECTED: обходов={len(bypasses)}, забытых finish={len(stale)}")
-        print(json.dumps(report, ensure_ascii=False, indent=2))
-        return 1
+        if new_bypasses or new_stale:
+            if changed and not in_cooldown and not over_budget:
+                history.append(now_ts)
+                PM_NUDGE_STATE.parent.mkdir(parents=True, exist_ok=True)
+                PM_NUDGE_STATE.write_text(json.dumps(
+                    {"fingerprint": fingerprint, "last_sent": now_ts,
+                     "sent_history": history}, indent=2))
+                ids = ", ".join(sorted(b["delegation_id"] for b in new_bypasses)) or "—"
+                print("[PM-INSTRUCTION] (watchdog → ПМ, вне очереди) НОВЫЕ "
+                      f"делегации мимо delegate_gate: {ids}. Действуй "
+                      "немедленно, не дожидаясь текущего шага: (1) активные/"
+                      "будущие диспатчи — только через scripts/delegate_gate.py "
+                      "prepare → run → finish с валидным approval_ref; "
+                      "(2) по каждому bypass-id оформи ворота задним числом "
+                      "(decision-record) или доложи Заказчику, почему их нет; "
+                      "(3) подтверждение — ответ в main-чат. Детали: "
+                      + str(INCIDENTS))
+            elif over_budget:
+                print(f"PM-INSTRUCTION suppressed: лимит {MAX_NUDGES_PER_HOUR}/ч "
+                      "исчерпан — см. файл инцидентов (канал Заказчика работает)")
+            # Канал Заказчика — только дельта (новые id), не вся копилка.
+            print(f"BYPASS DETECTED: новых обходов={len(new_bypasses)}, "
+                  f"новых забытых finish={len(new_stale)} "
+                  f"(принято ранее: {len(bypasses) - len(new_bypasses)} "
+                  f"обходов, {len(stale) - len(new_stale)} финишей — ack/decision)")
+            print(json.dumps({"checked_at": report["checked_at"],
+                              "new_bypass": new_bypasses,
+                              "new_stale_finish": new_stale},
+                             ensure_ascii=False, indent=2))
+            return 1
+        # Есть только принятые (ack) инциденты — НОВОГО нет: stdout пустой,
+        # no_agent-крон молчит (спам решен); факт зафиксирован в INCIDENTS.
+        return 0
     print("clean: все делегации покрыты flowctl, открытых финишей нет")
     return 0
 
