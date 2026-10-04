@@ -114,6 +114,54 @@ def check_change(repo: Path, change_id: str, marker: str = "") -> list[str]:
                 f"для задач из дифа PR (J10): " + ", ".join(unreviewed)
             )
 
+    # SELF_REVIEW (решение Заказчика 2026-10-03): approve засчитывается только
+    # если Reviewer-Delegation существует в async_delegations, completed, и это
+    # НЕ dev-делегация задачи. Git-учетка одна — независимость подтверждается
+    # платформенными id (устойчивы к пересозданию main-сессий). Проверка ВНЕ
+    # привязки к pr_tasks: подделка артефакта ловится даже когда задачи не
+    # упомянуты в тексте PR.
+    import sqlite3 as _sq
+    _db = Path.home() / ".hermes" / "state.db"
+    _dev_delegs: set = set()
+    try:
+        import json as _json
+        _fstate = _json.loads((Path.home() / ".hermes" / "state" / "flowctl_state.json").read_text(encoding="utf-8"))
+        for _r in _fstate.get("runs", {}).values():
+            _sc = _r.get("scope") or {}
+            if _sc.get("change") == change_id and _sc.get("task"):
+                _dd = _r.get("delegation_id")
+                if _dd:
+                    _dev_delegs.add(_dd.replace("-", "_"))
+    except Exception:
+        pass
+    _cr_dir = repo / "code-reviews" / change_id
+    if _cr_dir.is_dir():
+        for _rf in _cr_dir.glob("review-*.md"):
+            _t = _rf.read_text(encoding="utf-8", errors="replace")
+            _m = re.search(r"Reviewer-Delegation[^A-Za-z0-9]{0,6}(deleg[-_][A-Za-z0-9]+)", _t, re.I)
+            if not _m:
+                missing.append(
+                    f"code-reviews/{change_id}/{_rf.name}: нет Reviewer-Delegation (SELF_REVIEW-защита) — ревью не засчитано"
+                )
+                continue
+            _rd = _m.group(1).replace("-", "_")
+            _exists = _ok = False
+            try:
+                _c = _sq.connect(f"file:{_db}?mode=ro", uri=True)
+                _row = _c.execute("SELECT state FROM async_delegations WHERE delegation_id=?", (_rd,)).fetchone()
+                _c.close()
+                _exists = _row is not None
+                _ok = _exists and _row[0] in ("completed",) and _rd not in _dev_delegs
+            except _sq.Error:
+                _exists = _ok = True
+            if not _ok:
+                missing.append(
+                    f"code-reviews/{change_id}/{_rf.name}: Reviewer-Delegation '{_rd}' "
+                    + ("не найдена в реестре делегаций" if not _exists else
+                       "совпадает с dev-делегацией задачи (SELF_REVIEW)") +
+                    " — ревью не засчитано"
+                )
+
     # Тесты: хотя бы один TC-ID change в tests/ (контракт 6, трассировка)
     tests_root = repo / "tests"
     tc_prefix = "TC-" + change_id.split("-")[0].upper()
