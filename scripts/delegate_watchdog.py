@@ -27,7 +27,18 @@ from pathlib import Path
 REGISTRY_DB = Path.home() / ".hermes" / "state.db"   # async_delegations — платформенный факт
 FLOWCTL_STATE = Path.home() / ".hermes" / "state" / "flowctl_state.json"
 INCIDENTS = Path.home() / ".hermes" / "state" / "delegate_bypass_incidents.json"
+PM_NUDGE_STATE = Path.home() / ".hermes" / "state" / "delegate_watchdog_pm_nudge.json"
 GRACE_SECONDS = 120  # делегациям младше 2 минут даем время на prepare (гонка старт)
+# Анти-рекурсия (требование Заказчика 2026-10-04): [PM-INSTRUCTION] доставляется
+# ПМ как OUT-OF-BAND; ПМ в ответе может триггерить новые делегации → новый
+# инцидент → новая инструкция → бесконечный цикл прерываний. Защита тройная:
+# 1) дедуп по fingerprint (одинаковый состав инцидентов НЕ печатается повторно);
+# 2) cooldown: после каждой доставки инструкция молчит PM_COOLDOWN_SECONDS даже
+#    при изменении состава — у ПМ есть окно на реакцию без встречных пингов;
+# 3) MAX_NUDGES_PER_HOUR: жесткий потолок доставок (сверх него канал ПМ молчит,
+#    машинный отчет Заказчику и файл инцидентов продолжают писаться).
+PM_COOLDOWN_SECONDS = 900        # 15 минут тишины между инструкциями ПМ
+MAX_NUDGES_PER_HOUR = 3          # потолок инструкций ПМ в час
 
 
 def load(path):
@@ -143,6 +154,43 @@ def main() -> int:
               "bypass": bypasses, "stale_finish": stale}
     if bypasses or stale:
         INCIDENTS.write_text(json.dumps(report, ensure_ascii=False, indent=2))
+        # Решение Заказчика 2026-10-04, вторая редакция: два канала.
+        #   Канал 1 — ПМ (main-сессия): инструкция [PM-INSTRUCTION], которую
+        #     шлюз доставляет в main-чат как OUT-OF-BAND (как правка
+        #     Заказчика посреди задачи). Анти-рекурсия — тройная (см.
+        #     константы выше): fingerprint-дедуп + cooldown + часовой потолок.
+        #   Канал 2 — Заказчику: сухой машинный отчет «как раньше»
+        #     (без обращений к ПМ — ему не нужно читать нареканий в свой
+        #     адрес, это между машиной и ПМ).
+        now_ts = time.time()
+        prev_nudge = load(PM_NUDGE_STATE) or {}
+        fingerprint = json.dumps(
+            sorted(b["delegation_id"] for b in bypasses)
+            + sorted((s["delegation_id"] or "") for s in stale),
+            sort_keys=True)
+        changed = prev_nudge.get("fingerprint") != fingerprint
+        in_cooldown = (now_ts - prev_nudge.get("last_sent", 0)) < PM_COOLDOWN_SECONDS
+        history = [t for t in prev_nudge.get("sent_history", [])
+                   if now_ts - t < 3600]
+        over_budget = len(history) >= MAX_NUDGES_PER_HOUR
+        if changed and not in_cooldown and not over_budget:
+            history.append(now_ts)
+            PM_NUDGE_STATE.parent.mkdir(parents=True, exist_ok=True)
+            PM_NUDGE_STATE.write_text(json.dumps(
+                {"fingerprint": fingerprint, "last_sent": now_ts,
+                 "sent_history": history}, indent=2))
+            ids = ", ".join(sorted(b["delegation_id"] for b in bypasses)) or "—"
+            print("[PM-INSTRUCTION] (watchdog → ПМ, вне очереди) Обнаружены "
+                  f"делегации мимо delegate_gate: {ids}. Действуй немедленно, "
+                  "не дожидаясь текущего шага: (1) активные/будущие диспатчи — "
+                  "только через scripts/delegate_gate.py prepare → run → finish "
+                  "с валидным approval_ref; (2) по каждому bypass-id оформи "
+                  "ворота задним числом (decision-record) или доложи "
+                  "Заказчику, почему их нет; (3) подтверждение — ответ в "
+                  "main-чат. Детали: " + str(INCIDENTS))
+        elif over_budget:
+            print(f"PM-INSTRUCTION suppressed: лимит {MAX_NUDGES_PER_HOUR}/ч "
+                  "исчерпан — см. файл инцидентов (канал Заказчика работает)")
         print(f"BYPASS DETECTED: обходов={len(bypasses)}, забытых finish={len(stale)}")
         print(json.dumps(report, ensure_ascii=False, indent=2))
         return 1
