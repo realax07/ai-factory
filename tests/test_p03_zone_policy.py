@@ -244,7 +244,7 @@ class TestPrepareZonePolicy:
           "# Tasks\n\n- [ ] 1.1 реализовать виджет\n")
         w("openspec/changes/add-widget/specs/widget/spec.md",
           "### Requirement: W\n#### Scenario: S\n- GIVEN a\n- WHEN b\n- THEN c\n")
-        w("code-reviews/add-widget/review-001-1.1.md", "## Вердикт: approve\n")
+        w("code-reviews/add-widget/review-001-1.1.md", "## Вердикт: approve\nReviewer-Delegation: deleg_testreviewer0000\n")
         w("sdd.md", "# SDD\n")
         w("src/widget.py", "X = 1\n")
         subprocess.run(["git", "add", "-A"], cwd=repo, check=True)

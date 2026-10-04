@@ -509,7 +509,7 @@ def merge_snapshot(tmp_path: Path):
     repo = make_repo(tmp_path)
     reg = make_registry(tmp_path)
     write(repo, "code-reviews/add-widget/review-001-2.1.md",
-          "# Review\n\n## Вердикт: approve\n")
+          "# Review\n\n## Вердикт: approve\nReviewer-Delegation: deleg_testreviewer0000\n")
     commit_all(repo, "review")
     import flow_transition as _ft
     sha = git(repo, "rev-parse", "HEAD")

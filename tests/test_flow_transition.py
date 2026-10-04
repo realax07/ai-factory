@@ -96,7 +96,7 @@ def make_repo(
             "### Requirement: W\n#### Scenario: S\n- GIVEN a\n- WHEN b\n- THEN c\n",
         )
     if with_review:
-        write(repo, f"code-reviews/{change_id}/review-001-1.1.md", "## Вердикт: approve\n")
+        write(repo, f"code-reviews/{change_id}/review-001-1.1.md", "## Вердикт: approve\nReviewer-Delegation: deleg_testreviewer0000\n")
     if with_sdd:
         write(repo, "sdd.md", "# SDD\n")
     if with_specs:
@@ -1189,7 +1189,7 @@ class TestR6HotfixDebt:
         """Обязательный негативный: merge_task Флоу 3 с маркером долга."""
         repo = make_repo(tmp_path)
         write(repo, "code-reviews/BUG-042/review-001-1.1.md",
-              "## Вердикт: approve\n")
+              "## Вердикт: approve\nReviewer-Delegation: deleg_testreviewer0000\n")
         commit_all(repo)
         reg = make_registry(tmp_path)
         s = snapshot_for(repo, reg, flow=3, change_id="BUG-042", task_id="1.1")
