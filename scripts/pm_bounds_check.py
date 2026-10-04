@@ -46,11 +46,18 @@ FACTORY = Path(__file__).resolve().parent.parent
 # Защищенные пути фабрики: ПМ-сабагент не меняет их без явной пометки
 # "[pipeline]" / "[флоу 4]" в subject коммита (изменение конвейера — отдельная
 # задача, запущенная Заказчиком, а не побочный эффект проектной фазы).
-PROTECTED_PATHS = (
-    "openspec/specs/",
-    "contracts/",
-    "AGENTS.md",
-    "agents/README.md",
+# Канонический список защищенных путей конвейера (фабрика).
+# Продуктовые репо адаптируют через env PM_PROTECTED_EXCLUDE
+# (например, PM_PROTECTED_EXCLUDE=contracts/ — в проекте это OpenAPI-контракты
+# продукта, FR-68, а не контракты конвейера; урок ekotov-wiki 2026-10-04).
+PROTECTED_PATHS = tuple(
+    p for p in (
+        "openspec/specs/",
+        "contracts/",
+        "AGENTS.md",
+        "agents/README.md",
+    )
+    if p not in [x.strip() for x in __import__("os").environ.get("PM_PROTECTED_EXCLUDE", "").split(",") if x.strip()]
 )
 # Промпты ролей: менять можно, но каждый такой диф — событие конвейера.
 ROLE_PROMPT_PREFIX = "agents/"
