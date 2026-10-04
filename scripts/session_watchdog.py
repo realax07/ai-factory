@@ -89,6 +89,111 @@ def heal() -> list[str]:
     except sqlite3.OperationalError:
         pass  # таблица/колонка отсутствует в этой версии — не критично
 
+    # 2.5) тайтл главной сессии: активная telegram-DM сессия всегда должна
+    #      называться 'main' (Заказчик находит её через /resume main).
+    #      Автотйтл перезаписывает только безымянные, но ротации/баги могли
+    #      стереть имя; тихо возвращаем, если сняли не мы (пустое или другое).
+    main_rows = list(
+        cur.execute(
+            """SELECT r.session_key key, s.id id FROM gateway_routing r
+               JOIN sessions s ON s.id = json_extract(r.entry_json, '$.session_id')
+               WHERE r.session_key LIKE ?""",
+            (DM_PREFIX + "%",),
+        )
+    )
+    # «main» уникален: держим его только у самой свежей активной DM-сессии,
+    # прочим активным возвращаем тайтл-заглушку, если collisions.
+    if main_rows:
+        active = max(main_rows, key=lambda r: str(r["id"]))
+        # title UNIQUE (частичный индекс): «main» может застрять у мёртвой
+        # старой сессии — сперва освобождаем, иначе UPDATE падает по
+        # UNIQUE constraint и вотчдог умирает со streak'ом ошибок.
+        holders = [
+            h[0]
+            for h in cur.execute(
+                "SELECT id FROM sessions WHERE title = 'main' AND id != ?",
+                (active["id"],),
+            )
+        ]
+        for hid in holders:
+            actions.append(f"heal: тайтл 'main' освобождён у устаревшей сессии {hid}")
+            if not DRY_RUN:
+                cur.execute(
+                    "UPDATE sessions SET title = NULL, title_source = NULL WHERE id = ?",
+                    (hid,),
+                )
+        for r in main_rows:
+            t_row = cur.execute("SELECT title FROM sessions WHERE id = ?", (r["id"],)).fetchone()
+            title = (t_row["title"] or "") if t_row else ""
+            want = "main" if r["key"] == active["key"] else None
+            if want and title != want:
+                actions.append(f"heal: тайтл активной DM-сессии {r['id']} = '{title or '<пусто>'}' → 'main'")
+                if not DRY_RUN:
+                    cur.execute("UPDATE sessions SET title = 'main' WHERE id = ?", (r["id"],))
+
+    # 2.75) незакрытые делегации: result готов, но delivery_state='dropped'
+    #       (провал на границе сессии) — информативно для Заказчика.
+    #       Каждый id предупреждаем один раз (state-файл), чтобы не спамить каждые 2 мин.
+    _SEEN = Path.home() / ".hermes/state/watchdog_dropped_seen.json"
+    try:
+        seen: set[str] = set(json.loads(_SEEN.read_text()) if _SEEN.exists() else [])
+    except (OSError, json.JSONDecodeError):
+        seen = set()
+    try:
+        dropped = list(
+            cur.execute(
+                """SELECT delegation_id, parent_session_id, datetime(completed_at,'unixepoch') c
+                   FROM async_delegations
+                   WHERE delivery_state='dropped' AND state='completed'
+                     AND completed_at > ?""",
+                (time.time() - 86400,),
+            )
+        )
+        fresh = [r for r in dropped if r["delegation_id"] not in seen]
+        for r in fresh:
+            actions.append(
+                f"warn: результат делегации {r['delegation_id']} НЕ доставлен "
+                f"(dropped, завершена {r['c']} UTC, родитель {r['parent_session_id']}) — "
+                "читать: sqlite3 ~/.hermes/state.db \"SELECT result_json FROM async_delegations WHERE delegation_id='...'"
+            )
+        if fresh and not DRY_RUN:
+            seen |= {r["delegation_id"] for r in fresh}
+            _SEEN.parent.mkdir(parents=True, exist_ok=True)
+            _SEEN.write_text(json.dumps(sorted(seen)))
+    except sqlite3.OperationalError:
+        pass
+
+    # 2.8) субагент-контаминация main-DM (upstream #92859): delegate_task,
+    #      диспатченный ровно на границе ротации сессии, не создает
+    #      изолированный сабагент — роль сабагента (_delegate_from в
+    #      model_config) въедается в НОВУЮ chat-сессию следующего звена
+    #      main-цепочки. Сессия легально жива и роутится (старые проверки
+    #      1/2.5 её не видят), Заказчик «проваливается в сабагента».
+    #      Лечение — только пересоздание сессии; детектор дает ранний сигнал.
+    try:
+        contaminated = list(
+            cur.execute(
+                """SELECT r.session_key key, s.id id,
+                          json_extract(s.model_config, '$._delegate_from') df
+                   FROM gateway_routing r
+                   JOIN sessions s ON s.id = json_extract(r.entry_json, '$.session_id')
+                   WHERE r.session_key LIKE ? AND s.ended_at IS NULL
+                     AND json_extract(s.model_config, '$._delegate_from') IS NOT NULL""",
+                (DM_PREFIX + "%",),
+            )
+        )
+        for r in contaminated:
+            actions.append(
+                f"heal-warn: main-DM сессия {r['id']} ({r['key']}) создана делегацией "
+                f"(из {r['df']}) — субагент-контаминация (upstream #92859); "
+                "пересоздать сессию (/reset или новая), работу в ней не продолжать"
+            )
+    except sqlite3.OperationalError:
+        pass  # колонка model_config отсутствует в старых версиях — не критично
+
+    if not DRY_RUN and actions:
+        con.commit()
+
     # 3) sessions.json: сессии telegram, отсутствующие в state.db
     try:
         data = json.loads(SESSIONS_JSON.read_text(encoding="utf-8"))
