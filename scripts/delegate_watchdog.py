@@ -29,6 +29,13 @@ FLOWCTL_STATE = Path.home() / ".hermes" / "state" / "flowctl_state.json"
 INCIDENTS = Path.home() / ".hermes" / "state" / "delegate_bypass_incidents.json"
 PM_NUDGE_STATE = Path.home() / ".hermes" / "state" / "delegate_watchdog_pm_nudge.json"
 ACK_STATE = Path.home() / ".hermes" / "state" / "delegate_watchdog_ack.json"
+# GATED_MAP: платформенные delegation_id, диспатченные ЧЕРЕЗ ворота. Gate start
+# генерирует свой correlation/delegation-id ДО диспатча (circular: платформенный
+# id появляется только в ответе delegate_task), поэтому прямое сопоставление
+# невозможно. ПМ после диспатча вписывает пару platform_id → correlation_id.
+# Ложный STALE на легитимную делегацию (прецедент deleg_d47a77a2, 2026-10-04)
+# без этого маппинга: platform id не входит в gated-множество → «забыт finish».
+GATED_MAP_STATE = Path.home() / ".hermes" / "state" / "delegate_gate_gated_map.json"
 GRACE_SECONDS = 120  # делегациям младше 2 минут даем время на prepare (гонка старт)
 # Анти-рекурсия (требование Заказчика 2026-10-04): [PM-INSTRUCTION] доставляется
 # ПМ как OUT-OF-BAND; ПМ в ответе может триггерить новые делегации → новый
@@ -89,6 +96,14 @@ def main() -> int:
 
     flow_runs = flow.get("runs", {})
     gated = {r.get("delegation_id") for r in flow_runs.values() if isinstance(r, dict)}
+    # Платформенные id, диспатченные через ворота (маппинг ведет ПМ после
+    # диспатча — см. GATED_MAP_STATE): эквивалентны gated. Значение map —
+    # delegation_id записи flowctl (формат deleg-<hex>), не correlation.
+    gated_map = (load(GATED_MAP_STATE) or {}).get("map", {})
+    gated |= {k for k, v in gated_map.items()
+              if any(isinstance(r, dict) and r.get("delegation_id") == v
+                     and r.get("status") in ("running", "returned", "finished", "completed")
+                     for r in flow_runs.values())}
 
     now = time.time()
     bypasses, stale = [], []
