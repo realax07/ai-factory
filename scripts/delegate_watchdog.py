@@ -190,7 +190,24 @@ def main() -> int:
         history = [t for t in prev_nudge.get("sent_history", [])
                    if now_ts - t < 3600]
         over_budget = len(history) >= MAX_NUDGES_PER_HOUR
+        # Канал 0 (новый, решение Заказчика 2026-10-04, четвертая редакция):
+        # pm_instruction.txt — файл-инструкция, который крон pm-instruction-relay
+        # (*/2, monitor-детект изменения) доставляет в main-чат ПМ как ход
+        # сессии: ПМ видит инструкцию враз, без чтения output-логов.
+        instruction_path = Path.home() / ".hermes" / "state" / "pm_instruction.txt"
         if new_bypasses or new_stale:
+            ids_full = ", ".join(sorted(b["delegation_id"] for b in bypasses)) or "—"
+            instruction_path.parent.mkdir(parents=True, exist_ok=True)
+            instruction_path.write_text(
+                "[PM-INSTRUCTION] (watchdog → ПМ, вне очереди) НОВЫЕ делегации "
+                f"мимо delegate_gate: {ids_full}. Действуй немедленно, не "
+                "дожидаясь текущего шага: (1) активные/будущие диспатчи — "
+                "только через scripts/delegate_gate.py prepare → run → finish "
+                "с валидным approval_ref (включая ревью и QA — исключений "
+                "нет); (2) по каждому bypass-id оформи ворота задним числом "
+                "(decision-record) или доложи Заказчику, почему их нет; "
+                "(3) подтверждение — ответ в main-чат. Детали: "
+                + str(INCIDENTS), encoding="utf-8")
             if changed and not in_cooldown and not over_budget:
                 history.append(now_ts)
                 PM_NUDGE_STATE.parent.mkdir(parents=True, exist_ok=True)
