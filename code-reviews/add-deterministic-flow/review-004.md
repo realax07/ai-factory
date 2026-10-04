@@ -1,4 +1,5 @@
 # Code Review 004 — change add-deterministic-flow, поставка 04 срез 2 (повторное ревью после фикса ae7b30f)
+- **Reviewer-Delegation:** deleg_a1836dd5
 
 - **Ревьюер:** тот же независимый code-reviewer (review-003, коммит `832608f`)
 - **Дата:** 2026-10-02

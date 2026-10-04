@@ -112,7 +112,7 @@ def make_repo(tmp_path: Path, *, change_id: str = "add-widget",
     write(repo, "src/main.py", "X = 1\n")
     if reviews:
         write(repo, f"code-reviews/{change_id}/review-001-3.1.md",
-              "## Вердикт: approve\n")
+              "## Вердикт: approve\nReviewer-Delegation: deleg_testreviewer0000\n")
     commit_all(repo)
     return repo
 
@@ -265,7 +265,7 @@ class TestBP02DepsAndZones:
         reg = make_registry(tmp_path)
         # approve-ревью предшественницы 1.1:
         write(repo, "code-reviews/add-widget/review-001-1.1.md",
-              "## Вердикт: approve\n")
+              "## Вердикт: approve\nReviewer-Delegation: deleg_testreviewer0000\n")
         commit_all(repo, "review 1.1")
         info, _ = ft._task_deps_from_repo(repo, "add-widget", "3.1")
         deps = tuple(info.get("deps", ()))

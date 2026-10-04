@@ -7,6 +7,7 @@ State machine по файлам репозитория: каждый артеф�
 
 Usage: python3 scripts/flow_check.py <path-to-repo>
 """
+import json
 import re
 import sys
 from pathlib import Path
@@ -23,6 +24,11 @@ REVIEW_FILE_REV_FIRST = re.compile(r"^review-(\d{3})-(.+)\.md$", re.I)
 REVIEW_FILE_TASK_FIRST = re.compile(r"^review-(.+?)-(\d{3})\.md$", re.I)
 VERDICT_LINE_RE = re.compile(r"^#{1,4}\s*Вердикт\s*:?\s*(.+)$", re.I | re.M)
 VERDICT_APPROVE_RE = re.compile(r"\b(approve|approved|одобрен\w*)\b", re.I)
+# SELF_REVIEW-защита (решение Заказчика 2026-10-03): review-файл обязан нести
+# Reviewer-Delegation: deleg_<id> — платформенный id делегации ревьюера
+# (реестр async_delegations устойчив к пересозданию main-сессий: id
+# уникален и не зависит от имени сессии).
+REVIEWER_META_RE = re.compile(r"Reviewer-Delegation[^A-Za-z0-9]{0,6}(deleg[-_][A-Za-z0-9]+)", re.I)
 VERDICT_RETURN_RE = re.compile(r"\b(return|доработк\w*)\b", re.I)
 QA_SECTION = "6"  # раздел 6.x — QA-цикл, не dev (J10)
 
@@ -119,11 +125,34 @@ def approved_review_tasks(repo: Path, change_id: str) -> dict[str, str]:
         # идентификаторы вида N[.N...] в task-части имени
         nums = re.findall(r"\d+(?:\.\d+)*", task)
         tasks = nums if nums else [task]
-        verdict = parse_verdict(rf.read_text(encoding="utf-8", errors="replace"))
-        if verdict == "approve":
+        text = rf.read_text(encoding="utf-8", errors="replace")
+        verdict = parse_verdict(text)
+        meta = REVIEWER_META_RE.search(text)
+        if verdict == "approve" and meta:
             for task_id in tasks:
                 if task_id not in covered or rev > covered[task_id][0]:
                     covered[task_id] = (rev, rf.name)
+    # Исторические ревью с нестандартными именами (Флоу 4, карта покрытия
+    # review-mapping.json: файл → список task-id). Мета обязательна и здесь.
+    mapping_file = cr_dir / "review-mapping.json"
+    if mapping_file.is_file():
+        try:
+            mapping = json.loads(mapping_file.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            mapping = {}
+        for fname, task_ids in mapping.items():
+            if fname.startswith("_"):
+                continue
+            rf = cr_dir / fname
+            if not rf.is_file():
+                continue
+            verdict = parse_verdict(rf.read_text(encoding="utf-8", errors="replace"))
+            meta = REVIEWER_META_RE.search(rf.read_text(encoding="utf-8", errors="replace"))
+            if verdict == "approve" and meta:
+                rev = int(fname.split("-")[1]) if fname.split("-")[1].isdigit() else 0
+                for task_id in task_ids:
+                    if task_id not in covered or rev > covered[task_id][0]:
+                        covered[task_id] = (rev, fname)
     return {task: name for task, (_, name) in covered.items()}
 
 
@@ -390,8 +419,18 @@ def check(repo: Path) -> int:
     tests_dir = repo / "tests"
     if tests_dir.is_dir():
         test_files = [p for p in tests_dir.rglob("test_*.py")]
-        if test_files and not any(approved_by_change.values()):
-            errors += errs("tests/: автотесты без approved-кейсов (контракт 6)")
+        # Источник кейсов (с 2026-10-03, as-is структура regression/<domain>/,
+        # J33): approved/<change>/ (классика Флоу 1) ИЛИ regression/<domain>/
+        # (as-is база).
+        reg_dir = tm / "regression"
+        has_regression_cases = reg_dir.is_dir() and any(
+            d.is_dir() and not d.name.startswith(".") for d in reg_dir.iterdir()
+        ) and any(f.suffix == ".md" for f in reg_dir.rglob("*.md"))
+        if test_files and not any(approved_by_change.values()) and not has_regression_cases:
+            errors += errs(
+                "tests/: автотесты без approved-кейсов и без as-is базы "
+                "test-model/regression/<domain>/ (контракт 6)"
+            )
         for tf in test_files:
             text = tf.read_text(encoding="utf-8", errors="replace")
             if re.search(r"\btime\.sleep\(", text):

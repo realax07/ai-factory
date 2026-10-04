@@ -442,7 +442,7 @@ class TestRecordReview:
     def _review_file(self, repo: Path) -> Path:
         rf = repo / "code-reviews" / "add-x" / "review-001-1.1.md"
         write(repo, str(rf.relative_to(repo)),
-              "# Review 1.1\n\n## Вердикт: approve\n\nДата: 2026-10-02\n")
+              "# Review 1.1\n\n## Вердикт: approve\nReviewer-Delegation: deleg_testreviewer0000\n\nДата: 2026-10-02\n")
         return rf
 
     def test_sidecar_written_beside_review(self, tmp_path):

@@ -78,7 +78,7 @@ def make_repo(tmp_path: Path, name: str = "proj") -> Path:
     write(repo, "sdd.md", "# SDD\n")
     write(repo, "openspec/specs/widget/spec.md",
           "### Requirement: W\n#### Scenario: S\n- GIVEN a\n- WHEN b\n- THEN c\n")
-    write(repo, "code-reviews/add-widget/review-001-1.1.md", "## Вердикт: approve\n")
+    write(repo, "code-reviews/add-widget/review-001-1.1.md", "## Вердикт: approve\nReviewer-Delegation: deleg_testreviewer0000\n")
     # QA-контур: чеклист + кейсы new/ есть, review «одобрить» есть;
     # approved/ содержит ТОЛЬКО старый чужой пакет (не add-widget)
     write(repo, "test-model/checklists/add-widget.md",
