@@ -30,6 +30,10 @@ jobs:
       - name: Run tests
         run: env -u GITHUB_EVENT_PATH python -m pytest tests/ -q
 
+      # pm_bounds_check (J9/J10) НЕ в CI: требует реестра сессий
+      # (~/.hermes/state/active_sessions.json), которого на раннере нет —
+      # консервативная ветка дает ложный FAIL. Гейт локальный (приемка).
+
   flow:
     runs-on: ubuntu-latest
     steps:
