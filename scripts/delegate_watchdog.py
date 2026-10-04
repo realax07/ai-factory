@@ -143,6 +143,9 @@ def main() -> int:
               "bypass": bypasses, "stale_finish": stale}
     if bypasses or stale:
         INCIDENTS.write_text(json.dumps(report, ensure_ascii=False, indent=2))
+        # ЯВНЫЙ маркер для доставки Заказчику: крон с --failure-deliver telegram
+        # пришлет это как отдельное машинное сообщение (не статус ПМ).
+        print("[FLOW-GATE BYPASS] Обнаружены делегации вне flowctl — требуется решение Заказчика (детали ниже и в " + str(INCIDENTS) + ")")
         print(f"BYPASS DETECTED: обходов={len(bypasses)}, забытых finish={len(stale)}")
         print(json.dumps(report, ensure_ascii=False, indent=2))
         return 1
