@@ -35,6 +35,7 @@ STATE = HERMES_HOME / "state"
 MODE_FILE = STATE / "flow_mode.json"
 ARCHIVE_DIR = STATE / "session-archive"
 WATCHDOG = FACTORY / "scripts" / "session_watchdog.py"
+DELEGATE_WATCHDOG = FACTORY / "scripts" / "delegate_watchdog.py"
 
 
 def step(msg: str) -> None:
@@ -102,13 +103,20 @@ def ensure_watchdog_cron() -> None:
     except FileNotFoundError:
         step("crontab недоступен — вотчдог пропущен (поставить вручную)")
         return
-    if "session_watchdog.py" in existing:
-        step("крон вотчдога уже стоит")
+    changed = False
+    if "session_watchdog.py" not in existing:
+        existing = (existing.rstrip("\n") + "\n" + job + "\n") if existing.strip() else job + "\n"
+        changed = True
+    if DELEGATE_WATCHDOG.exists() and "delegate_watchdog.py" not in existing:
+        job2 = f"*/5 * * * * cd {FACTORY} && python3 {DELEGATE_WATCHDOG} >> {STATE / 'delegate_watchdog.log'} 2>&1"
+        existing = (existing.rstrip("\n") + "\n" + job2 + "\n") if existing.strip() else job2 + "\n"
+        changed = True
+    if not changed:
+        step("крон вотчдогов уже стоят")
         return
-    new = (existing.rstrip("\n") + "\n" + job + "\n") if existing.strip() else job + "\n"
-    w = subprocess.run(["crontab", "-"], input=new, capture_output=True, text=True)
-    step("крон вотчдога установлен (*/2 мин)" if w.returncode == 0
-         else f"крон НЕ установлен: {w.stderr.strip()}")
+    w = subprocess.run(["crontab", "-"], input=existing, capture_output=True, text=True)
+    step("кроны вотчдогов установлены (*/2 + */5)" if w.returncode == 0
+         else f"кроны НЕ установлены: {w.stderr.strip()}")
 
 
 def acceptance_tests() -> bool:

@@ -25,7 +25,7 @@ git clone <ai-factory> && cd ai-factory
 python3 scripts/factory_bootstrap.py            # окружение + state + крон вотчдога + приемочные тесты
 ```
 
-Bootstrap: проверяет окружение (python ≥ 3.10, git, npx для openspec), создает state-каталоги (`~/.hermes/state/`, реестр, `flow_mode.json` с **дефолтом shadow**), ставит крон вотчдога, гоняет приемочные тесты (348). Секреты НЕ переносит — кладутся вручную в `~/.hermes/.env`. Режим enforcing включается явно (`flow_mode.py set enforcing`), после shadow-прогона.
+Bootstrap: проверяет окружение (python ≥ 3.10, git, npx для openspec), создает state-каталоги (`~/.hermes/state/`, реестр, `flow_mode.json` с **дефолтом shadow**), ставит крон вотчдога (session_watchdog */2 + delegate_watchdog */5), гоняет приемочные тесты (348). Секреты НЕ переносит — кладутся вручную в `~/.hermes/.env`. Режим enforcing включается явно (`flow_mode.py set enforcing`), после shadow-прогона.
 
 ### Настройка GitHub (вручную, один раз на репозиторий)
 
@@ -47,7 +47,7 @@ python3 ~/ai-factory/scripts/factory_init.py \
     --name "My Project"
 ```
 
-Скрипт: создает структуру каталогов (openspec, test-model, architecture, docs/ba), копирует ворота и скрипты (flow_check, pr_validate, codegraph, smoke_static, session_archive, session_worktree), CI-workflow, контракты, шаблоны; создает `CONSTITUTION.md` из шаблона; проверяет среду; прогоняет **post-init ворота** — `flow_check` на пустом проекте обязан вернуть OK. Идемпотентен: повторный запуск без `--force` ничего не перезапишет.
+Скрипт: создает структуру каталогов (openspec, test-model, architecture, docs/ba), копирует ворота и скрипты (flow_check, pr_validate, codegraph, smoke_static, session_archive, session_worktree, **delegate_gate**, **delegate_watchdog**), CI-workflow, контракты, шаблоны; создает `CONSTITUTION.md` из шаблона; проверяет среду; прогоняет **post-init ворота** — `flow_check` на пустом проекте обязан вернуть OK. Идемпотентен: повторный запуск без `--force` ничего не перезапишет.
 
 **Отношение «фабрика ↔ проект»: проект — тонкий клиент.** В проекте живут его код, спеки, артефакты и автономные CI-ворота (flow_check + flow.yml — работают без машины). Ядро детерминированного слоя (flow_state, flow_transition, session_check, gate_runner, flowctl, flow_mode, реестр сессий) — в фабрике, в одном экземпляре, и обслуживает все проекты по путям (`--repo`/`--registry` — параметры). Обновление правил = обновление фабрики в одном месте; проектные ворота синхронизируются factory_init (`--force`), рассинхрон промптов ловится flow_check.
 
@@ -180,6 +180,16 @@ AI Factory отвечает на каждую: **каждая роль — из�
 | `.github/workflows/flow.yml` | Оба валидатора на каждый push/PR — нарушение нельзя смержить. |
 | Branch protection | Прямой push в main отклонен GitHub (проверено живым тестом GH013). |
 | [scripts/session_archive.py](scripts/session_archive.py) | Разбор транскриптов: traceback, module_not_found, exit codes, петли; вердикт clean/suspicious/degraded. |
+
+| [scripts/delegate_gate.py](scripts/delegate_gate.py) | **Вход в машину**: делегация создается только через `flowctl prepare+run` (DENY/MISSING_INPUT/ZONE_CONFLICT → делегации не будет); finish с обязательными гейтами по флоу 1–5. |
+| [scripts/delegate_watchdog.py](scripts/delegate_watchdog.py) | **Детектор обхода**: сверяет платформенный реестр делегаций (async_delegations — пишется при каждом `delegate_task` независимо от воли агента) с prepare-записями flowctl. Делегация мимо машины → BYPASS-инцидент в `~/.hermes/state/delegate_bypass_incidents.json`; забытый finish → STALE. Крон */5. |
+
+**Три слоя гарантии (2026-10-03, инцидент add-containerization):**
+1. **Движок** — flowctl DENY на входе (зоны, approval_ref, роли) блокирует неправильное до старта.
+2. **Вотчдог** — обход flowctl неизбежно виден в течение ~5 минут (реестр делегаций пишет платформа, агент не контролирует). Baseline с даты внедрения — история не инцидент.
+3. **Правило** — видимый обход = нарушение независимо от результата работы (SELF_REVIEW/OPS_TASK_AS_DEV в контракте).
+
+Инструкции агенту — не гарантия; гарантией является сочетание «нельзя + заметят + не засчитают».
 
 Аудит-след git: каждый переход этапа виден (коммиты + append-only review-файлы). Изоляция контекстов: сабагент физически не видит диалог ПМ (проверено живым тестом 2026-09-16).
 
