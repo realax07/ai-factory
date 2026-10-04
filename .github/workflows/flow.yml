@@ -30,6 +30,11 @@ jobs:
       - name: Run tests
         run: env -u GITHUB_EVENT_PATH python -m pytest tests/ -q
 
+      # J3/J9/J10: границы ПМ-коммитов (детерминированный гейт, решение
+      # Заказчика 2026-10-04 — матрица гейтов расширена).
+      - name: PM bounds check
+        run: python3 scripts/pm_bounds_check.py --repo . --commits HEAD~5..HEAD
+
   flow:
     runs-on: ubuntu-latest
     steps:
