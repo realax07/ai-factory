@@ -1,4 +1,5 @@
 # Code Review 002 — change add-deterministic-flow, повторное ревью (фикс поставки 03)
+- **Reviewer-Delegation:** deleg_83086f32
 
 - **Ревьюер:** независимый code-reviewer (не автор кода; тот же, что review-001)
 - **Дата:** 2026-10-02
