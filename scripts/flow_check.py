@@ -458,11 +458,15 @@ def check(repo: Path) -> int:
                 method, path = m.group(1).upper(), m.group(2)
                 full = prefixes.get(py.stem, "") + path
                 routes.append((method, full, py))
-        # источники покрытия: активные пакеты; если их нет — master-spec + корневой sdd
+        # источники покрытия: корневые артефакты (sdd, master-specs) — ВСЕГДА:
+        # маршруты ядра существуют вне пакетов, а архивация предыдущего пакета
+        # не должна осиротать покрытие (урок 2026-10-04: архивация
+        # add-containerization обнулила покрытие всех немодифицированных
+        # маршрутов). Дельты активных пакетов добавляются сверху.
         cover_texts: list[str] = []
-        if not active_changes and (repo / "sdd.md").is_file():
+        if (repo / "sdd.md").is_file():
             cover_texts.append((repo / "sdd.md").read_text(encoding="utf-8", errors="replace"))
-        if not active_changes and specs_dir.is_dir():
+        if specs_dir.is_dir():
             for sf in specs_dir.rglob("spec.md"):
                 cover_texts.append(sf.read_text(encoding="utf-8", errors="replace"))
         for pkg in active_changes:
