@@ -36,6 +36,8 @@ COPY_FILES = [
     "scripts/smoke_static.py",
     "scripts/session_archive.py",
     "scripts/session_worktree.sh",
+    "scripts/delegate_gate.py",
+    "scripts/delegate_watchdog.py",
     "contracts/artifact_contract.md",
     "templates/constitution.template.md",
     "templates/task_delegation.md",
