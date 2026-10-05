@@ -80,13 +80,19 @@ def closed_dev_tasks(tasks_text: str) -> list[str]:
     Исключены также ops/docs-задачи (маркер `[ops]`/`[docs]` после чекбокса):
     боевая приемка Заказчика / верификация фактов вместо code-review
     (контракт flow_control: ops_task/docs_task, J10 не применяется).
+    `[design]`-задачи (design_task/ui_designer, решение
+    2026-10-05-design-task-flow1, синхронизация от ekotov-wiki — эталон
+    подтянут оттуда по директиве двусторонней синхронизации 2026-10-03)
+    тоже исключены: артефакт — мокап в design/, приемка — утверждение
+    Заказчиком (не review-файл); дизайн-фаза опциональна — в пакетах без
+    UI-дельты задачи [design] может не быть вовсе.
     """
     out = []
     for m in re.finditer(r"^[-*]\s*\[x\]\s*(\d+(?:\.\d+)*)(?:\s+\[[SP]\])?(\s+\[([a-z]+)\])?", tasks_text, re.M):
         num = m.group(1)
         if num.split(".")[0] == QA_SECTION:
             continue
-        if m.group(3) in ("ops", "docs"):
+        if m.group(3) in ("ops", "docs", "design"):
             continue
         out.append(num)
     return out
