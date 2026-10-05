@@ -47,7 +47,7 @@ python3 ~/ai-factory/scripts/factory_init.py \
     --name "My Project"
 ```
 
-Скрипт: создает структуру каталогов (openspec, test-model, architecture, docs/ba), копирует ворота и скрипты (flow_check, pr_validate, codegraph, smoke_static, session_archive, session_worktree, **delegate_gate**, **delegate_watchdog**), CI-workflow, контракты, шаблоны; создает `CONSTITUTION.md` из шаблона; проверяет среду; прогоняет **post-init ворота** — `flow_check` на пустом проекте обязан вернуть OK. Идемпотентен: повторный запуск без `--force` ничего не перезапишет.
+Скрипт: создает структуру каталогов (openspec, test-model, architecture, docs/ba), копирует ворота и скрипты (flow_check, pr_validate, codegraph, smoke_static, session_archive, session_worktree, **delegate_gate**, **delegate_watchdog**, check_auth_timing, **pm_bounds_check**), CI-workflow, контракты, шаблоны; создает `CONSTITUTION.md` из шаблона; проверяет среду; прогоняет **post-init ворота** — `flow_check` на пустом проекте обязан вернуть OK. Идемпотентен: повторный запуск без `--force` ничего не перезапишет.
 
 **Отношение «фабрика ↔ проект»: проект — тонкий клиент.** В проекте живут его код, спеки, артефакты и автономные CI-ворота (flow_check + flow.yml — работают без машины). Ядро детерминированного слоя (flow_state, flow_transition, session_check, gate_runner, flowctl, flow_mode, реестр сессий) — в фабрике, в одном экземпляре, и обслуживает все проекты по путям (`--repo`/`--registry` — параметры). Обновление правил = обновление фабрики в одном месте; проектные ворота синхронизируются factory_init (`--force`), рассинхрон промптов ловится flow_check.
 
@@ -92,14 +92,15 @@ AI Factory отвечает на каждую: **каждая роль — из�
 
 ## Роли (кто что делает)
 
-Все роли выполняются выделенными сабагентами. Оркестратор — агент-ПМ — единственный контакт с Заказчиком и владелец общей картины. Реестр и зоны записи: [agents/README.md](agents/README.md).
+Все роли выполняются выделенными сабагентами. Оркестратор — роль ПМ. **Сейчас (2026-10-04) ПМ-сабагент не запущен: роль ПМ выполняет main-сессия** (решение Заказчика 2026-09-26 — relay не внедряется автоматически; запуск ПМ-сабагента только явной командой; промпт готов: [agents/pm_agent.md](agents/pm_agent.md), дизайн J1–J3, `templates/pm_launch.md`). ПМ — единственный контакт с Заказчиком и владелец общей картины. Реестр и зоны записи: [agents/README.md](agents/README.md).
 
 | # | Роль | Промпт | Что делает | Вход → Выход |
-|---|---|---|---|---|
+||---|---|---|---|---|
 | 1 | **БА** | [ba_agent.md](agents/ba_agent.md) | Диалог с Заказчиком, фиксация требований дословно (не придумывает) | диалог → УТВЕРЖДЕННОЕ `requirements.md` |
 | 2 | **СА** | [sa_agent.md](agents/sa_agent.md) | ТЗ → формальная спека OpenSpec + SDD + research альтернатив | ТЗ → change-пакет + `sdd.md` |
 | 3 | **qa_impact_analyst** | [qa_impact_analyst_agent.md](agents/qa_impact_analyst_agent.md) | Дельты vs существующий регресс: keep/revalidate/retire; вопрос внешних компонентов (E10) | дельты → impact-вердикты |
 | 4 | **dev** | [dev_agent.md](agents/dev_agent.md) | Реализация одной задачи tasks.md (worktree, ветка, PR) | задача → код + PR |
+| 4a | **dev_lead** | [dev_lead_agent.md](agents/dev_lead_agent.md) | Merge и консолидация результатов параллельных dev-сабагентов в интеграционную ветку (J9): ПМ в продуктовом репо git не касается | approved-ветки → merge + сводный отчет |
 | 5 | **code_reviewer** | [code_reviewer_agent.md](agents/code_reviewer_agent.md) | Ревью диффа по 3 кругам (спека = закон / практики / интеграция) | PR → approve / return |
 | 6 | **qa_checklist** | [qa_checklist_agent.md](agents/qa_checklist_agent.md) | Спека → чеклист CHK-N, границы/негатив, дефекты спеки | спека → чеклист |
 | 7 | **qa_case_author** | [qa_case_author_agent.md](agents/qa_case_author_agent.md) | Чеклист → кейсы TC-N (1 кейс = 1 файл) | чеклист → кейсы |
@@ -109,7 +110,9 @@ AI Factory отвечает на каждую: **каждая роль — из�
 | 11 | **architect** | [architect_agent.md](agents/architect_agent.md) | Ревью change-пакетов СА, архитектурная карта, допущения | пакет → ревью + `architecture/map.md` |
 | 12 | **devops** | [devops_agent.md](agents/devops_agent.md) | Факты инфры командами ДО скрипта → RUNBOOK → deploy.sh | среда → RUNBOOK + deploy |
 | 13 | **design_validator** | [design_validator_agent.md](agents/design_validator_agent.md) | Реализованный UI vs дизайн-артефакты (ловит «браузерные дефолты») | UI → вердикты соответствия |
-| — | **ПМ** | эта сессия | Диалог с Заказчиком, сборка задач, приемка фактами, push, PLAN/BACKLOG | — |
+| 13a | **ui_designer** | [ui_designer_agent.md](agents/ui_designer_agent.md) | Мокапы и дизайн-токены (HTML, зона `design/`), до dev-внедрения; Заказчик выбирает вариант | спека → мокапы + токены |
+| — | **ПМ** | main-сессия (промпт [pm_agent.md](agents/pm_agent.md) готов, не запущен — см. выше) | Диалог с Заказчиком, сборка задач, приемка фактами, push, PLAN/BACKLOG, диспатч сабагентов (через [delegate_gate](scripts/delegate_gate.py)) | — |
+| 14 | **debug** (эскалационный, 2026-10-03) | [debug_agent.md](agents/debug_agent.md) | Изолированная диагностика по эскалации `needs-debug:` от любого сабагента (через ПМ): воспроизведение, среда/код/тест вердикт, база граблей проекта. **Запись в продукт запрещена** — фиксы текстом в отчете, код меняет исходный dev | эскалация → вердикт + база граблей |
 
 **Самоулучшение (E16):** агент, поймав 2 одинаковые ошибки подряд, пишет «проблема → решение → предложение» в `agents/<роль>_improvements.md` и меняет подход — работа доделывается, урок накапливается. Транскрипты всех сессий архивируются (`session_archive.py`) с детерминированным разбором паттернов неуспеха (ретроспектива 48 сессий: топ-причина — среда исполнения; профилактика вшита в [AGENTS.md](AGENTS.md)).
 
@@ -182,7 +185,7 @@ AI Factory отвечает на каждую: **каждая роль — из�
 | [scripts/session_archive.py](scripts/session_archive.py) | Разбор транскриптов: traceback, module_not_found, exit codes, петли; вердикт clean/suspicious/degraded. |
 
 | [scripts/delegate_gate.py](scripts/delegate_gate.py) | **Вход в машину**: делегация создается только через `flowctl prepare+run` (DENY/MISSING_INPUT/ZONE_CONFLICT → делегации не будет); finish с обязательными гейтами по флоу 1–5. |
-| [scripts/delegate_watchdog.py](scripts/delegate_watchdog.py) | **Детектор обхода**: сверяет платформенный реестр делегаций (async_delegations — пишется при каждом `delegate_task` независимо от воли агента) с prepare-записями flowctl. Делегация мимо машины → BYPASS-инцидент в `~/.hermes/state/delegate_bypass_incidents.json`; забытый finish → STALE. Крон */5. |
+| [scripts/delegate_watchdog.py](scripts/delegate_watchdog.py) | **Детектор обхода**: сверяет платформенный реестр делегаций (async_delegations — пишется при каждом `delegate_task` независимо от воли агента) с prepare-записями flowctl. Делегация мимо машины → BYPASS-инцидент в `~/.hermes/state/delegate_bypass_incidents.json`; забытый finish → STALE. Крон */5. Трехканальный отчет: Заказчик — машинный stdout (дельта по ack-файлу), ПМ-0 — `pm_instruction.txt` + крон `pm-instruction-relay` (*/2), ПМ-1 — stdout крона; анти-рекурсия (fingerprint-дедуп, cooldown 15 мин, потолок 3/ч). |
 
 **Три слоя гарантии (2026-10-03, инцидент add-containerization):**
 1. **Движок** — flowctl DENY на входе (зоны, approval_ref, роли) блокирует неправильное до старта.
@@ -238,6 +241,10 @@ AI Factory отвечает на каждую: **каждая роль — из�
 | `scripts/flowctl.py` | Оркестратор: prepare/run/finish/status/reconcile |
 | `scripts/flow_mode.py` | Переключатель shadow/enforcing |
 | `scripts/pr_validate.py` | PR-ворота |
+| `scripts/pm_bounds_check.py` | Границы записи ПМ (защищенные пути, env `PM_PROTECTED_EXCLUDE`) |
+| `scripts/session_watchdog.py` | Вотчдог DM-роутинга: залипшие ключи, тайтл `main`, dropped-делегации, субагент-контаминация (§2.8). Крон */2 |
+| `scripts/delegate_watchdog.py` | Детектор обхода делегаций. Крон */5 |
+| `scripts/pm_instruction_monitor.py` | Change-detector канала ПМ-0 (для крона pm-instruction-relay) |
 | `scripts/codegraph.py` | Граф зависимостей кода |
 | `scripts/smoke_static.py` | Смоук статики (класс DEF-002) |
 | `scripts/session_archive.py` | Архив транскриптов + разбор неуспеха |
@@ -275,4 +282,6 @@ AI Factory отвечает на каждую: **каждая роль — из�
 
 ## Пилотный проект: ekotov-wiki
 
-Личная wiki/канбан-доска (FastAPI + Jinja2 + vanilla JS + SQLite WAL; nginx TLS, systemd). **5 релизов в проде через конвейер** (прод v=r5.2, 2026-10-01): Р1 запуск (18 раундов БА, 24 задачи, 8 доменов) → Р2 категории/настройки → Р3 визуальный фундамент → Р4 профиль/view-модалка → Р5 аватары (кроп-виджет, карточка V3). Роли: architect и devops отработали живые задачи; design_validator — сверка реализованного UI с макетом (Р5); qa_runner — прогон/разбор регресса. Испытания конвейера: 2 прод-инцидента миграции (репетиция на копии — новое правило), rollover-инциденты сессий (J19 — дисциплина heartbeat); ревьюеры дважды поймали major до прода (rsync-аватары, кеш static_v). В работе: Р6 «Task form UX» (комбобокс тегов, единая зона действий). Следующее: сервисы в контейнерах (P11).
+Личная wiki/канбан-доска (FastAPI + Jinja2 + vanilla JS + SQLite WAL; nginx TLS, systemd). **5 релизов в проде через конвейер** (прод v=r5.2, 2026-10-01): Р1 запуск (18 раундов БА, 24 задачи, 8 доменов) → Р2 категории/настройки → Р3 визуальный фундамент → Р4 профиль/view-модалка → Р5 аватары (кроп-виджет, карточка V3). Роли: architect и devops отработали живые задачи; design_validator — сверка реализованного UI с макетом (Р5); qa_runner — прогон/разбор регресса. Испытания конвейера: 2 прод-инцидента миграции (репетиция на копии — новое правило), rollover-инциденты сессий (J19 — дисциплина heartbeat); ревьюеры дважды поймали major до прода (rsync-аватары, кеш static_v).
+
+**В работе: Р6 — этап A «Микросервисы» (change `add-microservices-full`)**: выделение search-сервиса в контейнере (`services/search/`, копии роутеров с трассировкой, замороженный контракт OpenAPI), nginx-маршрутизация сервисного семейства через фронт (X-Service, 503-деградация), отрезка search-маршрутов от монолита (f0fe4ec, xfail TC-openapi-202 снят). Задачи 1.1–1.5 закрыты через delegate_gate с независимыми ревью; далее — вертикаль auth-сервиса, приемка Заказчика и прод-деплой (2.3/2.4 — явная развилка Заказчика).

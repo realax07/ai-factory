@@ -79,7 +79,7 @@ def make_repo(
     if with_review:
         write(
             repo, f"code-reviews/{change_id}/review-001-1.1.md",
-            "## Вердикт: approve\n",
+            "## Вердикт: approve\nReviewer-Delegation: deleg_testreviewer0000\n",
         )
     write(repo, "sdd.md", "# SDD\n")
     commit_all(repo)

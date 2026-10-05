@@ -310,7 +310,7 @@ class TestLegacyCompat:
         автоматический merge НЕ разрешается (UNKNOWN)."""
         repo = make_repo(tmp_path)
         write(repo, "code-reviews/add-widget/review-001-1.1.md",
-              "## Вердикт: approve\n")
+              "## Вердикт: approve\nReviewer-Delegation: deleg_testreviewer0000\n")
         d = ft.check_action(snapshot_for(repo), accept_review_action())
         assert d.status == "UNKNOWN"
         assert d.allowed is False
@@ -321,7 +321,7 @@ class TestLegacyCompat:
     def test_legacy_review_merge_not_auto_merged(self, tmp_path):
         repo = make_repo(tmp_path)
         write(repo, "code-reviews/add-widget/review-001-1.1.md",
-              "## Вердикт: approve\n")
+              "## Вердикт: approve\nReviewer-Delegation: deleg_testreviewer0000\n")
         d = ft.check_action(snapshot_for(repo), merge_action())
         assert d.status == "UNKNOWN"
         assert has_code(d, ft.STALE_EVIDENCE)
@@ -332,7 +332,7 @@ class TestLegacyCompat:
         compatibility не выдает DENY по самому факту отсутствия sidecar."""
         repo = make_repo(tmp_path)
         write(repo, "code-reviews/add-widget/review-001-1.1.md",
-              "## Вердикт: approve\n")
+              "## Вердикт: approve\nReviewer-Delegation: deleg_testreviewer0000\n")
         d = ft.check_action(snapshot_for(repo), accept_review_action())
         # UNKNOWN (compat), не DENY: легаси ≠ нарушение
         assert d.status != "DENY"
@@ -342,7 +342,7 @@ class TestLegacyCompat:
         """Дописанный к легаси-review sidecar поднимает UNKNOWN → ALLOW."""
         repo = make_repo(tmp_path)
         rf = repo / "code-reviews" / "add-widget" / "review-001-1.1.md"
-        write(repo, str(rf.relative_to(repo)), "## Вердикт: approve\n")
+        write(repo, str(rf.relative_to(repo)), "## Вердикт: approve\nReviewer-Delegation: deleg_testreviewer0000\n")
         d0 = ft.check_action(snapshot_for(repo), accept_review_action())
         assert d0.status == "UNKNOWN"
         head = git(repo, "rev-parse", "HEAD")
@@ -361,7 +361,7 @@ class TestBrokenInputs:
     def test_corrupt_sidecar_unknown(self, tmp_path):
         repo = make_repo(tmp_path)
         write(repo, "code-reviews/add-widget/review-001-1.1.md",
-              "## Вердикт: approve\n")
+              "## Вердикт: approve\nReviewer-Delegation: deleg_testreviewer0000\n")
         write(repo,
               "code-reviews/add-widget/review-001-1.1.md.provenance.json",
               "{not json")
@@ -401,7 +401,7 @@ class TestCliRecordReview:
     def test_cli_record_review_writes_sidecar(self, tmp_path):
         repo = make_repo(tmp_path)
         rf = repo / "code-reviews" / "add-widget" / "review-001-1.1.md"
-        write(repo, str(rf.relative_to(repo)), "## Вердикт: approve\n")
+        write(repo, str(rf.relative_to(repo)), "## Вердикт: approve\nReviewer-Delegation: deleg_testreviewer0000\n")
         head = git(repo, "rev-parse", "HEAD")
         diff = ft._git_diff_for_head({"scope": {"repo": str(repo)}}, head)
         r = subprocess.run(
@@ -427,7 +427,7 @@ class TestCliRecordReview:
         пишется — digest обязателен (M3-негатив на уровне CLI)."""
         repo = make_repo(tmp_path)
         rf = repo / "code-reviews" / "add-widget" / "review-001-1.1.md"
-        write(repo, str(rf.relative_to(repo)), "## Вердикт: approve\n")
+        write(repo, str(rf.relative_to(repo)), "## Вердикт: approve\nReviewer-Delegation: deleg_testreviewer0000\n")
         head = git(repo, "rev-parse", "HEAD")
         r = subprocess.run(
             [sys.executable, str(SCRIPTS / "gate_runner.py"),
@@ -474,7 +474,7 @@ class TestCliRecordReview:
         отклоняется (--repo задан)."""
         repo = make_repo(tmp_path)
         rf = repo / "code-reviews" / "add-widget" / "review-001-1.1.md"
-        write(repo, str(rf.relative_to(repo)), "## Вердикт: approve\n")
+        write(repo, str(rf.relative_to(repo)), "## Вердикт: approve\nReviewer-Delegation: deleg_testreviewer0000\n")
         head = git(repo, "rev-parse", "HEAD")
         diff = ft._git_diff_for_head({"scope": {"repo": str(repo)}}, head)
         bogus = "0" * 40

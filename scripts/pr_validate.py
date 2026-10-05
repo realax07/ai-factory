@@ -6,7 +6,7 @@
   2. GitHub Action на PR: парсит ID из title/body PR, валидирует наличие
      обязательных артефактов по контрактам artifact_contract.md.
 
-Маркер ID обязателен в title/body PR: [BUG-NNN] | [change-id] | [chore]
+Маркер ID обязателен в title/body PR: [BUG-NNN] | [change-id] | [chore] | [docs] | [ops]
 Каждый тип влечет свой набор обязательных артефактов (см. FLOWS ниже).
 
 Exit 0 — все артефакты на месте; exit 1 — список отсутствующих.
@@ -114,6 +114,54 @@ def check_change(repo: Path, change_id: str, marker: str = "") -> list[str]:
                 f"для задач из дифа PR (J10): " + ", ".join(unreviewed)
             )
 
+    # SELF_REVIEW (решение Заказчика 2026-10-03): approve засчитывается только
+    # если Reviewer-Delegation существует в async_delegations, completed, и это
+    # НЕ dev-делегация задачи. Git-учетка одна — независимость подтверждается
+    # платформенными id (устойчивы к пересозданию main-сессий). Проверка ВНЕ
+    # привязки к pr_tasks: подделка артефакта ловится даже когда задачи не
+    # упомянуты в тексте PR.
+    import sqlite3 as _sq
+    _db = Path.home() / ".hermes" / "state.db"
+    _dev_delegs: set = set()
+    try:
+        import json as _json
+        _fstate = _json.loads((Path.home() / ".hermes" / "state" / "flowctl_state.json").read_text(encoding="utf-8"))
+        for _r in _fstate.get("runs", {}).values():
+            _sc = _r.get("scope") or {}
+            if _sc.get("change") == change_id and _sc.get("task"):
+                _dd = _r.get("delegation_id")
+                if _dd:
+                    _dev_delegs.add(_dd.replace("-", "_"))
+    except Exception:
+        pass
+    _cr_dir = repo / "code-reviews" / change_id
+    if _cr_dir.is_dir():
+        for _rf in _cr_dir.glob("review-*.md"):
+            _t = _rf.read_text(encoding="utf-8", errors="replace")
+            _m = re.search(r"Reviewer-Delegation[^A-Za-z0-9]{0,6}(deleg[-_][A-Za-z0-9]+)", _t, re.I)
+            if not _m:
+                missing.append(
+                    f"code-reviews/{change_id}/{_rf.name}: нет Reviewer-Delegation (SELF_REVIEW-защита) — ревью не засчитано"
+                )
+                continue
+            _rd = _m.group(1).replace("-", "_")
+            _exists = _ok = False
+            try:
+                _c = _sq.connect(f"file:{_db}?mode=ro", uri=True)
+                _row = _c.execute("SELECT state FROM async_delegations WHERE delegation_id=?", (_rd,)).fetchone()
+                _c.close()
+                _exists = _row is not None
+                _ok = _exists and _row[0] in ("completed",) and _rd not in _dev_delegs
+            except _sq.Error:
+                _exists = _ok = True
+            if not _ok:
+                missing.append(
+                    f"code-reviews/{change_id}/{_rf.name}: Reviewer-Delegation '{_rd}' "
+                    + ("не найдена в реестре делегаций" if not _exists else
+                       "совпадает с dev-делегацией задачи (SELF_REVIEW)") +
+                    " — ревью не засчитано"
+                )
+
     # Тесты: хотя бы один TC-ID change в tests/ (контракт 6, трассировка)
     tests_root = repo / "tests"
     tc_prefix = "TC-" + change_id.split("-")[0].upper()
@@ -141,13 +189,44 @@ def check_chore(repo: Path, marker: str) -> list[str]:
     return []
 
 
+def check_docs(repo: Path, marker: str) -> list[str]:
+    """[docs]: документация без openspec-пакета. Верификация фактов вместо
+    код-ревью (контракт ops_task/docs_task). Запрещены код продукта и спеки."""
+    errs: list[str] = []
+    # Конвенция CI: PR_CHANGED_SPECS / PR_CHANGED_CODE — "1", если дифф трогает
+    # openspec/changes/ (активные) / код продукта соответственно (см. check_chore).
+    if os.environ.get("PR_CHANGED_SPECS", "").strip() in ("1", "true"):
+        errs.append(
+            "PR помечен [docs], но содержит изменения openspec/ — изменение as is "
+            "только через change-пакет (контракт 7)")
+    if os.environ.get("PR_CHANGED_CODE", "").strip() in ("1", "true"):
+        errs.append(
+            "PR помечен [docs], но содержит изменения кода продукта — используй "
+            "маркер [change-id]/[BUG-NNN]")
+    return errs
+
+
+def check_ops(repo: Path, marker: str) -> list[str]:
+    """[ops]: эксплуатационные работы (деплой, переключение, инфраструктура).
+    Артефакт — протокол приемки Заказчика, не review-файл (контракт ops_task).
+    В git-диффе запрещены спеки; деплой-скрипты разрешены."""
+    errs: list[str] = []
+    if os.environ.get("PR_CHANGED_SPECS", "").strip() in ("1", "true"):
+        errs.append(
+            "PR помечен [ops], но содержит изменения openspec/ — изменение as is "
+            "только через change-пакет (контракт 7)")
+    return errs
+
+
 FLOWS = {
     "bug": check_bug,
     "change": check_change,
     "chore": check_chore,
+    "docs": check_docs,
+    "ops": check_ops,
 }
 
-MARKER_RE = re.compile(r"\[(BUG-\d+|[a-z0-9]+(?:-[a-z0-9]+)+|\bchore)\]")
+MARKER_RE = re.compile(r"\[(BUG-\d+|[a-z0-9]+(?:-[a-z0-9]+)+|\bchore|\bdocs|\bops)\]")
 
 # J10: извлечение номеров задач из текста PR (ветка/заголовок/тело).
 # Принимает формы: 1.1, 5.2, 2.1+2.2 (объединенная задача — обе).
@@ -190,6 +269,16 @@ def parse_id(text: str) -> tuple[str, str] | None:
     m = re.search(r"\[chore\]", text, re.I)
     if m:
         return "chore", "chore"
+    # [docs]/[ops]: задачи без openspec-пакета и без кода продукта (документация,
+    # эксплуатация; J10-семантика ops/docs-задач — приемка Заказчика/верификация
+    # фактов вместо код-ревью). Урок 2026-10-04: J36-запись в BACKLOG с [docs]
+    # в title валится из-за незнания маркера.
+    m = re.search(r"\[docs\]", text, re.I)
+    if m:
+        return "docs", "docs"
+    m = re.search(r"\[ops\]", text, re.I)
+    if m:
+        return "ops", "ops"
     m = re.search(r"\[([a-z0-9]+(?:-[a-z0-9]+)+)\]", text)
     if m and "-" in m.group(1):
         return "change", m.group(1)
@@ -228,7 +317,7 @@ def main() -> int:
     if not parsed:
         print(
             "pr_validate: маркер ID не найден. Обязателен в title/body PR: "
-            "[BUG-NNN] (баг-фикс) / [change-id] (функционал) / [chore] (обслуживание). Блок I."
+            "[BUG-NNN] (баг-фикс) / [change-id] (функционал) / [chore] (обслуживание) / [docs] (документация) / [ops] (эксплуатация). Блок I."
         )
         return 1
 

@@ -81,7 +81,7 @@ def make_repo(tmp_path: Path, *, req: str | None = REQ_APPROVED) -> Path:
     write(repo, "openspec/changes/add-widget/tasks.md", TASKS)
     write(repo, "openspec/changes/add-widget/specs/widget/spec.md",
           "### Requirement: W\n#### Scenario: S\n- GIVEN a\n- WHEN b\n- THEN c\n")
-    write(repo, "code-reviews/add-widget/review-001-1.1.md", "## Вердикт: approve\n")
+    write(repo, "code-reviews/add-widget/review-001-1.1.md", "## Вердикт: approve\nReviewer-Delegation: deleg_testreviewer0000\n")
     write(repo, "sdd.md", "# SDD\n")
     write(repo, "src/widget.py", "X = 1\n")
     commit_all(repo)
