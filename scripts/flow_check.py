@@ -7,6 +7,7 @@ State machine по файлам репозитория: каждый артеф�
 
 Usage: python3 scripts/flow_check.py <path-to-repo>
 """
+import json
 import re
 import sys
 from pathlib import Path
@@ -27,7 +28,7 @@ VERDICT_APPROVE_RE = re.compile(r"\b(approve|approved|одобрен\w*)\b", re.
 # Reviewer-Delegation: deleg_<id> — платформенный id делегации ревьюера
 # (реестр async_delegations устойчив к пересозданию main-сессий: id
 # уникален и не зависит от имени сессии).
-REVIEWER_META_RE = re.compile(r"Reviewer-Delegation:\s*\*\*?[^a-zA-Z]*\s*(deleg[-_][A-Za-z0-9]+)", re.I)
+REVIEWER_META_RE = re.compile(r"Reviewer-Delegation[^A-Za-z0-9]{0,6}(deleg[-_][A-Za-z0-9]+)", re.I)
 VERDICT_RETURN_RE = re.compile(r"\b(return|доработк\w*)\b", re.I)
 QA_SECTION = "6"  # раздел 6.x — QA-цикл, не dev (J10)
 
@@ -105,12 +106,7 @@ def parse_verdict(text: str) -> str | None:
 
 
 def approved_review_tasks(repo: Path, change_id: str) -> dict[str, str]:
-    """task-id → имя последнего review-файла с вердиктом approve (code-reviews/<change-id>/).
-
-    Файл без строки `Reviewer-Delegation: deleg_...` НЕ засчитывается
-    (SELF_REVIEW-защита: независимость ревьюера подтверждается платформенным
-    id делегации, проверка существования/не-совпадения — в pr_validate).
-    """
+    """task-id → имя последнего review-файла с вердиктом approve (code-reviews/<change-id>/)."""
     covered: dict[str, tuple[int, str]] = {}
     cr_dir = repo / "code-reviews" / change_id
     if not cr_dir.is_dir():
@@ -129,12 +125,34 @@ def approved_review_tasks(repo: Path, change_id: str) -> dict[str, str]:
         # идентификаторы вида N[.N...] в task-части имени
         nums = re.findall(r"\d+(?:\.\d+)*", task)
         tasks = nums if nums else [task]
-        verdict = parse_verdict(rf.read_text(encoding="utf-8", errors="replace"))
-        if verdict == "approve" and REVIEWER_META_RE.search(
-                rf.read_text(encoding="utf-8", errors="replace")):
+        text = rf.read_text(encoding="utf-8", errors="replace")
+        verdict = parse_verdict(text)
+        meta = REVIEWER_META_RE.search(text)
+        if verdict == "approve" and meta:
             for task_id in tasks:
                 if task_id not in covered or rev > covered[task_id][0]:
                     covered[task_id] = (rev, rf.name)
+    # Исторические ревью с нестандартными именами (Флоу 4, карта покрытия
+    # review-mapping.json: файл → список task-id). Мета обязательна и здесь.
+    mapping_file = cr_dir / "review-mapping.json"
+    if mapping_file.is_file():
+        try:
+            mapping = json.loads(mapping_file.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            mapping = {}
+        for fname, task_ids in mapping.items():
+            if fname.startswith("_"):
+                continue
+            rf = cr_dir / fname
+            if not rf.is_file():
+                continue
+            verdict = parse_verdict(rf.read_text(encoding="utf-8", errors="replace"))
+            meta = REVIEWER_META_RE.search(rf.read_text(encoding="utf-8", errors="replace"))
+            if verdict == "approve" and meta:
+                rev = int(fname.split("-")[1]) if fname.split("-")[1].isdigit() else 0
+                for task_id in task_ids:
+                    if task_id not in covered or rev > covered[task_id][0]:
+                        covered[task_id] = (rev, fname)
     return {task: name for task, (_, name) in covered.items()}
 
 
@@ -401,8 +419,18 @@ def check(repo: Path) -> int:
     tests_dir = repo / "tests"
     if tests_dir.is_dir():
         test_files = [p for p in tests_dir.rglob("test_*.py")]
-        if test_files and not any(approved_by_change.values()):
-            errors += errs("tests/: автотесты без approved-кейсов (контракт 6)")
+        # Источник кейсов (с 2026-10-03, as-is структура regression/<domain>/,
+        # J33): approved/<change>/ (классика Флоу 1) ИЛИ regression/<domain>/
+        # (as-is база).
+        reg_dir = tm / "regression"
+        has_regression_cases = reg_dir.is_dir() and any(
+            d.is_dir() and not d.name.startswith(".") for d in reg_dir.iterdir()
+        ) and any(f.suffix == ".md" for f in reg_dir.rglob("*.md"))
+        if test_files and not any(approved_by_change.values()) and not has_regression_cases:
+            errors += errs(
+                "tests/: автотесты без approved-кейсов и без as-is базы "
+                "test-model/regression/<domain>/ (контракт 6)"
+            )
         for tf in test_files:
             text = tf.read_text(encoding="utf-8", errors="replace")
             if re.search(r"\btime\.sleep\(", text):
@@ -430,11 +458,15 @@ def check(repo: Path) -> int:
                 method, path = m.group(1).upper(), m.group(2)
                 full = prefixes.get(py.stem, "") + path
                 routes.append((method, full, py))
-        # источники покрытия: активные пакеты; если их нет — master-spec + корневой sdd
+        # источники покрытия: корневые артефакты (sdd, master-specs) — ВСЕГДА:
+        # маршруты ядра существуют вне пакетов, а архивация предыдущего пакета
+        # не должна осиротать покрытие (урок 2026-10-04: архивация
+        # add-containerization обнулила покрытие всех немодифицированных
+        # маршрутов). Дельты активных пакетов добавляются сверху.
         cover_texts: list[str] = []
-        if not active_changes and (repo / "sdd.md").is_file():
+        if (repo / "sdd.md").is_file():
             cover_texts.append((repo / "sdd.md").read_text(encoding="utf-8", errors="replace"))
-        if not active_changes and specs_dir.is_dir():
+        if specs_dir.is_dir():
             for sf in specs_dir.rglob("spec.md"):
                 cover_texts.append(sf.read_text(encoding="utf-8", errors="replace"))
         for pkg in active_changes:
