@@ -23,7 +23,7 @@ REVIEW_FILE_RE = re.compile(r"^review-(\d{3})-(.+?)-(\d{3})\.md$", re.I)  # rev-
 REVIEW_FILE_REV_FIRST = re.compile(r"^review-(\d{3})-(.+)\.md$", re.I)
 REVIEW_FILE_TASK_FIRST = re.compile(r"^review-(.+?)-(\d{3})\.md$", re.I)
 VERDICT_LINE_RE = re.compile(r"^#{1,4}\s*Вердикт\s*:?\s*(.+)$", re.I | re.M)
-VERDICT_APPROVE_RE = re.compile(r"\b(approve|approved|одобрен\w*)\b", re.I)
+VERDICT_APPROVE_RE = re.compile(r"\b(approve|approved|одобрен\w*|одобрить)\b", re.I)
 # SELF_REVIEW-защита (решение Заказчика 2026-10-03): review-файл обязан нести
 # Reviewer-Delegation: deleg_<id> — платформенный id делегации ревьюера
 # (реестр async_delegations устойчив к пересозданию main-сессий: id
@@ -81,11 +81,9 @@ def closed_dev_tasks(tasks_text: str) -> list[str]:
     боевая приемка Заказчика / верификация фактов вместо code-review
     (контракт flow_control: ops_task/docs_task, J10 не применяется).
     `[design]`-задачи (design_task/ui_designer, решение
-    2026-10-05-design-task-flow1, синхронизация от ekotov-wiki — эталон
-    подтянут оттуда по директиве двусторонней синхронизации 2026-10-03)
-    тоже исключены: артефакт — мокап в design/, приемка — утверждение
-    Заказчиком (не review-файл); дизайн-фаза опциональна — в пакетах без
-    UI-дельты задачи [design] может не быть вовсе.
+    2026-10-05-design-task-flow1) тоже исключены: артефакт — мокап в design/,
+    приемка — утверждение Заказчиком (не review-файл); дизайн-фаза опциональна
+    — в пакетах без UI-дельты задачи [design] может не быть вовсе.
     """
     out = []
     for m in re.finditer(r"^[-*]\s*\[x\]\s*(\d+(?:\.\d+)*)(?:\s+\[[SP]\])?(\s+\[([a-z]+)\])?", tasks_text, re.M):

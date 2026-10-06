@@ -714,6 +714,25 @@ def check_dev_task(snapshot, action, ctx, flow):
     return out
 
 
+def check_design_task(snapshot, action, ctx, flow):
+    """design_task (ui_designer, Флоу 1) — решение 2026-10-05-design-task-flow1.
+
+    Тот же транзитивный порядок предшественников, что dev_task (requirements
+    approved + arch review + задача существует); параллель-блока нет —
+    [design]-мокапы не воюют за стенд. J10 не применяется (мокап не код,
+    приемка — утверждение Заказчиком; реш. 2026-10-05-design-task-flow1 п.4).
+    """
+    out = list(_requirements_approved(snapshot, ctx))
+    out.extend(_arch_review_done(snapshot, ctx))
+    out.extend(_require_task(snapshot, action, ctx))
+    out.extend(_deps_findings(action, ctx))
+    ctx.setdefault("checked", {}).update({
+        "zones.admit_session": True,
+        "task.parallel_marker": True,
+    })
+    return out
+
+
 def check_code_review(snapshot, action, ctx, flow):
     if flow == 1:
         return list(_require_task(snapshot, action, ctx))
@@ -1421,6 +1440,8 @@ STAGE_TABLE: dict[int, tuple[Stage, ...]] = {
               ("flow_check (контракт 2)",), check_needs_arch),
         Stage("dev_task", ("dev",), False,
               ("flow_check", "pm_bounds_check (J9/J10)"), check_dev_task),
+        Stage("design_task", ("ui_designer",), False,
+              ("flow_check", "pm_bounds_check (J9/J10)"), check_design_task),
         Stage("code_review", ("code_reviewer",), False,
               ("review-файл с вердиктом (agents/code_reviewer_agent.md)",),
               check_code_review),
