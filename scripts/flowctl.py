@@ -843,16 +843,43 @@ def cmd_finish(args) -> int:
         }, args.as_json)
         return {"accepted": 0, "returned": 1}[record["status"]]
     if record["status"] != "running":
-        # Timeout/crash/reconcile не продвигают на следующий шаг.
-        _emit({
-            "schema_version": OUTPUT_SCHEMA, "command": "finish",
-            "correlation_id": args.correlation_id, "verdict": "blocked",
-            "record": record,
-            "note": f"статус {record['status']!r}: приемка невозможна — "
-                    "разбор (status/reconcile) и явное решение ПМ; сессия и "
-                    "worktree сохранены",
-        }, args.as_json)
-        return 2
+        # Повторная приемка blocked-сессии — только по явному решению ПМ
+        # (--pm-resume): сценарий «blocked по конфигурационной ошибке
+        # запускающего» (например, первый finish без --pm-mode — gate ERROR
+        # «режим не задан», сам агент и его отчет без дефектов). Агентский
+        # вердикт не выносился, прогон воротов не был по существу — повтор
+        # finish с корректной конфигурацией честен. FAIL/zone-дефекты агент
+        # не обходит: --pm-resume не принимается, если в записи есть
+        # дефекты по существу (FAIL gates, ZONE_*).
+        resume_requested = bool(getattr(args, "pm_resume", False))
+        prev_defects = record.get("defects") or []
+        config_only = bool(prev_defects) and all(
+            d.get("code") in ("ERROR", "SKIPPED") and d.get("source") == "gate"
+            for d in prev_defects)
+        if record["status"] == "blocked" and resume_requested and config_only:
+            def _mutate_resume(st: dict) -> None:
+                r = st["runs"][args.correlation_id]
+                r["status"] = "running"
+                r.setdefault("lifecycle", {}).setdefault("history", []).append({
+                    "at": gr.utcnow_iso(),
+                    "from": "blocked", "to": "running",
+                    "reason": "ПМ: --pm-resume — предыдущий blocked был "
+                              "конфигурационной ошибкой запускающего (gate "
+                              "ERROR без дефектов по существу); повтор finish",
+                })
+            state_write_locked(state_path, state, _mutate_resume)
+        else:
+            # Timeout/crash/reconcile не продвигают на следующий шаг.
+            _emit({
+                "schema_version": OUTPUT_SCHEMA, "command": "finish",
+                "correlation_id": args.correlation_id, "verdict": "blocked",
+                "record": record,
+                "note": f"статус {record['status']!r}: приемка невозможна — "
+                        "разбор (status/reconcile) и явное решение ПМ "
+                        "(--pm-resume — только для blocked по gate ERROR без "
+                        "дефектов по существу); сессия и worktree сохранены",
+            }, args.as_json)
+            return 2
 
     report_path = Path(args.report) if args.report else None
     if report_path is None or not report_path.is_file():
@@ -1280,6 +1307,10 @@ def main(argv: list[str] | None = None) -> int:
     p_fin.add_argument("--pm-commits", default=None)
     p_fin.add_argument("--pm-range", default=None)
     p_fin.add_argument("--pm-registry", default=None)
+    p_fin.add_argument("--pm-resume", action="store_true", default=False,
+                       help="явное решение ПМ: повтор finish blocked-сессии "
+                            "(только blocked по gate ERROR без дефектов "
+                            "по существу — конфигурационная ошибка запускающего)")
     p_fin.add_argument("--pm-require-review", action="store_true")
     p_fin.add_argument("--pr-id", default=None)
     p_fin.add_argument("--log-dir", default=None)
