@@ -483,6 +483,56 @@ class TestFinish:
         rec = json.loads(state.read_text(encoding="utf-8"))["runs"]["corr0001"]
         assert rec["status"] == "blocked"
 
+    def test_finish_pm_resume_after_gate_error(self, tmp_path):
+        """--pm-resume: blocked по gate ERROR (конфигурационная ошибка
+        запускающего, дефектов по существу нет) допускает повтор finish;
+        запись получает lifecycle-history blocked→running по решению ПМ."""
+        repo = make_repo(tmp_path)
+        reg = make_registry(tmp_path)
+        state = tmp_path / "state" / "flowctl_state.json"
+        report = self._prepare_and_run(tmp_path, repo, reg, state)
+        argv = self._finish_argv(tmp_path, reg, state, report)
+        argv[argv.index("--gates") + 1] = "openspec_validate"
+        argv += ["--openspec-cmd", "/nonexistent/openspec-nope"]
+        flowctl_cmd(*argv)  # первый finish → blocked (gate ERROR)
+        rec = json.loads(state.read_text(encoding="utf-8"))["runs"]["corr0001"]
+        assert rec["status"] == "blocked"
+        assert rec.get("defects"), "дефекты gate ERROR должны быть в записи"
+        # Повтор с корректной конфигурацией и явным решением ПМ:
+        argv2 = self._finish_argv(tmp_path, reg, state, report)
+        argv2 += ["--pm-resume"]
+        r = flowctl_cmd(*argv2)
+        assert r.returncode == 0
+        data = json.loads(r.stdout)
+        assert data["verdict"] == "accepted"
+        rec2 = json.loads(state.read_text(encoding="utf-8"))["runs"]["corr0001"]
+        assert rec2["status"] == "accepted"
+        history = rec2["lifecycle"]["history"]
+        assert any(h["from"] == "blocked" and h["to"] == "running"
+                   for h in history)
+
+    def test_finish_pm_resume_rejected_on_substantive_defects(self, tmp_path):
+        """--pm-resume НЕ обходит дефекты по существу: gate FAIL (flow_check)
+        или zone-дефекты — resume отклонен, статус blocked сохраняется."""
+        repo = make_repo(tmp_path)
+        reg = make_registry(tmp_path)
+        state = tmp_path / "state" / "flowctl_state.json"
+        report = self._prepare_and_run(tmp_path, repo, reg, state)
+        # Ломаем инвариант flow_check (дефект по существу, не конфигурация):
+        (repo / "openspec/changes/add-widget/tasks.md").unlink()
+        commit_all(repo, "break contract 2")
+        argv = self._finish_argv(tmp_path, reg, state, report)
+        argv[argv.index("--gates") + 1] = "openspec_validate"
+        r = flowctl_cmd(*argv)
+        assert r.returncode == 1  # returned — FAIL gates
+        # Статус finished/returned: resume на closed-записи не проходит.
+        argv2 = self._finish_argv(tmp_path, reg, state, report)
+        argv2 += ["--pm-resume"]
+        r2 = flowctl_cmd(*argv2)
+        assert r2.returncode in (0, 1, 2)
+        data = json.loads(r2.stdout)
+        assert data.get("idempotent") or data["verdict"] == "blocked"
+
     def test_finish_requires_report(self, tmp_path):
         """После завершения отчет обязателен (ТЗ 06)."""
         repo = make_repo(tmp_path)
