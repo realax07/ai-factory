@@ -1033,10 +1033,12 @@ class TestCLI:
                     "--flow", "2", "--change", "BUG-042", "--spec-delta",
                     "--registry", str(reg), "--json")
         data = json.loads(r.stdout)
-        assert r.returncode == 2  # bug_fix в DENY → нет кандидатов... кроме
+        # Решение 2026-10-07-code-review-flow2: code_review легален во Флоу 2
+        # и не зависит от spec-delta — bug_fix в DENY, но кандидат есть.
         nxt = {(c["action"], c["actor_role"]) for c in data["candidates"]}
-        # эскалация видна в waiting-причинах bug_fix и override кандидатах check
         assert ("bug_fix", "dev") not in nxt
+        assert ("code_review", "code_reviewer") in nxt
+        assert r.returncode == 0
 
     def test_cli_json_stable(self, tmp_path):
         repo = make_repo(tmp_path)

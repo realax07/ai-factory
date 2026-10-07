@@ -71,6 +71,7 @@
 - **Вход:** PR диффа + спека задачи + процедура проверки из ТЗ.
 - **Выход:** вердикт approve/return + таблица замечаний (blocker/major/minor + рекомендации) в `code-reviews/`.
 - **Ключевые границы:** не правит код сам; «я бы написал иначе» — не замечание; documentation в диффе проверяется буквальным воспроизведением.
+- **Действие:** `code_review` (Флоу 1/4); с решением 2026-10-07-code-review-flow2 — также во Флоу 2 (bug_fix → code_review → accept_review → merge_task).
 
 ### 5. QA: аналитик чеклистов — [qa_checklist_agent.md](qa_checklist_agent.md)
 
