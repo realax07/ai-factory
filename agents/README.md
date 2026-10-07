@@ -141,6 +141,7 @@
 | Поле | Значение |
 |---|---|
 | Режим | auto-edit; зона: только `test-model/reviews/<change>/review-NNN-design.md`; push НЕТ |
+| Действие | `design_validation` (Флоу 1, этап QA) — решение Заказчика 2026-10-07-design-validation-flow1 |
 | Запуск | После реализации задач с UI-дельтой, до вердикта QA-этапа (E13) |
 | Скиллы | `dogfood` (стенд, computed styles) |
 
