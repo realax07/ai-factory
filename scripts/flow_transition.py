@@ -1497,6 +1497,13 @@ STAGE_TABLE: dict[int, tuple[Stage, ...]] = {
     2: (
         Stage("bug_fix", ("dev",), False,
               ("pr_validate [BUG-NNN]",), check_bug_fix),
+        # Решение Заказчика 2026-10-07-code-review-flow2: независимое ревью
+        # багфикса — до этого «написать ревью» во Флоу 2 было нечем
+        # (accept_review требует уже существующий approve — замкнутый круг),
+        # инцидент BUG-010: фикс влит без независимого ревью.
+        Stage("code_review", ("code_reviewer",), False,
+              ("review-файл с вердиктом (agents/code_reviewer_agent.md)",),
+              check_code_review),
         Stage("accept_review", ("code_reviewer",), False,
               ("provenance-блок (поставка 05)",), check_accept_review),
         Stage("merge_task", ("dev_lead", "integrator"), False,
