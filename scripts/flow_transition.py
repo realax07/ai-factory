@@ -1198,6 +1198,18 @@ def check_qa_automation(snapshot, action, ctx, flow):
     return out
 
 
+def check_design_validation(snapshot, action, ctx, flow):
+    """Решение Заказчика 2026-10-07-design-validation-flow1: design_validation
+    (design_validator, Флоу 1, этап QA) — сверка реализованного UI с
+    утвержденными мокапами дизайн-фазы. Требует задачу tasks.md (как
+    code_review flow=1); содержательная сверка с мокапами — работа агента
+    (agents/design_validator_agent.md), ядро проверяет только скоуп.
+    Артефакт — review-файл вердикта в зоне роли
+    (test-model/reviews/*/review-*-design.md).
+    """
+    return list(_require_task(snapshot, action, ctx))
+
+
 def check_archive_change(snapshot, action, ctx, flow):
     out: list = []
     value, status, out0 = _fact_ready(snapshot, "change.tasks", ctx)
@@ -1465,6 +1477,16 @@ STAGE_TABLE: dict[int, tuple[Stage, ...]] = {
               check_qa_impact_analysis),
         Stage("qa_automation", ("qa_automation",), False,
               ("flow_check (контракт 6)",), check_qa_automation),
+        # Решение Заказчика 2026-10-07-design-validation-flow1: design_validator
+        # (сверка реализованного UI с утвержденными мокапами, этап QA) получил
+        # ПАРУ действие+роль в графе Флоу 1. До этого зона роли была в политике
+        # (test-model/reviews/*/review-*-design.md), но действия не было —
+        # enforcing DENY все подстановки (code_review→code_reviewer,
+        # qa_automation→qa_automation, qa_review→INVALID_GATE), и проход шел
+        # обходом (R7: в составе qa-задачи ролью dev).
+        Stage("design_validation", ("design_validator",), False,
+              ("flow_check (контракт 5: review-файл вердикта)",),
+              check_design_validation),
         # Решение Заказчика 3.3 (S7, 2026-10-02): sa добавлен как легальная роль
         # архивации — контракт 7: автор спек сливает дельты (практика Р6: sa
         # заархивировал f925a57). dev_lead/integrator остаются допустимыми.
