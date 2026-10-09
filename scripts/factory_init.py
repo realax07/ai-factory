@@ -41,6 +41,7 @@ COPY_FILES = [
     "scripts/check_auth_timing.py",
     "scripts/codegraph.py",
     "scripts/pm_bounds_check.py",
+    "agents/debug_agent.md",
     "contracts/artifact_contract.md",
     "templates/constitution.template.md",
     "templates/task_delegation.md",
