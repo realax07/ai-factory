@@ -1,0 +1,200 @@
+[
+ {
+  "id": "deleg-36304f517722496a",
+  "role": "code_reviewer",
+  "wall_s": 476.0,
+  "api_est": null
+ },
+ {
+  "id": "deleg-38c89914f85e487a",
+  "role": "code_reviewer",
+  "wall_s": 276.0,
+  "api_est": null
+ },
+ {
+  "id": "deleg-3292234ae2c24a27",
+  "role": "code_reviewer",
+  "wall_s": 5301.0,
+  "api_est": null
+ },
+ {
+  "id": "deleg-260608110985472e",
+  "role": "code_reviewer",
+  "wall_s": 5301.0,
+  "api_est": null
+ },
+ {
+  "id": "deleg-95a2a3a8835d4e45",
+  "role": "code_reviewer",
+  "wall_s": 459.0,
+  "api_est": null
+ },
+ {
+  "id": "deleg-e7fdc320c4b04d87",
+  "role": "code_reviewer",
+  "wall_s": 932.0,
+  "api_est": null
+ },
+ {
+  "id": "deleg-f546b8c152ab4ea0",
+  "role": "code_reviewer",
+  "wall_s": 932.0,
+  "api_est": null
+ },
+ {
+  "id": "deleg-24112044a1794030",
+  "role": "code_reviewer",
+  "wall_s": 202.0,
+  "api_est": null
+ },
+ {
+  "id": "deleg-d647709e994745b4",
+  "role": "code_reviewer",
+  "wall_s": 386.0,
+  "api_est": null
+ },
+ {
+  "id": "deleg-24a56f114b014abf",
+  "role": "code_reviewer",
+  "wall_s": 384.0,
+  "api_est": null
+ },
+ {
+  "id": "deleg-db70926e50c04e74",
+  "role": "code_reviewer",
+  "wall_s": 360.0,
+  "api_est": null
+ },
+ {
+  "id": "deleg-d6364e0360184f23",
+  "role": "code_reviewer",
+  "wall_s": 528.0,
+  "api_est": null
+ },
+ {
+  "id": "deleg-54e97c3b731c4e55",
+  "role": "code_reviewer",
+  "wall_s": 531.0,
+  "api_est": null
+ },
+ {
+  "id": "deleg-0e211c2888f747ab",
+  "role": "code_reviewer",
+  "wall_s": 1399.0,
+  "api_est": null
+ },
+ {
+  "id": "deleg-14246228188a432f",
+  "role": "code_reviewer",
+  "wall_s": 678.0,
+  "api_est": null
+ },
+ {
+  "id": "deleg-015138fc411d4d16",
+  "role": "code_reviewer",
+  "wall_s": 2062.0,
+  "api_est": null
+ },
+ {
+  "id": "deleg-3b43ead3b93f4032",
+  "role": "qa_case_reviewer",
+  "wall_s": 2217.0,
+  "api_est": null
+ },
+ {
+  "id": "deleg-f6f286acfdff4081",
+  "role": "qa_case_reviewer",
+  "wall_s": 801.0,
+  "api_est": null
+ },
+ {
+  "id": "deleg-d46873562b754c1f",
+  "role": "qa_case_reviewer",
+  "wall_s": 183.0,
+  "api_est": null
+ },
+ {
+  "id": "deleg-dee1b3de2124463d",
+  "role": "code_reviewer",
+  "wall_s": 1240.0,
+  "api_est": null
+ },
+ {
+  "id": "deleg-9b4a481f10b34606",
+  "role": "code_reviewer",
+  "wall_s": 3555.0,
+  "api_est": null
+ },
+ {
+  "id": "deleg-p12-qa-31-cases-",
+  "role": "qa_case_reviewer",
+  "wall_s": 2003.0,
+  "api_est": null
+ },
+ {
+  "id": "deleg-p12-qa-31-rev2fi",
+  "role": "qa_case_reviewer",
+  "wall_s": 94.0,
+  "api_est": null
+ },
+ {
+  "id": "deleg-9df1326622dc4bfd",
+  "role": "code_reviewer",
+  "wall_s": 16463.0,
+  "api_est": null
+ },
+ {
+  "id": "deleg-dd0722831e4748c4",
+  "role": "code_reviewer",
+  "wall_s": 1253.0,
+  "api_est": null
+ },
+ {
+  "id": "deleg-0965439d86f747fc",
+  "role": "code_reviewer",
+  "wall_s": 1070.0,
+  "api_est": null
+ },
+ {
+  "id": "deleg-e8b1cd66bd2f49ee",
+  "role": "code_reviewer",
+  "wall_s": 775.0,
+  "api_est": null
+ },
+ {
+  "id": "deleg-755d1f40eebe420b",
+  "role": "code_reviewer",
+  "wall_s": 567.0,
+  "api_est": null
+ },
+ {
+  "id": "deleg-2141013471f74f81",
+  "role": "code_reviewer",
+  "wall_s": 312.0,
+  "api_est": null
+ },
+ {
+  "id": "deleg-993e713de937413b",
+  "role": "code_reviewer",
+  "wall_s": 2617.0,
+  "api_est": null
+ },
+ {
+  "id": "deleg-0fb60b21915841dd",
+  "role": "code_reviewer",
+  "wall_s": 66718.0,
+  "api_est": null
+ },
+ {
+  "id": "deleg-c40c585bdead4035",
+  "role": "code_reviewer",
+  "wall_s": 1802.0,
+  "api_est": null
+ },
+ {
+  "id": "deleg-076eb97c46474be6",
+  "role": "code_reviewer",
+  "wall_s": 4965.0,
+  "api_est": null
+ }
+]

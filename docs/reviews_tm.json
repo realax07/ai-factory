@@ -1,0 +1,167 @@
+[
+ {
+  "path": "/home/openclaw/ekotov-wiki/test-model/reviews/add-containerization/review-001-openapi-cases.md",
+  "pkg": "add-containerization",
+  "file": "review-001-openapi-cases.md",
+  "verdict": "APPROVE",
+  "n_blocker": 0,
+  "n_major": 0,
+  "n_minor": 0,
+  "deleg": null,
+  "date": "2026-10-03",
+  "metrics": null
+ },
+ {
+  "path": "/home/openclaw/ekotov-wiki/test-model/reviews/add-gallery-service/review-001-cases.md",
+  "pkg": "add-gallery-service",
+  "file": "review-001-cases.md",
+  "verdict": "RETURN",
+  "n_blocker": 0,
+  "n_major": 0,
+  "n_minor": 3,
+  "deleg": "deleg_3b43ead3",
+  "date": "2026-10-06",
+  "metrics": null
+ },
+ {
+  "path": "/home/openclaw/ekotov-wiki/test-model/reviews/add-gallery-service/review-002-cases.md",
+  "pkg": "add-gallery-service",
+  "file": "review-002-cases.md",
+  "verdict": "RETURN",
+  "n_blocker": 0,
+  "n_major": 0,
+  "n_minor": 1,
+  "deleg": "deleg_f6f286ac",
+  "date": "2026-10-06",
+  "metrics": null
+ },
+ {
+  "path": "/home/openclaw/ekotov-wiki/test-model/reviews/add-gallery-service/review-003-cases.md",
+  "pkg": "add-gallery-service",
+  "file": "review-003-cases.md",
+  "verdict": "APPROVE",
+  "n_blocker": 0,
+  "n_major": 0,
+  "n_minor": 0,
+  "deleg": "deleg_d4687356",
+  "date": "2026-10-06",
+  "metrics": null
+ },
+ {
+  "path": "/home/openclaw/ekotov-wiki/test-model/reviews/add-microservices-full/review-001-testmodel.md",
+  "pkg": "add-microservices-full",
+  "file": "review-001-testmodel.md",
+  "verdict": "APPROVE",
+  "n_blocker": 0,
+  "n_major": 0,
+  "n_minor": 0,
+  "deleg": "deleg_db70926e",
+  "date": "2026-10-05",
+  "metrics": null
+ },
+ {
+  "path": "/home/openclaw/ekotov-wiki/test-model/reviews/add-netdata-monitoring/review-001-design.md",
+  "pkg": "add-netdata-monitoring",
+  "file": "review-001-design.md",
+  "verdict": "APPROVE",
+  "n_blocker": 0,
+  "n_major": 0,
+  "n_minor": 0,
+  "deleg": "deleg_0b722e1e",
+  "date": "2026-10-05",
+  "metrics": {
+   "id": "deleg_0b722e1e",
+   "duration_s": 4077.43,
+   "api_calls": 168,
+   "api_calls_est": null,
+   "tokens_in": 15779895,
+   "tokens_out": 41341
+  }
+ },
+ {
+  "path": "/home/openclaw/ekotov-wiki/test-model/reviews/add-netdata-monitoring/review-001-testmodel.md",
+  "pkg": "add-netdata-monitoring",
+  "file": "review-001-testmodel.md",
+  "verdict": "APPROVE",
+  "n_blocker": 0,
+  "n_major": 0,
+  "n_minor": 0,
+  "deleg": "deleg_2f73124b",
+  "date": "2026-10-05",
+  "metrics": {
+   "id": "deleg_2f73124b",
+   "duration_s": 631.07,
+   "api_calls": null,
+   "api_calls_est": 40,
+   "tokens_in": null,
+   "tokens_out": null
+  }
+ },
+ {
+  "path": "/home/openclaw/ekotov-wiki/test-model/reviews/add-responsive-mobile/review-001-design.md",
+  "pkg": "add-responsive-mobile",
+  "file": "review-001-design.md",
+  "verdict": "APPROVE",
+  "n_blocker": 0,
+  "n_major": 0,
+  "n_minor": 0,
+  "deleg": "deleg_5ae3be12",
+  "date": "2026-10-09",
+  "metrics": {
+   "id": "deleg_5ae3be12",
+   "duration_s": 3067.07,
+   "api_calls": 250,
+   "api_calls_est": null,
+   "tokens_in": 19458608,
+   "tokens_out": 45178
+  }
+ },
+ {
+  "path": "/home/openclaw/ekotov-wiki/test-model/reviews/add-ui-polish-r8/review-001-cases.md",
+  "pkg": "add-ui-polish-r8",
+  "file": "review-001-cases.md",
+  "verdict": "RETURN",
+  "n_blocker": 0,
+  "n_major": 0,
+  "n_minor": 2,
+  "deleg": null,
+  "date": "2026-10-07",
+  "metrics": null
+ },
+ {
+  "path": "/home/openclaw/ekotov-wiki/test-model/reviews/add-ui-polish-r8/review-002-cases.md",
+  "pkg": "add-ui-polish-r8",
+  "file": "review-002-cases.md",
+  "verdict": "APPROVE",
+  "n_blocker": 0,
+  "n_major": 0,
+  "n_minor": 0,
+  "deleg": null,
+  "date": "2026-10-07",
+  "metrics": null
+ },
+ {
+  "path": "/home/openclaw/ekotov-wiki/test-model/reviews/add-ui-polish-r8/review-004-design.md",
+  "pkg": "add-ui-polish-r8",
+  "file": "review-004-design.md",
+  "verdict": "RETURN",
+  "n_blocker": 0,
+  "n_major": 0,
+  "n_minor": 0,
+  "deleg": "deleg_8216bcb4",
+  "date": "2026-10-07",
+  "metrics": null
+ },
+ {
+  "path": "/home/openclaw/ekotov-wiki/test-model/reviews/add-ui-polish-r8/review-005-design.md",
+  "pkg": "add-ui-polish-r8",
+  "file": "review-005-design.md",
+  "verdict": "APPROVE",
+  "n_blocker": 0,
+  "n_major": 0,
+  "n_minor": 0,
+  "deleg": "deleg_67dffa6e",
+  "date": "2026-10-07",
+  "metrics": null
+ }
+]
