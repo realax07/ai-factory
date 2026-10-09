@@ -1,0 +1,1378 @@
+[
+ {
+  "corr": "015138fc411d4d16912db5e3a40da4ed",
+  "role": "code_reviewer",
+  "action": "code_review",
+  "created": "2026-10-06T04:37:02+00:00",
+  "change": "add-gallery-service",
+  "status": "ALLOW"
+ },
+ {
+  "corr": "01af708872dd4cd7be0ac7b0d95fbe22",
+  "role": "dev",
+  "action": "dev_task",
+  "created": "2026-10-04T11:59:44+00:00",
+  "change": "add-microservices-full",
+  "status": "ALLOW"
+ },
+ {
+  "corr": "03b3fe101cbb482d831aacd6f4a90084",
+  "role": "sa",
+  "action": "create_change",
+  "created": "2026-10-03T08:22:57+00:00",
+  "change": "add-containerization",
+  "status": "DENY"
+ },
+ {
+  "corr": "05f5d40718134f0782a33048f0b1edc7",
+  "role": "dev",
+  "action": "bug_fix",
+  "created": "2026-10-07T17:35:11+00:00",
+  "change": "BUG-010",
+  "status": "ALLOW"
+ },
+ {
+  "corr": "069a192cff824c6e94e638900e41a02f",
+  "role": "ui_designer",
+  "action": "design_task",
+  "created": "2026-10-05T15:28:19+00:00",
+  "change": "add-netdata-monitoring",
+  "status": "ALLOW"
+ },
+ {
+  "corr": "06ad37187cce4099925980508b3f3bd5",
+  "role": "dev",
+  "action": "dev_task",
+  "created": "2026-10-06T08:48:29+00:00",
+  "change": "add-gallery-service",
+  "status": "ALLOW"
+ },
+ {
+  "corr": "076eb97c46474be6a5618f36acb22089",
+  "role": "code_reviewer",
+  "action": "code_review",
+  "created": "2026-10-08T16:43:10+00:00",
+  "change": "add-responsive-mobile",
+  "status": "ALLOW"
+ },
+ {
+  "corr": "0775a69aa89e4d59a0422b9637b5fa3a",
+  "role": "dev",
+  "action": "chore_task",
+  "created": "2026-10-03T07:01:36+00:00",
+  "change": "chore-walkthrough",
+  "status": "UNKNOWN"
+ },
+ {
+  "corr": "07cf4d95162c4b3a9361557763fe17d7",
+  "role": "sa",
+  "action": "create_change",
+  "created": "2026-10-08T11:05:38+00:00",
+  "change": "add-responsive-mobile",
+  "status": "DENY"
+ },
+ {
+  "corr": "0965439d86f747fcaafd84088ca995b8",
+  "role": "code_reviewer",
+  "action": "code_review",
+  "created": "2026-10-07T16:07:32+00:00",
+  "change": "add-ui-polish-r8",
+  "status": "ALLOW"
+ },
+ {
+  "corr": "0dd08a0b4a90448eb758fe6f326f5706",
+  "role": "dev",
+  "action": "dev_task",
+  "created": "2026-10-05T17:32:15+00:00",
+  "change": "add-netdata-monitoring",
+  "status": "ALLOW"
+ },
+ {
+  "corr": "0dd829046be046d296d6b8f73ba93b2b",
+  "role": "devops",
+  "action": "dev_task",
+  "created": "2026-10-04T14:51:39+00:00",
+  "change": "add-microservices-full",
+  "status": "DENY"
+ },
+ {
+  "corr": "0e211c2888f747abaa7182059d7e47ef",
+  "role": "code_reviewer",
+  "action": "code_review",
+  "created": "2026-10-05T21:11:28+00:00",
+  "change": "add-gallery-service",
+  "status": "ALLOW"
+ },
+ {
+  "corr": "0e6f158b9e3c43dbafb84ec978d2f1f3",
+  "role": "sa",
+  "action": "create_change",
+  "created": "2026-10-05T16:12:32+00:00",
+  "change": "add-gallery-service",
+  "status": "DENY"
+ },
+ {
+  "corr": "0f9a639154e34f2998dc8f180a43b7b6",
+  "role": "sa",
+  "action": "create_change",
+  "created": "2026-10-05T14:38:40+00:00",
+  "change": "add-netdata-monitoring",
+  "status": "DENY"
+ },
+ {
+  "corr": "0fb60b21915841ddaa7bde3f97d4c3c5",
+  "role": "code_reviewer",
+  "action": "code_review",
+  "created": "2026-10-07T23:12:57+00:00",
+  "change": "BUG-012",
+  "status": "ALLOW"
+ },
+ {
+  "corr": "14246228188a432fa149edce6bfffead",
+  "role": "code_reviewer",
+  "action": "code_review",
+  "created": "2026-10-05T21:46:22+00:00",
+  "change": "add-netdata-monitoring",
+  "status": "ALLOW"
+ },
+ {
+  "corr": "14f93497dfb5455d99187d1411d7e386",
+  "role": "dev",
+  "action": "dev_task",
+  "created": "2026-10-05T04:22:25+00:00",
+  "change": "add-microservices-full",
+  "status": "ALLOW"
+ },
+ {
+  "corr": "150003fdeeb649e1935223929f924649",
+  "role": "devops",
+  "action": "dev_task",
+  "created": "2026-10-04T14:51:00+00:00",
+  "change": "add-microservices-full",
+  "status": "DENY"
+ },
+ {
+  "corr": "1565873e0804474aa03caba91448a355",
+  "role": "qa_author",
+  "action": "qa_cases",
+  "created": "2026-10-06T07:37:31+00:00",
+  "change": "add-gallery-service",
+  "status": "ALLOW"
+ },
+ {
+  "corr": "15fc6021a6ab4dd396e774a35e5825a7",
+  "role": "ui_designer",
+  "action": "dev_task",
+  "created": "2026-10-05T15:24:43+00:00",
+  "change": "add-netdata-monitoring",
+  "status": "DENY"
+ },
+ {
+  "corr": "184b89e8e68447788c8b243c1151a558",
+  "role": "qa_impact_analyst",
+  "action": "qa_impact_analysis",
+  "created": "2026-10-06T06:27:07+00:00",
+  "change": "add-gallery-service",
+  "status": "ALLOW"
+ },
+ {
+  "corr": "2087b814e4f74f05b059fe2330a87160",
+  "role": "sa",
+  "action": "create_change",
+  "created": "2026-10-05T16:12:26+00:00",
+  "change": "add-gallery-service",
+  "status": "DENY"
+ },
+ {
+  "corr": "2141013471f74f8195628f57b1e39e75",
+  "role": "code_reviewer",
+  "action": "code_review",
+  "created": "2026-10-07T18:13:05+00:00",
+  "change": "BUG-010",
+  "status": "ALLOW"
+ },
+ {
+  "corr": "24112044a1794030a3ab278cc92f1dae",
+  "role": "code_reviewer",
+  "action": "code_review",
+  "created": "2026-10-05T05:53:35+00:00",
+  "change": "add-microservices-full",
+  "status": "ALLOW"
+ },
+ {
+  "corr": "24a56f114b014abf8ad98d6268e57f78",
+  "role": "code_reviewer",
+  "action": "code_review",
+  "created": "2026-10-05T11:06:35+00:00",
+  "change": "add-microservices-full",
+  "status": "ALLOW"
+ },
+ {
+  "corr": "2501be53f0194ee4a09ee1fe8d39e5a9",
+  "role": "design_validator",
+  "action": "code_review",
+  "created": "2026-10-07T13:01:48+00:00",
+  "change": "add-ui-polish-r8",
+  "status": "DENY"
+ },
+ {
+  "corr": "260608110985472e9c903a3b7b8aef28",
+  "role": "code_reviewer",
+  "action": "code_review",
+  "created": "2026-10-04T20:58:32+00:00",
+  "change": "add-microservices-full",
+  "status": "ALLOW"
+ },
+ {
+  "corr": "2a5327cc96284694a80e53f5a44c935a",
+  "role": "sa",
+  "action": "create_change",
+  "created": "2026-10-03T08:38:58+00:00",
+  "change": "add-containerization",
+  "status": "ALLOW"
+ },
+ {
+  "corr": "3292234ae2c24a27be60fa9a1a548d4c",
+  "role": "code_reviewer",
+  "action": "code_review",
+  "created": "2026-10-04T20:58:32+00:00",
+  "change": "add-microservices-full",
+  "status": "ALLOW"
+ },
+ {
+  "corr": "33f73a4ff2744669bff8acb40abde9aa",
+  "role": "sa",
+  "action": "create_change",
+  "created": "2026-10-05T16:12:01+00:00",
+  "change": "add-gallery-service",
+  "status": "DENY"
+ },
+ {
+  "corr": "36304f517722496ab0e5ab9debb4c0f2",
+  "role": "code_reviewer",
+  "action": "code_review",
+  "created": "2026-10-04T17:18:22+00:00",
+  "change": "add-microservices-full",
+  "status": "ALLOW"
+ },
+ {
+  "corr": "3707d2098de24cb3a0989a7382366842",
+  "role": "sa",
+  "action": "create_change",
+  "created": "2026-10-03T08:08:39+00:00",
+  "change": "add-containerization",
+  "status": "DENY"
+ },
+ {
+  "corr": "370baf901c1642d69683c98adfc5a160",
+  "role": "sa",
+  "action": "create_change",
+  "created": "2026-10-03T08:22:18+00:00",
+  "change": "add-containerization",
+  "status": "DENY"
+ },
+ {
+  "corr": "3800e1843e44477c98c0a5f9d22c6655",
+  "role": "ui_designer",
+  "action": "dev_task",
+  "created": "2026-10-05T15:24:35+00:00",
+  "change": "add-netdata-monitoring",
+  "status": "DENY"
+ },
+ {
+  "corr": "38c89914f85e487ab2bcdeb62acdefe4",
+  "role": "code_reviewer",
+  "action": "code_review",
+  "created": "2026-10-04T17:35:38+00:00",
+  "change": "add-microservices-full",
+  "status": "ALLOW"
+ },
+ {
+  "corr": "399c23ce7b084485bfc3d3629ee486cd",
+  "role": "dev",
+  "action": "dev_task",
+  "created": "2026-10-05T07:11:01+00:00",
+  "change": "add-microservices-full",
+  "status": "ALLOW"
+ },
+ {
+  "corr": "3b43ead3b93f4032937401a35d2b7457",
+  "role": "qa_case_reviewer",
+  "action": "qa_review",
+  "created": "2026-10-06T06:41:42+00:00",
+  "change": "add-gallery-service",
+  "status": "ALLOW"
+ },
+ {
+  "corr": "3dd27d91fce94b83aeaabbb8b999d116",
+  "role": "qa_checklist",
+  "action": "qa_checklist",
+  "created": "2026-10-06T06:09:16+00:00",
+  "change": "add-gallery-service",
+  "status": "ALLOW"
+ },
+ {
+  "corr": "4229f7ca6d4c43c184d7fe571142a8e4",
+  "role": "code_reviewer",
+  "action": "accept_review",
+  "created": "2026-10-07T17:44:07+00:00",
+  "change": "BUG-010",
+  "status": "DENY"
+ },
+ {
+  "corr": "4293e5ce9dcb46cd81ab3bce786d6b83",
+  "role": "sa",
+  "action": "create_change",
+  "created": "2026-10-04T11:49:20+00:00",
+  "change": "add-microservices-full",
+  "status": "DENY"
+ },
+ {
+  "corr": "43b780035e6944f6b83d5a9a21d50cee",
+  "role": "sa",
+  "action": "create_change",
+  "created": "2026-10-04T11:50:44+00:00",
+  "change": "add-microservices-full",
+  "status": "DENY"
+ },
+ {
+  "corr": "4679d73fa3cf421b983949f1a9511123",
+  "role": "sa",
+  "action": "create_change",
+  "created": "2026-10-05T16:12:11+00:00",
+  "change": "add-gallery-service",
+  "status": "DENY"
+ },
+ {
+  "corr": "49520999fa9048458a030fb1a4c464b1",
+  "role": "dev",
+  "action": "dev_task",
+  "created": "2026-10-05T21:34:59+00:00",
+  "change": "add-gallery-service",
+  "status": "ALLOW"
+ },
+ {
+  "corr": "54e97c3b731c4e55b9d65af3470244a7",
+  "role": "code_reviewer",
+  "action": "code_review",
+  "created": "2026-10-05T17:23:13+00:00",
+  "change": "add-netdata-monitoring",
+  "status": "ALLOW"
+ },
+ {
+  "corr": "556e30d8393547758911d11ad8e3367b",
+  "role": "code_reviewer",
+  "action": "code_review",
+  "created": "2026-10-05T21:46:08+00:00",
+  "change": "add-netdata-monitoring",
+  "status": "DENY"
+ },
+ {
+  "corr": "561cec6aeb5e4bc1b2bbcf0cfa913b99",
+  "role": "design_validator",
+  "action": "qa_automation",
+  "created": "2026-10-07T13:02:49+00:00",
+  "change": "add-ui-polish-r8",
+  "status": "DENY"
+ },
+ {
+  "corr": "56264f9c99c6458fb62400436c8e44ae",
+  "role": "code_reviewer",
+  "action": "code_review",
+  "created": "2026-10-07T17:29:30+00:00",
+  "change": "add-ui-polish-r8",
+  "status": "DENY"
+ },
+ {
+  "corr": "56f27009879b4d8fb044eb9cdc0a23f9",
+  "role": "devops",
+  "action": "dry_probe",
+  "created": "2026-10-04T14:50:56+00:00",
+  "change": "add-microservices-full",
+  "status": "UNKNOWN"
+ },
+ {
+  "corr": "58a85b6078264eed922f85ea58655244",
+  "role": "dev",
+  "action": "dev_task",
+  "created": "2026-10-07T18:48:20+00:00",
+  "change": "add-ui-polish-r8",
+  "status": "ALLOW"
+ },
+ {
+  "corr": "5bbade151ce1402ca33e03ba63e49869",
+  "role": "qa_author",
+  "action": "qa_cases",
+  "created": "2026-10-06T06:32:51+00:00",
+  "change": "add-gallery-service",
+  "status": "ALLOW"
+ },
+ {
+  "corr": "65c6b25541e24a238cdef47a945b57d2",
+  "role": "ui_designer",
+  "action": "design_task",
+  "created": "2026-10-08T12:09:29+00:00",
+  "change": "add-responsive-mobile",
+  "status": "ALLOW"
+ },
+ {
+  "corr": "66b41dbb6f5749c790f2080dc61f9cc0",
+  "role": "dev",
+  "action": "dev_task",
+  "created": "2026-10-06T08:34:12+00:00",
+  "change": "add-gallery-service",
+  "status": "ALLOW"
+ },
+ {
+  "corr": "67dffa6e6f4248cbbba9774abec8a131",
+  "role": "design_validator",
+  "action": "design_validation",
+  "created": "2026-10-07T14:16:56+00:00",
+  "change": "add-ui-polish-r8",
+  "status": "ALLOW"
+ },
+ {
+  "corr": "6bf6bdae0d1a4afda941c72d53c8cd67",
+  "role": "dev",
+  "action": "dev_task",
+  "created": "2026-10-05T21:03:43+00:00",
+  "change": "add-gallery-service",
+  "status": "ALLOW"
+ },
+ {
+  "corr": "6ef078ed69c34454a0e790dd827c806e",
+  "role": "dev",
+  "action": "dev_task",
+  "created": "2026-10-05T16:50:51+00:00",
+  "change": "add-netdata-monitoring",
+  "status": "ALLOW"
+ },
+ {
+  "corr": "6fb2c1bdbaf048ed81f170c3eacf68a7",
+  "role": "dev",
+  "action": "dev_task",
+  "created": "2026-10-05T23:00:28+00:00",
+  "change": "add-gallery-service",
+  "status": "ALLOW"
+ },
+ {
+  "corr": "72a634e2d58744e8bdd56a748b719ebc",
+  "role": "devops",
+  "action": "dev_task",
+  "created": "2026-10-04T14:51:32+00:00",
+  "change": "add-microservices-full",
+  "status": "DENY"
+ },
+ {
+  "corr": "72c9647fa7de42f6a4172def100635c8",
+  "role": "code_reviewer",
+  "action": "code_review",
+  "created": "2026-10-05T05:52:03+00:00",
+  "change": "add-microservices-full",
+  "status": "DENY"
+ },
+ {
+  "corr": "7519f2c2776f40d1bc30ac4879cef179",
+  "role": "code_reviewer",
+  "action": "code_review",
+  "created": "2026-10-07T17:43:24+00:00",
+  "change": "add-ui-polish-r8",
+  "status": "DENY"
+ },
+ {
+  "corr": "751bf7418d0d4972b8c3c361bee65e3c",
+  "role": "sa",
+  "action": "create_change",
+  "created": "2026-10-04T11:52:11+00:00",
+  "change": "add-microservices-full",
+  "status": "ALLOW"
+ },
+ {
+  "corr": "755d1f40eebe420bb7cc5bd41566087e",
+  "role": "code_reviewer",
+  "action": "code_review",
+  "created": "2026-10-07T17:35:42+00:00",
+  "change": "add-ui-polish-r8",
+  "status": "ALLOW"
+ },
+ {
+  "corr": "756bade82bf24b56975cbfe3d4e4178b",
+  "role": "dev",
+  "action": "dev_task",
+  "created": "2026-10-04T22:41:56+00:00",
+  "change": "add-microservices-full",
+  "status": "ALLOW"
+ },
+ {
+  "corr": "7649f32288cc400f9662c1b782e6240f",
+  "role": "dev",
+  "action": "dev_task",
+  "created": "2026-10-05T18:57:19+00:00",
+  "change": "add-gallery-service",
+  "status": "ALLOW"
+ },
+ {
+  "corr": "7895fb46b0854140a829207d3991b731",
+  "role": "dev",
+  "action": "dev_task",
+  "created": "2026-10-05T13:45:35+00:00",
+  "change": "add-microservices-full",
+  "status": "ALLOW"
+ },
+ {
+  "corr": "7c07e975b0754ee091ba3dd46cf9bd7c",
+  "role": "sa",
+  "action": "create_change",
+  "created": "2026-10-08T11:08:08+00:00",
+  "change": "add-responsive-mobile",
+  "status": "ALLOW"
+ },
+ {
+  "corr": "801f06cdeabf45278ae70a639c3f3fde",
+  "role": "sa",
+  "action": "create_change",
+  "created": "2026-10-05T14:38:34+00:00",
+  "change": "add-netdata-monitoring",
+  "status": "DENY"
+ },
+ {
+  "corr": "80c4be4693be440ca48e6483bba94782",
+  "role": "code_reviewer",
+  "action": "accept_review",
+  "created": "2026-10-07T17:43:50+00:00",
+  "change": "BUG-010",
+  "status": "DENY"
+ },
+ {
+  "corr": "819fc1aa5c5c40c18c52f612c51e17d4",
+  "role": "dev",
+  "action": "dev_task",
+  "created": "2026-10-08T16:14:04+00:00",
+  "change": "add-responsive-mobile",
+  "status": "ALLOW"
+ },
+ {
+  "corr": "81ac46babbee4e88b491a3ef8918049b",
+  "role": "dev",
+  "action": "bug_fix",
+  "created": "2026-10-08T07:36:39+00:00",
+  "change": "BUG-014",
+  "status": "ALLOW"
+ },
+ {
+  "corr": "8216bcb4532a415e8bd3920296a05bde",
+  "role": "design_validator",
+  "action": "design_validation",
+  "created": "2026-10-07T13:33:53+00:00",
+  "change": "add-ui-polish-r8",
+  "status": "ALLOW"
+ },
+ {
+  "corr": "86aae105cee545b3846acb6c62c2d4ce",
+  "role": "dev",
+  "action": "dev_task",
+  "created": "2026-10-04T13:13:35+00:00",
+  "change": "add-microservices-full",
+  "status": "ALLOW"
+ },
+ {
+  "corr": "8edacf085a1549728deaf14d274b1223",
+  "role": "sa",
+  "action": "create_change",
+  "created": "2026-10-08T10:57:56+00:00",
+  "change": "add-responsive-mobile",
+  "status": "DENY"
+ },
+ {
+  "corr": "91e55add4073489ea01f553b9e2b6089",
+  "role": "dev",
+  "action": "dev_task",
+  "created": "2026-10-06T09:53:06+00:00",
+  "change": "add-gallery-service",
+  "status": "ALLOW"
+ },
+ {
+  "corr": "95138022bebd4e2d955837048efa48f2",
+  "role": "sa",
+  "action": "create_change",
+  "created": "2026-10-04T11:50:23+00:00",
+  "change": "add-microservices-full",
+  "status": "DENY"
+ },
+ {
+  "corr": "95a2a3a8835d4e45b06fb0741682c311",
+  "role": "code_reviewer",
+  "action": "code_review",
+  "created": "2026-10-04T20:58:33+00:00",
+  "change": "add-microservices-full",
+  "status": "ALLOW"
+ },
+ {
+  "corr": "9744b98f3bbd47939d21b49a1ad3be61",
+  "role": "qa_case_reviewer",
+  "action": "qa_review",
+  "created": "2026-10-07T13:03:01+00:00",
+  "change": "add-ui-polish-r8",
+  "status": "DENY"
+ },
+ {
+  "corr": "97a81b928f744dd6a76cdce801802699",
+  "role": "dev",
+  "action": "dev_task",
+  "created": "2026-10-05T18:54:43+00:00",
+  "change": "add-netdata-monitoring",
+  "status": "ALLOW"
+ },
+ {
+  "corr": "993e713de937413b9f3ab98a0804e0e1",
+  "role": "code_reviewer",
+  "action": "code_review",
+  "created": "2026-10-07T21:47:44+00:00",
+  "change": "BUG-011",
+  "status": "ALLOW"
+ },
+ {
+  "corr": "9a4ac86aa8f744e29581224fefb58c62",
+  "role": "pm",
+  "action": "chore_task",
+  "created": "2026-10-03T07:01:12+00:00",
+  "change": "chore-walkthrough",
+  "status": "DENY"
+ },
+ {
+  "corr": "9a7836cfbf9e42e09ad1600603301235",
+  "role": "dev",
+  "action": "dev_task",
+  "created": "2026-10-05T11:14:40+00:00",
+  "change": "add-microservices-full",
+  "status": "ALLOW"
+ },
+ {
+  "corr": "9b4a481f10b346068151ce3a19f068c7",
+  "role": "code_reviewer",
+  "action": "code_review",
+  "created": "2026-10-06T11:29:50+00:00",
+  "change": "add-gallery-service",
+  "status": "ALLOW"
+ },
+ {
+  "corr": "9b4ce10fb57348978869c599286a64c5",
+  "role": "pm",
+  "action": "approve_requirements",
+  "created": "2026-10-08T12:06:57+00:00",
+  "change": "add-responsive-mobile",
+  "status": "ALLOW"
+ },
+ {
+  "corr": "9ba2c5ec1030458f81c906b9150fa425",
+  "role": "dev",
+  "action": "dev_task",
+  "created": "2026-10-05T06:11:09+00:00",
+  "change": "add-microservices-full",
+  "status": "ALLOW"
+ },
+ {
+  "corr": "9df1326622dc4bfdb14111dc01cac30e",
+  "role": "code_reviewer",
+  "action": "code_review",
+  "created": "2026-10-07T11:30:41+00:00",
+  "change": "add-ui-polish-r8",
+  "status": "ALLOW"
+ },
+ {
+  "corr": "a0a6048826724042a75f5a04f31ec7d3",
+  "role": "sa",
+  "action": "create_change",
+  "created": "2026-10-05T14:39:10+00:00",
+  "change": "add-netdata-monitoring",
+  "status": "DENY"
+ },
+ {
+  "corr": "a103a6c8bd5149d1ba8a154d85d2b86e",
+  "role": "dev",
+  "action": "chore_task",
+  "created": "2026-10-04T07:17:27+00:00",
+  "change": "chore",
+  "status": "ALLOW"
+ },
+ {
+  "corr": "a4d1b09b8d2e42d6968acaead9cdf7c2",
+  "role": "dev",
+  "action": "dev_task",
+  "created": "2026-10-04T22:32:57+00:00",
+  "change": "add-microservices-full",
+  "status": "ALLOW"
+ },
+ {
+  "corr": "a8290b71f49945b8b90d91a883c7577a",
+  "role": "sa",
+  "action": "create_change",
+  "created": "2026-10-05T14:40:12+00:00",
+  "change": "add-netdata-monitoring",
+  "status": "ALLOW"
+ },
+ {
+  "corr": "aa0f34e32ec34d77a231dc676696624d",
+  "role": "dev",
+  "action": "chore_task",
+  "created": "2026-10-03T07:02:28+00:00",
+  "change": "chore",
+  "status": "ALLOW"
+ },
+ {
+  "corr": "ab97ad54f135435abae2a07c3437eef8",
+  "role": "sa",
+  "action": "create_change",
+  "created": "2026-10-05T16:18:10+00:00",
+  "change": "add-gallery-service",
+  "status": "ALLOW"
+ },
+ {
+  "corr": "acf889746b0f4f54a584f8dfcaeb836a",
+  "role": "dev",
+  "action": "dev_task",
+  "created": "2026-10-05T17:15:19+00:00",
+  "change": "add-netdata-monitoring",
+  "status": "ALLOW"
+ },
+ {
+  "corr": "adf86dfccd3048cb8372b32dd89414be",
+  "role": "dev",
+  "action": "bug_fix",
+  "created": "2026-10-07T21:10:45+00:00",
+  "change": "BUG-011",
+  "status": "ALLOW"
+ },
+ {
+  "corr": "ae033b0bae0e4aacbb1035193dbed006",
+  "role": "dev",
+  "action": "bug_fix",
+  "created": "2026-10-08T06:17:45+00:00",
+  "change": "BUG-013",
+  "status": "ALLOW"
+ },
+ {
+  "corr": "ae398a8c5258483da512c3f57a0a6276",
+  "role": "code_reviewer",
+  "action": "code_review",
+  "created": "2026-10-07T17:29:24+00:00",
+  "change": "add-ui-polish-r8",
+  "status": "DENY"
+ },
+ {
+  "corr": "b48173d615d043f688b08ea7da82a993",
+  "role": "sa",
+  "action": "implement",
+  "created": "2026-10-04T11:49:12+00:00",
+  "change": "add-microservices-full",
+  "status": "UNKNOWN"
+ },
+ {
+  "corr": "b728d001d32942d8b1a64f3eea1d14fa",
+  "role": "code_reviewer",
+  "action": "code_review",
+  "created": "2026-10-05T05:52:07+00:00",
+  "change": "add-microservices-full",
+  "status": "DENY"
+ },
+ {
+  "corr": "bae509f6e524419682fd29fe5f533bb5",
+  "role": "sa",
+  "action": "create_change",
+  "created": "2026-10-03T08:24:46+00:00",
+  "change": "add-containerization",
+  "status": "DENY"
+ },
+ {
+  "corr": "bce54776addf43cab980c7159622de55",
+  "role": "design_validator",
+  "action": "code_review",
+  "created": "2026-10-07T13:01:54+00:00",
+  "change": "add-ui-polish-r8",
+  "status": "DENY"
+ },
+ {
+  "corr": "bd0f43c1486f4b8bba299664f2e30e43",
+  "role": "code_reviewer",
+  "action": "code_review",
+  "created": "2026-10-05T21:10:43+00:00",
+  "change": "add-gallery-service",
+  "status": "DENY"
+ },
+ {
+  "corr": "bff7f0731b7941d7b91ddd9ea3b18c59",
+  "role": "dev",
+  "action": "dev_task",
+  "created": "2026-10-08T13:37:27+00:00",
+  "change": "add-responsive-mobile",
+  "status": "ALLOW"
+ },
+ {
+  "corr": "c3ee8d08917041fb88ed7e58d682673d",
+  "role": "dev",
+  "action": "qa_review",
+  "created": "2026-10-06T06:08:28+00:00",
+  "change": "add-gallery-service",
+  "status": "DENY"
+ },
+ {
+  "corr": "c40c585bdead403587ec019a6174b2b6",
+  "role": "code_reviewer",
+  "action": "code_review",
+  "created": "2026-10-08T15:43:19+00:00",
+  "change": "add-responsive-mobile",
+  "status": "ALLOW"
+ },
+ {
+  "corr": "c49f8f1b7c5e4380b431136f95c375f9",
+  "role": "dev",
+  "action": "dev_task",
+  "created": "2026-10-06T07:47:15+00:00",
+  "change": "add-gallery-service",
+  "status": "ALLOW"
+ },
+ {
+  "corr": "c8aca52a89c645ec9911262d8eb9d72f",
+  "role": "qa_case_reviewer",
+  "action": "qa_review",
+  "created": "2026-10-05T21:58:11+00:00",
+  "change": "add-netdata-monitoring",
+  "status": "DENY"
+ },
+ {
+  "corr": "caa5e94062b3479c8d43dbbbc92b3208",
+  "role": "sa",
+  "action": "create_change",
+  "created": "2026-10-03T08:28:01+00:00",
+  "change": "add-containerization",
+  "status": "DENY"
+ },
+ {
+  "corr": "cdcb803408bf4623ba5d4cf8bc9c3e4b",
+  "role": "qa_automation",
+  "action": "qa_automation",
+  "created": "2026-10-07T17:42:28+00:00",
+  "change": "add-ui-polish-r8",
+  "status": "ALLOW"
+ },
+ {
+  "corr": "cdea5a2a0f92435cb3cce6be9737ce98",
+  "role": "qa_case_reviewer",
+  "action": "qa_review",
+  "created": "2026-10-07T13:03:07+00:00",
+  "change": "add-ui-polish-r8",
+  "status": "DENY"
+ },
+ {
+  "corr": "cdefc070bcd947b6953a0cbc60d270b3",
+  "role": "devops",
+  "action": "dev_task",
+  "created": "2026-10-04T15:38:54+00:00",
+  "change": "add-microservices-full",
+  "status": "DENY"
+ },
+ {
+  "corr": "d222e82594f2448bb77822ecd34499d9",
+  "role": "dev",
+  "action": "chore_task",
+  "created": "2026-10-04T07:17:00+00:00",
+  "change": "chore",
+  "status": "ALLOW"
+ },
+ {
+  "corr": "d2592d5fffe944299c510b1955a14e8c",
+  "role": "sa",
+  "action": "create_change",
+  "created": "2026-10-04T11:49:46+00:00",
+  "change": "add-microservices-full",
+  "status": "DENY"
+ },
+ {
+  "corr": "d3aeb20c85d14b11a791210be27a2a71",
+  "role": "sa",
+  "action": "create_change",
+  "created": "2026-10-05T14:39:05+00:00",
+  "change": "add-netdata-monitoring",
+  "status": "DENY"
+ },
+ {
+  "corr": "d46873562b754c1f910657e1ed6ad2c6",
+  "role": "qa_case_reviewer",
+  "action": "qa_review",
+  "created": "2026-10-06T07:44:03+00:00",
+  "change": "add-gallery-service",
+  "status": "ALLOW"
+ },
+ {
+  "corr": "d6364e0360184f23a149c909a5bfc639",
+  "role": "code_reviewer",
+  "action": "code_review",
+  "created": "2026-10-05T17:05:55+00:00",
+  "change": "add-netdata-monitoring",
+  "status": "ALLOW"
+ },
+ {
+  "corr": "d647709e994745b482313eaf32c71469",
+  "role": "code_reviewer",
+  "action": "code_review",
+  "created": "2026-10-05T07:04:23+00:00",
+  "change": "add-microservices-full",
+  "status": "ALLOW"
+ },
+ {
+  "corr": "d78dce415b6944b2bd164f76817a5585",
+  "role": "sa",
+  "action": "create_change",
+  "created": "2026-10-04T11:50:27+00:00",
+  "change": "add-microservices-full",
+  "status": "DENY"
+ },
+ {
+  "corr": "d9469d9fdd7943cf985bbe8621c66076",
+  "role": "dev",
+  "action": "dev_task",
+  "created": "2026-10-04T16:21:28+00:00",
+  "change": "add-microservices-full",
+  "status": "ALLOW"
+ },
+ {
+  "corr": "d9fbb05459f5429a86953719c01edeca",
+  "role": "qa_automation",
+  "action": "qa_automation",
+  "created": "2026-10-07T16:42:42+00:00",
+  "change": "add-ui-polish-r8",
+  "status": "ALLOW"
+ },
+ {
+  "corr": "da3f5151e0b14f68902ae1bd146dc677",
+  "role": "dev",
+  "action": "bug_fix",
+  "created": "2026-10-07T21:48:18+00:00",
+  "change": "BUG-012",
+  "status": "ALLOW"
+ },
+ {
+  "corr": "da8a9db4cb494e1e99ed6f2256af4f78",
+  "role": "dev",
+  "action": "dev_task",
+  "created": "2026-10-04T22:33:17+00:00",
+  "change": "add-microservices-full",
+  "status": "ALLOW"
+ },
+ {
+  "corr": "db70926e50c04e74a97e49e92f1e9f09",
+  "role": "code_reviewer",
+  "action": "code_review",
+  "created": "2026-10-05T11:25:56+00:00",
+  "change": "add-microservices-full",
+  "status": "ALLOW"
+ },
+ {
+  "corr": "dcbd9cf8cdd54c95b283dec6679d035c",
+  "role": "ui_designer",
+  "action": "design_task",
+  "created": "2026-10-05T16:50:43+00:00",
+  "change": "add-gallery-service",
+  "status": "ALLOW"
+ },
+ {
+  "corr": "dd0722831e4748c4b50aec107147a06e",
+  "role": "code_reviewer",
+  "action": "code_review",
+  "created": "2026-10-07T11:42:59+00:00",
+  "change": "add-ui-polish-r8",
+  "status": "ALLOW"
+ },
+ {
+  "corr": "de136393f6134edea37ef7168ff2ec1a",
+  "role": "dev",
+  "action": "dev_task",
+  "created": "2026-10-05T19:18:59+00:00",
+  "change": "add-gallery-service",
+  "status": "ALLOW"
+ },
+ {
+  "corr": "dee1b3de2124463d81948e2be4ebc4a5",
+  "role": "code_reviewer",
+  "action": "code_review",
+  "created": "2026-10-06T11:08:57+00:00",
+  "change": "add-gallery-service",
+  "status": "ALLOW"
+ },
+ {
+  "corr": "df71017fd129476b8da2d397cc698f0f",
+  "role": "sa",
+  "action": "create_change",
+  "created": "2026-10-04T11:50:40+00:00",
+  "change": "add-microservices-full",
+  "status": "DENY"
+ },
+ {
+  "corr": "e00ecc0eff9444a9af6705e0a7c41cbf",
+  "role": "sa",
+  "action": "create_change",
+  "created": "2026-10-04T21:12:01+00:00",
+  "change": "add-microservices-full",
+  "status": "ALLOW"
+ },
+ {
+  "corr": "e037810cac394574bf589035b0b7ccb8",
+  "role": "qa_automation",
+  "action": "qa_automation",
+  "created": "2026-10-07T11:50:16+00:00",
+  "change": "add-ui-polish-r8",
+  "status": "ALLOW"
+ },
+ {
+  "corr": "e4ee869231f44586a5cb631421c70bd8",
+  "role": "sa",
+  "action": "spec_author",
+  "created": "2026-10-08T10:57:51+00:00",
+  "change": "add-responsive-mobile",
+  "status": "UNKNOWN"
+ },
+ {
+  "corr": "e742d5a5fd5b4a56a4bbf71b95f9a9b1",
+  "role": "dev",
+  "action": "dev_task",
+  "created": "2026-10-06T09:44:24+00:00",
+  "change": "add-gallery-service",
+  "status": "ALLOW"
+ },
+ {
+  "corr": "e7dd5bc95f9043d1a02b0c8f3f59d352",
+  "role": "sa",
+  "action": "create_change",
+  "created": "2026-10-08T10:59:55+00:00",
+  "change": "add-responsive-mobile",
+  "status": "DENY"
+ },
+ {
+  "corr": "e7fdc320c4b04d87a24579b0d1544486",
+  "role": "code_reviewer",
+  "action": "code_review",
+  "created": "2026-10-04T23:01:07+00:00",
+  "change": "add-microservices-full",
+  "status": "ALLOW"
+ },
+ {
+  "corr": "e8b1cd66bd2f49eea84663f4e8a75cab",
+  "role": "code_reviewer",
+  "action": "code_review",
+  "created": "2026-10-07T17:11:17+00:00",
+  "change": "add-ui-polish-r8",
+  "status": "ALLOW"
+ },
+ {
+  "corr": "e8cef8834ae84d36b64cdff838b0fd4d",
+  "role": "code_reviewer",
+  "action": "code_review",
+  "created": "2026-10-05T21:10:47+00:00",
+  "change": "add-gallery-service",
+  "status": "DENY"
+ },
+ {
+  "corr": "eb30c3170f794af4bc8ebe35177e7f3a",
+  "role": "qa_automation",
+  "action": "dev_task",
+  "created": "2026-10-05T18:54:07+00:00",
+  "change": "add-netdata-monitoring",
+  "status": "DENY"
+ },
+ {
+  "corr": "ebf8d027ac81420597e599fc2afdd2ac",
+  "role": "qa_author",
+  "action": "qa_cases",
+  "created": "2026-10-06T07:18:45+00:00",
+  "change": "add-gallery-service",
+  "status": "ALLOW"
+ },
+ {
+  "corr": "ef770c3086d0420db5ff9cc477150d2b",
+  "role": "code_reviewer",
+  "action": "code_review",
+  "created": "2026-10-05T21:46:13+00:00",
+  "change": "add-netdata-monitoring",
+  "status": "DENY"
+ },
+ {
+  "corr": "f2d0a220ae6c4995b6dcfce6e6b8d06f",
+  "role": "dev",
+  "action": "dev_task",
+  "created": "2026-10-04T17:41:08+00:00",
+  "change": "add-microservices-full",
+  "status": "ALLOW"
+ },
+ {
+  "corr": "f336b038dc30422684c48cd916c75bc7",
+  "role": "sa",
+  "action": "create_change",
+  "created": "2026-10-03T08:22:41+00:00",
+  "change": "add-containerization",
+  "status": "DENY"
+ },
+ {
+  "corr": "f34f6dbf468f48819103c5de30812167",
+  "role": "code_reviewer",
+  "action": "accept_review",
+  "created": "2026-10-07T17:44:02+00:00",
+  "change": "BUG-010",
+  "status": "DENY"
+ },
+ {
+  "corr": "f3b432f697594b228b568e1b6959d57a",
+  "role": "sa",
+  "action": "create_change",
+  "created": "2026-10-05T14:39:32+00:00",
+  "change": "add-netdata-monitoring",
+  "status": "ALLOW"
+ },
+ {
+  "corr": "f546b8c152ab4ea0b9ab53c340eb7a91",
+  "role": "code_reviewer",
+  "action": "code_review",
+  "created": "2026-10-04T23:01:08+00:00",
+  "change": "add-microservices-full",
+  "status": "ALLOW"
+ },
+ {
+  "corr": "f694efca7b0d4a8c8decade29f6d68d9",
+  "role": "dev",
+  "action": "bug_fix",
+  "created": "2026-10-08T09:00:26+00:00",
+  "change": "BUG-015",
+  "status": "ALLOW"
+ },
+ {
+  "corr": "f6f286acfdff4081a3dd3e58634bd64e",
+  "role": "qa_case_reviewer",
+  "action": "qa_review",
+  "created": "2026-10-06T07:22:37+00:00",
+  "change": "add-gallery-service",
+  "status": "ALLOW"
+ },
+ {
+  "corr": "f77562526f3c4375bc51d549b5db1e86",
+  "role": "sa",
+  "action": "create_change",
+  "created": "2026-10-08T11:07:32+00:00",
+  "change": "add-responsive-mobile",
+  "status": "DENY"
+ },
+ {
+  "corr": "f89a1bf8c6bd4d0ab265c8022be6771b",
+  "role": "dev",
+  "action": "bug_fix",
+  "created": "2026-10-07T20:44:20+00:00",
+  "change": "BUG-011",
+  "status": "ALLOW"
+ },
+ {
+  "corr": "fb1e747c903f4d2fa6e5ce4053bcb9d7",
+  "role": "sa",
+  "action": "create_change",
+  "created": "2026-10-04T11:49:58+00:00",
+  "change": "add-microservices-full",
+  "status": "DENY"
+ },
+ {
+  "corr": "netdata13-review-tail",
+  "role": "code_reviewer",
+  "action": "code_review",
+  "created": "2026-10-06T17:15:30+00:00",
+  "change": "add-netdata-monitoring",
+  "status": "UNKNOWN"
+ },
+ {
+  "corr": "netdata13-review-tail-p13",
+  "role": "code_reviewer",
+  "action": "accept_review",
+  "created": "2026-10-06T17:16:45+00:00",
+  "change": "add-netdata-monitoring",
+  "status": "DENY"
+ },
+ {
+  "corr": "p12-design-11",
+  "role": "ui_designer",
+  "action": "design_task",
+  "created": "2026-10-06T18:31:49+00:00",
+  "change": "add-ui-polish-r8",
+  "status": "UNKNOWN"
+ },
+ {
+  "corr": "p12-design-11-final",
+  "role": "ui_designer",
+  "action": "design_task",
+  "created": "2026-10-06T18:46:02+00:00",
+  "change": "add-ui-polish-r8",
+  "status": "ALLOW"
+ },
+ {
+  "corr": "p12-design-11b",
+  "role": "ui_designer",
+  "action": "dev_task",
+  "created": "2026-10-06T18:32:06+00:00",
+  "change": "add-ui-polish-r8",
+  "status": "DENY"
+ },
+ {
+  "corr": "p12-dev-21",
+  "role": "dev",
+  "action": "dev_task",
+  "created": "2026-10-06T19:22:52+00:00",
+  "change": "add-ui-polish-r8",
+  "status": "UNKNOWN"
+ },
+ {
+  "corr": "p12-dev-21-retry",
+  "role": "dev",
+  "action": "dev_task",
+  "created": "2026-10-06T19:26:51+00:00",
+  "change": "add-ui-polish-r8",
+  "status": "ALLOW"
+ },
+ {
+  "corr": "p12-dev-22c",
+  "role": "dev",
+  "action": "dev_task",
+  "created": "2026-10-06T21:32:42+00:00",
+  "change": "add-ui-polish-r8",
+  "status": "ALLOW"
+ },
+ {
+  "corr": "p12-dev-23d",
+  "role": "dev",
+  "action": "dev_task",
+  "created": "2026-10-06T19:30:04+00:00",
+  "change": "add-ui-polish-r8",
+  "status": "ALLOW"
+ },
+ {
+  "corr": "p12-dev-24",
+  "role": "dev",
+  "action": "dev_task",
+  "created": "2026-10-06T21:15:05+00:00",
+  "change": "add-ui-polish-r8",
+  "status": "ALLOW"
+ },
+ {
+  "corr": "p12-dev-25c",
+  "role": "dev",
+  "action": "dev_task",
+  "created": "2026-10-06T21:15:28+00:00",
+  "change": "add-ui-polish-r8",
+  "status": "ALLOW"
+ },
+ {
+  "corr": "p12-dev-26c",
+  "role": "dev",
+  "action": "dev_task",
+  "created": "2026-10-06T23:02:45+00:00",
+  "change": "add-ui-polish-r8",
+  "status": "ALLOW"
+ },
+ {
+  "corr": "p12-dev-27",
+  "role": "dev",
+  "action": "dev_task",
+  "created": "2026-10-06T23:02:52+00:00",
+  "change": "add-ui-polish-r8",
+  "status": "ALLOW"
+ },
+ {
+  "corr": "p12-qa-31-cases-rev",
+  "role": "qa_case_reviewer",
+  "action": "qa_review",
+  "created": "2026-10-07T06:49:27+00:00",
+  "change": "add-ui-polish-r8",
+  "status": "ALLOW"
+ },
+ {
+  "corr": "p12-qa-31-cases1",
+  "role": "qa_author",
+  "action": "qa_cases",
+  "created": "2026-10-07T06:42:06+00:00",
+  "change": "add-ui-polish-r8",
+  "status": "ALLOW"
+ },
+ {
+  "corr": "p12-qa-31-checklist",
+  "role": "qa_checklist",
+  "action": "qa_checklist",
+  "created": "2026-10-07T06:37:33+00:00",
+  "change": "add-ui-polish-r8",
+  "status": "ALLOW"
+ },
+ {
+  "corr": "p12-qa-31-fixcycle5",
+  "role": "qa_author",
+  "action": "qa_cases",
+  "created": "2026-10-07T07:22:06+00:00",
+  "change": "add-ui-polish-r8",
+  "status": "ALLOW"
+ },
+ {
+  "corr": "p12-qa-31-impact",
+  "role": "qa_impact_analyst",
+  "action": "qa_impact_analysis",
+  "created": "2026-10-07T06:24:35+00:00",
+  "change": "add-ui-polish-r8",
+  "status": "ALLOW"
+ },
+ {
+  "corr": "p12-qa-31-rev2final",
+  "role": "qa_case_reviewer",
+  "action": "qa_review",
+  "created": "2026-10-07T07:23:17+00:00",
+  "change": "add-ui-polish-r8",
+  "status": "ALLOW"
+ },
+ {
+  "corr": "p12-sa-create14",
+  "role": "sa",
+  "action": "create_change",
+  "created": "2026-10-06T17:54:53+00:00",
+  "change": "add-ui-polish-r8",
+  "status": "ALLOW"
+ },
+ {
+  "corr": "p12-sa-start",
+  "role": "sa",
+  "action": "sa_start",
+  "created": "2026-10-06T17:38:21+00:00",
+  "change": "add-ui-polish-r8",
+  "status": "UNKNOWN"
+ },
+ {
+  "corr": "p12-sa-start2",
+  "role": "sa",
+  "action": "create_package",
+  "created": "2026-10-06T17:38:51+00:00",
+  "change": "add-ui-polish-r8",
+  "status": "UNKNOWN"
+ },
+ {
+  "corr": "p12-sa-start3",
+  "role": "sa",
+  "action": "create_change",
+  "created": "2026-10-06T17:39:14+00:00",
+  "change": "add-ui-polish-r8",
+  "status": "DENY"
+ },
+ {
+  "corr": "p12-sa-start4",
+  "role": "sa",
+  "action": "create_change",
+  "created": "2026-10-06T17:41:23+00:00",
+  "change": "add-ui-polish-r8",
+  "status": "DENY"
+ },
+ {
+  "corr": "p12-sa-start5",
+  "role": "sa",
+  "action": "create_change",
+  "created": "2026-10-06T17:43:37+00:00",
+  "change": "add-ui-polish-r8",
+  "status": "DENY"
+ }
+]
