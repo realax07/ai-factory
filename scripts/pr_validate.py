@@ -215,7 +215,22 @@ def check_ops(repo: Path, marker: str) -> list[str]:
         errs.append(
             "PR помечен [ops], но содержит изменения openspec/ — изменение as is "
             "только через change-пакет (контракт 7)")
+    # J26: deploy-дифф допустим ТОЛЬКО в [ops]-PR (CI-ворота, детерминированно).
     return errs
+
+
+def check_deploy_gate(marker: str) -> list[str]:
+    """J26 CI-ворота: PR трогает deploy/** или RUNBOOK.md, но не помечен [ops].
+
+    Деплой-инфраструктура — зона devops-роли: ПМ/dev-PR с deploy-файлами
+    обязан идти как [ops] (девопс-делегация + протокол приемки Заказчика).
+    Вызывается из main() для НЕ-ops типов flow."""
+    if os.environ.get("PR_CHANGED_DEPLOY", "").strip() in ("1", "true"):
+        return [
+            "J26: PR содержит изменения deploy/**/RUNBOOK.md, но не помечен [ops] — "
+            "деплой-инфраструктура меняется только через [ops]-PR (devops-делегация, "
+            "приемка Заказчика)"]
+    return []
 
 
 FLOWS = {
@@ -324,6 +339,14 @@ def main() -> int:
     flow_type, ident = parsed
     if args.type:
         flow_type = args.type
+
+    # J26 CI-ворота: deploy-дифф только в [ops]-PR
+    if flow_type != "ops":
+        gate_errs = check_deploy_gate(marker_text)
+        if gate_errs:
+            for e in gate_errs:
+                print(f"pr_validate: {e}")
+            return 1
 
     repo = Path(args.repo).resolve()
     if flow_type == "change":
