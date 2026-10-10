@@ -92,7 +92,7 @@ AI Factory отвечает на каждую: **каждая роль — из�
 
 ## Роли (кто что делает)
 
-Все роли выполняются выделенными сабагентами. Оркестратор — роль ПМ. **Сейчас (2026-10-04) ПМ-сабагент не запущен: роль ПМ выполняет main-сессия** (решение Заказчика 2026-09-26 — relay не внедряется автоматически; запуск ПМ-сабагента только явной командой; промпт готов: [agents/pm_agent.md](agents/pm_agent.md), дизайн J1–J3, `templates/pm_launch.md`). ПМ — единственный контакт с Заказчиком и владелец общей картины. Реестр и зоны записи: [agents/README.md](agents/README.md).
+Все роли выполняются выделенными сабагентами. Оркестратор — роль ПМ. **ПМ — main-сессия; ПМ-сабагент НЕ внедряется** (решение Заказчика 2026-10-10, J1–J4 закрыты: сабагент ПМ порождал бы сабсабагентов — лишний уровень оркестрации; параллельные проекты решаются отдельным инстансом Hermes на другой VPS; контекст проекта — во внешней памяти, новый проект = новая директория + сброс сессии. Дизайн сохранен как артефакт: [agents/pm_agent.md](agents/pm_agent.md), `templates/pm_launch.md`, `scripts/pm_bounds_check.py` — bounds-проверки живы). ПМ — единственный контакт с Заказчиком и владелец общей картины. Реестр и зоны записи: [agents/README.md](agents/README.md).
 
 | # | Роль | Промпт | Что делает | Вход → Выход |
 ||---|---|---|---|---|
@@ -111,7 +111,7 @@ AI Factory отвечает на каждую: **каждая роль — из�
 | 12 | **devops** | [devops_agent.md](agents/devops_agent.md) | Факты инфры командами ДО скрипта → RUNBOOK → deploy.sh | среда → RUNBOOK + deploy |
 | 13 | **design_validator** | [design_validator_agent.md](agents/design_validator_agent.md) | Реализованный UI vs дизайн-артефакты (ловит «браузерные дефолты») | UI → вердикты соответствия |
 | 13a | **ui_designer** | [ui_designer_agent.md](agents/ui_designer_agent.md) | Мокапы и дизайн-токены (HTML, зона `design/`), до dev-внедрения; Заказчик выбирает вариант | спека → мокапы + токены |
-| — | **ПМ** | main-сессия (промпт [pm_agent.md](agents/pm_agent.md) готов, не запущен — см. выше) | Диалог с Заказчиком, сборка задач, приемка фактами, push, PLAN/BACKLOG, диспатч сабагентов (через [delegate_gate](scripts/delegate_gate.py)) | — |
+| — | **ПМ** | main-сессия (ПМ-сабагент не внедряется, решение 2026-10-10 — см. выше) | Диалог с Заказчиком, сборка задач, приемка фактами, push, PLAN/BACKLOG, диспатч сабагентов (через [delegate_gate](scripts/delegate_gate.py)) | — |
 | 14 | **debug** (эскалационный, 2026-10-03) | [debug_agent.md](agents/debug_agent.md) | Изолированная диагностика по эскалации `needs-debug:` от любого сабагента (через ПМ): воспроизведение, среда/код/тест вердикт, база граблей проекта. **Запись в продукт запрещена** — фиксы текстом в отчете, код меняет исходный dev | эскалация → вердикт + база граблей |
 
 **Самоулучшение (E16):** агент, поймав 2 одинаковые ошибки подряд, пишет «проблема → решение → предложение» в `agents/<роль>_improvements.md` и меняет подход — работа доделывается, урок накапливается. Транскрипты всех сессий архивируются (`session_archive.py`) с детерминированным разбором паттернов неуспеха (ретроспектива 48 сессий: топ-причина — среда исполнения; профилактика вшита в [AGENTS.md](AGENTS.md)).
@@ -177,7 +177,7 @@ AI Factory отвечает на каждую: **каждая роль — из�
 |---|---|
 | [scripts/flow_check.py](scripts/flow_check.py) | Порядок артефактов: чеклист без спеки, кейсы без чеклиста, approved без ревью, автотесты без TC-трассировки, archive без слияния дельт; **I3**: API-эндпоинт вне спек; качество ТЗ (7 разделов, уникальность FR/NFR, запрет TBD, оценочные формулировки); **H1** «1 кейс = 1 файл». Exit 0/1/2. |
 | **Детерминированный Flow Control** ([docs/README-flow-control.md](docs/README-flow-control.md)) | Исполняемая state-машина: `flow_state` (снимок фактов) → `flow_transition` (ALLOW/DENY/UNKNOWN по графам Флоу 1–5, этапные ворота Заказчика) → `session_check` (атомарная резервация зон, границы записи: renames/symlink) → `gate_runner` (ворота с digest/STALE, provenance review, audit JSONL) → `flowctl` (оркестратор). Режимы shadow/enforcing (`flow_mode.py`); **enforcing включен 2026-10-02** — DENY/UNKNOWN блокируют действие. 348 тестов, 7 ревью-циклов. |
-| [scripts/pr_validate.py](scripts/pr_validate.py) | PR без маркера (BUG-NNN / change-id / [chore]) и без обязательных файлов; распознает пост-релизные работы по заархивированным пакетам. |
+| [scripts/pr_validate.py](scripts/pr_validate.py) | PR без маркера (BUG-NNN / change-id / [chore]/[docs]/[ops]) и без обязательных файлов; **J11**: Reviewer-Delegation сверяется с реестром — делегация обязана существовать, быть completed и иметь роль `code_reviewer` (self-review/чужая роль = ревью не засчитано); **J26**: PR с диффом `deploy/**`/`RUNBOOK.md` без маркера `[ops]` = FAIL (CI-ворота, `PR_CHANGED_DEPLOY`). |
 | [scripts/check_auth_timing.py](scripts/check_auth_timing.py) | AST-контроль auth: bcrypt, dummy-логины, secrets вместо `==`. |
 | [scripts/smoke_static.py](scripts/smoke_static.py) | Класс DEF-002: статик-ресурс, на который ссылается UI, но который не отдается (сверка ссылок с диском + прод-URL требует 200). |
 | `.github/workflows/flow.yml` | Оба валидатора на каждый push/PR — нарушение нельзя смержить. |
@@ -241,7 +241,7 @@ AI Factory отвечает на каждую: **каждая роль — из�
 | `scripts/flowctl.py` | Оркестратор: prepare/run/finish/status/reconcile |
 | `scripts/flow_mode.py` | Переключатель shadow/enforcing |
 | `scripts/pr_validate.py` | PR-ворота |
-| `scripts/pm_bounds_check.py` | Границы записи ПМ (защищенные пути, env `PM_PROTECTED_EXCLUDE`) |
+| `scripts/pm_bounds_check.py` | Границы записи ПМ: защищенные пути конвейера, role-промпты, `code-reviews/**` (J11), deploy-дерево — только `[ops]` (J26), env `PM_PROTECTED_EXCLUDE` |
 | `scripts/session_watchdog.py` | Вотчдог DM-роутинга: залипшие ключи, тайтл `main`, dropped-делегации, субагент-контаминация (§2.8). Крон */2 |
 | `scripts/delegate_watchdog.py` | Детектор обхода делегаций. Крон */5 |
 | `scripts/pm_instruction_monitor.py` | Change-detector канала ПМ-0 (для крона pm-instruction-relay) |
@@ -250,6 +250,7 @@ AI Factory отвечает на каждую: **каждая роль — из�
 | `scripts/session_archive.py` | Архив транскриптов + разбор неуспеха |
 | `scripts/session_worktree.sh` | Worktree-изоляция параллельных сессий |
 | `templates/` | Constitution, task_delegation |
+| `archive/` | Промежуточные артефакты завершенных спайков/аудитов (выжимки J20/J8, e12-спайк, shadow-r6) — живые документы в `docs/` |
 | `docs/e12-speckit-spike.md` | Спайк GitHub Spec Kit (вердикт: гибрид) |
 | `openspec/specs/` | Спеки конвейера (источник правды правил) |
 
