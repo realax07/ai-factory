@@ -155,7 +155,7 @@ PLAN_HEADER = (
 
 class TestCreateChangeRequiresPlan:
     def test_create_change_without_plan_missing(self, tmp_path):
-        """J41(а): create_change без PLAN-файла → DENY/PLAN_RELEASE_MISSING."""
+        """TC-J41-001: J41(а): create_change без PLAN-файла → DENY/PLAN_RELEASE_MISSING."""
         repo = make_repo(tmp_path)
         reg = make_registry(tmp_path)
         s = snapshot_for(repo, reg)
@@ -179,7 +179,7 @@ class TestCreateChangeRequiresPlan:
 
 class TestPlanFlowUndeclared:
     def test_plan_without_flow_declaration(self, tmp_path):
-        """J41(б): PLAN есть, строки «Флоу: N» нет → DENY/PLAN_FLOW_UNDECLARED."""
+        """TC-J41-002: J41(б): PLAN есть, строки «Флоу: N» нет → DENY/PLAN_FLOW_UNDECLARED."""
         repo = make_repo(tmp_path)
         write(repo, "PLAN-add-widget.md",
               "# PLAN-add-widget\n\n## Этапы\n1. dev\n2. review\n")
@@ -222,7 +222,7 @@ class TestPlanFlowUndeclared:
 
 class TestValidPlanAllows:
     def test_valid_plan_no_plan_findings(self, tmp_path):
-        """J41(в): валидный план (шапка как у backlog/J41-*.md) →
+        """TC-J41-003: J41(в): валидный план (шапка как у backlog/J41-*.md) →
         PLAN_RELEASE_MISSING / PLAN_FLOW_UNDECLARED отсутствуют."""
         repo = make_repo(tmp_path)
         write(repo, "PLAN-add-widget.md", PLAN_HEADER)
@@ -279,7 +279,7 @@ class TestValidPlanAllows:
 
 class TestDevTaskTransitive:
     def test_dev_task_denied_without_plan(self, tmp_path):
-        """J41(г): dev_task транзитивно требует план — репо собран, но PLAN
+        """TC-J41-004: J41(г): dev_task транзитивно требует план — репо собран, но PLAN
         нет → DENY/PLAN_RELEASE_MISSING (транзитивная защита)."""
         repo = make_repo(tmp_path)
         reg = make_registry(tmp_path)
@@ -324,7 +324,7 @@ def bypass_delegation(did: str, age_s: float = 3600) -> dict:
 
 class TestWatchdogUndeliveredBypass:
     def test_bypass_marked_undelivered(self, tmp_path):
-        """J41(д): bypass-детект (нет валидной flowctl-записи) ставит
+        """TC-J41-005: J41(д): bypass-детект (нет валидной flowctl-записи) ставит
         undelivered_bypass в incident-запись; доставки нет — только метка."""
         delegations = [bypass_delegation("deleg-bypass01")]
         flow = {"runs": {}}  # ни prepare, ни gated-map — чистый bypass
@@ -355,8 +355,8 @@ class TestWatchdogUndeliveredBypass:
 
     def test_console_output_lines_undelivered(self, tmp_path, capsys,
                                               monkeypatch):
-        """Консольный вывод watchdog содержит BYPASS DETECTED и строку
-        UNDELIVERED BYPASS (маркировка без новой инфраструктуры доставки)."""
+        """TC-J41-015: консольный вывод watchdog содержит BYPASS DETECTED и
+        строку UNDELIVERED BYPASS (маркировка без новой инфраструктуры)."""
         state_dir = tmp_path / "state"
         state_dir.mkdir()
         # Подменяем все state-пути на tmp (реальный ~/.hermes не трогаем).
