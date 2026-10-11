@@ -36,6 +36,7 @@ ACK_STATE = Path.home() / ".hermes" / "state" / "delegate_watchdog_ack.json"
 # Ложный STALE на легитимную делегацию (прецедент deleg_d47a77a2, 2026-10-04)
 # без этого маппинга: platform id не входит в gated-множество → «забыт finish».
 GATED_MAP_STATE = Path.home() / ".hermes" / "state" / "delegate_gate_gated_map.json"
+PM_INSTRUCTION_STATE = Path.home() / ".hermes" / "state" / "pm_instruction.txt"
 GRACE_SECONDS = 120  # делегациям младше 2 минут даем время на prepare (гонка старт)
 # Анти-рекурсия (требование Заказчика 2026-10-04): [PM-INSTRUCTION] доставляется
 # ПМ как OUT-OF-BAND; ПМ в ответе может триггерить новые делегации → новый
@@ -87,25 +88,25 @@ def load_delegations() -> list[dict] | None:
     return out
 
 
-def main() -> int:
-    delegations = load_delegations()
-    flow = load(FLOWCTL_STATE)
-    if delegations is None or flow is None:
-        print("clean: реестры недоступны/пусты — сверка невозможна")
-        return 0
+def _baseline_path() -> Path:
+    return Path.home() / ".hermes" / "state" / "delegate_gate_baseline.json"
 
-    flow_runs = flow.get("runs", {})
-    gated = {r.get("delegation_id") for r in flow_runs.values() if isinstance(r, dict)}
-    # Платформенные id, диспатченные через ворота (маппинг ведет ПМ после
-    # диспатча — см. GATED_MAP_STATE): эквивалентны gated. Значение map —
-    # delegation_id записи flowctl (формат deleg-<hex>), не correlation.
-    gated_map = (load(GATED_MAP_STATE) or {}).get("map", {})
-    gated |= {k for k, v in gated_map.items()
+
+def _scan(delegations, flow, gated_map=None, baseline=None, now=None):
+    """Чистое ядро сверки (J41, кандидат 2b из J39): делегации × flowctl-записи.
+
+    Выделено из main() для тестируемости (fixture-реестры вместо
+    ~/.hermes/state/): main() читает реестры и передает их сюда; побочных
+    эффектов нет. Возвращает (bypasses, stale); bypass-записи несут признаки
+    undelivered_bypass/result_delivered (см. комментарий в цикле).
+    """
+    gated = {r.get("delegation_id") for r in flow.get("runs", {}).values()
+             if isinstance(r, dict)}
+    gated |= {k for k, v in (gated_map or {}).items()
               if any(isinstance(r, dict) and r.get("delegation_id") == v
                      and r.get("status") in ("running", "returned", "finished", "completed")
-                     for r in flow_runs.values())}
-
-    now = time.time()
+                     for r in flow.get("runs", {}).values())}
+    now = time.time() if now is None else now
     bypasses, stale = [], []
 
     for d in delegations:
@@ -136,14 +137,30 @@ def main() -> int:
 
         finished = status in ("completed", "error")
         if finished:
+            # J41 (кандидат 2b из J39): bypass-делегация, завершенная МИМО
+            # ворот, — это не только «обход зафиксирован» (J39: watchdog
+            # рапортует), но и результат, который НЕ должен попадать
+            # оркестратору как легитимный: мердж — только аудит. Здесь —
+            # ТОЛЬКО маркировка: механики блокировки доставки результата у
+            # вотчдога нет (доставка делает платформа/ПМ), новую
+            # инфраструктуру не изобретаем. Признак undelivered_bypass в
+            # incident-записи = контракт «результат не доставлен, ручной
+            # разбор»; result_delivered=False фиксирует, что вотчдог доставку
+            # не выполнял и не отменял.
             bypasses.append({"delegation_id": did, "project": project,
-                             "status": status, "created_at": created})
+                             "status": status, "created_at": created,
+                             "undelivered_bypass": True,
+                             "result_delivered": False,
+                             "undelivered_bypass_reason":
+                                 "bypass: нет валидной flowctl-записи "
+                                 "(J39/J41; доставка не выполняется, ручной "
+                                 "разбор ПМ/Заказчиком)"})
         elif status in ("running", "active", "prepared"):
             stale.append({"delegation_id": did, "project": project,
                           "status": status, "created_at": created})
 
     # STALE_FINISH: gated-делегации, чья flowctl-сессия застряла в running
-    for r in flow_runs.values():
+    for r in flow.get("runs", {}).values():
         if not isinstance(r, dict):
             continue
         if r.get("status") == "running" and r.get("finished_at"):
@@ -152,19 +169,25 @@ def main() -> int:
                           "status": "running-with-finished_at", "created_at": None})
 
     # Baseline: делегации до внедрения delegate-gate не инциденты (история).
-    baseline_path = Path.home() / ".hermes" / "state" / "delegate_gate_baseline.json"
-    baseline = load(baseline_path)
-    if baseline is None:
-        # Первый прогон: запоминаем "сейчас" как границу — все прошлые делегации
-        # вне зоны ответственности вотчдога (внедрение = начало отсчета).
-        baseline = {"installed_at": time.time(),
-                    "note": "дата внедрения delegate-gate; делегации до неё — история"}
-        baseline_path.parent.mkdir(parents=True, exist_ok=True)
-        baseline_path.write_text(json.dumps(baseline, indent=2))
-    installed_at = baseline.get("installed_at", 0)
-    bypasses = [b for b in bypasses
-                if isinstance(b.get("_age_ok"), bool) or (b.get("created_at") or 0) > installed_at]
+    installed_at = (baseline or {}).get("installed_at", 0)
     bypasses = [b for b in bypasses if (b.get("created_at") or 0) > installed_at]
+    return bypasses, stale
+
+
+def main() -> int:
+    delegations = load_delegations()
+    flow = load(FLOWCTL_STATE)
+    if delegations is None or flow is None:
+        print("clean: реестры недоступны/пусты — сверка невозможна")
+        return 0
+
+    # Платформенные id, диспатченные через ворота (маппинг ведет ПМ после
+    # диспатча — см. GATED_MAP_STATE): эквивалентны gated. Значение map —
+    # delegation_id записи flowctl (формат deleg-<hex>), не correlation.
+    gated_map = (load(GATED_MAP_STATE) or {}).get("map", {})
+
+    bypasses, stale = _scan(delegations, flow, gated_map=gated_map,
+                            baseline=load(_baseline_path()))
 
     report = {"checked_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
               "bypass": bypasses, "stale_finish": stale}
@@ -194,7 +217,7 @@ def main() -> int:
         # pm_instruction.txt — файл-инструкция, который крон pm-instruction-relay
         # (*/2, monitor-детект изменения) доставляет в main-чат ПМ как ход
         # сессии: ПМ видит инструкцию враз, без чтения output-логов.
-        instruction_path = Path.home() / ".hermes" / "state" / "pm_instruction.txt"
+        instruction_path = PM_INSTRUCTION_STATE
         if new_bypasses or new_stale:
             ids_full = ", ".join(sorted(b["delegation_id"] for b in bypasses)) or "—"
             instruction_path.parent.mkdir(parents=True, exist_ok=True)
@@ -232,6 +255,18 @@ def main() -> int:
                   f"новых забытых finish={len(new_stale)} "
                   f"(принято ранее: {len(bypasses) - len(new_bypasses)} "
                   f"обходов, {len(stale) - len(new_stale)} финишей — ack/decision)")
+            # J41 (кандидат 2b из J39): результат bypass-делегации НЕ
+            # доставляется — здесь только строка-маркировка в консольном выводе
+            # (механики доставки/блокировки у вотчдога нет, новую
+            # инфраструктуру не изобретаем); признак undelivered_bypass уже в
+            # incident-записях файла INCIDENTS.
+            if new_bypasses:
+                undeliv = ", ".join(sorted(
+                    b["delegation_id"] for b in new_bypasses
+                    if b.get("undelivered_bypass")))
+                if undeliv:
+                    print(f"UNDELIVERED BYPASS (результат не доставлен, ручной "
+                          f"разбор): {undeliv}")
             print(json.dumps({"checked_at": report["checked_at"],
                               "new_bypass": new_bypasses,
                               "new_stale_finish": new_stale},

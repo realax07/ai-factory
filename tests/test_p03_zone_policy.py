@@ -238,6 +238,12 @@ class TestPrepareZonePolicy:
           "## Нефункциональные требования\n- NFR-1 быстро\n\n"
           "## Приоритеты\n- P1\n\n## Ограничения\n- без push\n\n"
           "## Открытые вопросы\n- нет\n")
+        # J41: план релиза обязателен для create_change/dev_task (ворота
+        # flow_transition) — fixture-план с объявлением воркфлоу.
+        w("PLAN-add-widget.md",
+          "# PLAN-add-widget — план релиза (fixture)\n\n"
+          "**Флоу: 1** (J41 fixture: план релиза обязателен до старта работ;\n"
+          "пишет ПМ, СА лишь детализирует в tasks.md).\n")
         w("openspec/changes/add-widget/proposal.md", "# p\n")
         w("openspec/changes/add-widget/design.md", "# d\n")
         w("openspec/changes/add-widget/tasks.md",
