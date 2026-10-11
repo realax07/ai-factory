@@ -9,11 +9,16 @@ Usage:
 
 Что устанавливается:
   scripts/flow_check.py, scripts/pr_validate.py, scripts/session_worktree.sh,
-  scripts/codegraph.py, scripts/smoke_static.py, scripts/session_archive.py
-  contracts/artifact_contract.md, templates/constitution.template.md,
-  templates/task_delegation.md, .github/workflows/flow.yml,
+  scripts/codegraph.py, scripts/smoke_static.py, scripts/session_archive.py,
+  scripts/delegate_gate.py, scripts/delegate_watchdog.py, scripts/pm_bounds_check.py,
+  scripts/stand_reaper.py, scripts/watchdog_daily_digest.py,
+  scripts/pm_instruction_monitor.py, scripts/session_watchdog.py,
+  contracts/artifact_contract.md, contracts/flow_control_contract.md,
+  templates/constitution.template.md, templates/task_delegation.md, templates/pm_launch.md,
+  .github/workflows/flow.yml,
   openspec/ (скелет specs/ + changes/archive/), test-model/ (checklists/new/reviews/approved/bugs),
-  architecture/ (пустая, для map.md архитектора)
+  architecture/ (пустая, для map.md архитектора),
+  skills/ — 8 скиллов конвейера (factory-flow + 7 ролевых)
 
 Промпты ролей копируются в <target>/agents/ — фабрика самодостаточна после установки.
 Каждый промпт получает шапку-версию (yaml-комментарий с sha эталона); при наличии
@@ -39,8 +44,12 @@ COPY_FILES = [
     "scripts/delegate_gate.py",
     "scripts/delegate_watchdog.py",
     "scripts/check_auth_timing.py",
-    "scripts/codegraph.py",
     "scripts/pm_bounds_check.py",
+    "scripts/stand_reaper.py",
+    "scripts/watchdog_daily_digest.py",
+    "scripts/pm_instruction_monitor.py",
+    "scripts/session_watchdog.py",
+    "templates/pm_launch.md",
     "agents/debug_agent.md",
     "contracts/artifact_contract.md",
     "templates/constitution.template.md",
@@ -64,6 +73,13 @@ FLOW_CONTROL_FILES = [
 # Скиллы-скелеты (копируются целиком как каталоги).
 SKILL_DIRS = [
     "skills/factory-flow",
+    "skills/case-review",
+    "skills/code-review",
+    "skills/implementation",
+    "skills/openspec-authoring",
+    "skills/requirements-elaboration",
+    "skills/test-automation",
+    "skills/test-case-design",
 ]
 
 # Каталоги журналов решений и релизов (аудит-след Flow Control).
