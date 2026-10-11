@@ -70,10 +70,16 @@ STALE_EVIDENCE = "STALE_EVIDENCE"
 AMBIGUOUS_STATE = "AMBIGUOUS_STATE"
 STALE_SNAPSHOT = "STALE_SNAPSHOT"
 EXTERNAL_ENFORCEMENT_UNKNOWN = "EXTERNAL_ENFORCEMENT_UNKNOWN"
+# J41 (план релиза — обязательный артефакт ворот): план релиза не найден /
+# в плане не объявлен воркфлоу. Отдельные стабильные коды — Заказчик требует
+# различать «артефакта нет» и «артефакт неполон» (контракт §9: код — машина-
+# читаемая причина, DENY перечисляет все).
+PLAN_RELEASE_MISSING = "PLAN_RELEASE_MISSING"
+PLAN_FLOW_UNDECLARED = "PLAN_FLOW_UNDECLARED"
 REASON_CODES = (
     MISSING_INPUT, INVALID_GATE, HUMAN_APPROVAL_REQUIRED, WRONG_ROLE,
     ZONE_CONFLICT, STALE_EVIDENCE, AMBIGUOUS_STATE, STALE_SNAPSHOT,
-    EXTERNAL_ENFORCEMENT_UNKNOWN,
+    EXTERNAL_ENFORCEMENT_UNKNOWN, PLAN_RELEASE_MISSING, PLAN_FLOW_UNDECLARED,
 )
 
 # Политика перехода к merge/release (пересмотр плана P0.1, п.3; вопрос ПМ —
@@ -280,6 +286,71 @@ def _requirements_approved(snapshot: dict, ctx: dict) -> list:
             f"requirements.md не УТВЕРЖДЕН (status={value}) — этап "
             f"approve_requirements пропущен (ТЗ 03 п.2; evidence: requirements.md)"))
     return out
+
+
+# J41 (план релиза — обязательный артефакт ворот; урок P15 add-wiki: релиз
+# стартовал БЕЗ PLAN-файла — план существовал только в tasks.md СА и в
+# переписке ПМ, «по сути» план был, «по форме» артефакта не было, и ворота
+# не могли его требовать). Решение Заказчика 2026-10-11: «перед релизом план
+# набрасываем, СА лишь детализацию» — план релиза пишет ПМ ДО запуска СА,
+# ворота его обязаны требовать машиночитаемо. Легальные расположения артефакта
+# (оба, как у J41 backlog): корень репо и каталог change-пакета.
+PLAN_RELEASE_FILENAME = "PLAN-{change}.md"
+PLAN_FLOW_RE = re.compile(
+    r"^\s*\*{0,2}\s*Флоу:\s*([1-5])\s*\*{0,2}[^\n]*$", re.M)
+
+
+def plan_release_paths(repo: Path, change_id: str) -> list[Path]:
+    """Кандидаты-пути плана релиза change-пакета (J41): корень репо и каталог
+    change-пакета. Оба расположения легальны, порядок не важен."""
+    rel = f"openspec/changes/{change_id}"
+    return [
+        Path(repo) / f"PLAN-{change_id}.md",
+        Path(repo) / rel / "PLAN.md",
+    ]
+
+
+def _plan_release(snapshot: dict, ctx: dict) -> list:
+    """План релиза change-пакета существует и объявляет воркфлоу (J41).
+
+    В духе _requirements_approved: change-идентификатор берется из scope
+    снимка (тот же, что использует change.package); файл ищется в легальных
+    расположениях (корень репо / каталог change-пакета). Отсутствие файла —
+    DENY PLAN_RELEASE_MISSING (урок P15: без артефакта ворота бессильны);
+    файл без объявления воркфлоу (строка вида «Флоу: N», N 1–5, допускается
+    жирное выделение) — DENY PLAN_FLOW_UNDECLARED: воркфлоу фиксирует, по
+    какой схеме ПМ поведет релиз (кто/что/этапы), без него план — не план.
+    Файл есть и воркфлоу объявлен — находок нет (ALLOW не «рисуем», просто
+    не добавляем причин).
+    """
+    scope = snapshot.get("scope", {})
+    change_id = scope.get("change")
+    repo = scope.get("repo")
+    ctx["checked"].add("plan.release")
+    # Как _requirements_approved: нет входа — MISSING_INPUT (честный отказ),
+    # не молчаливое разрешение.
+    if not repo or not change_id:
+        return [Finding(
+            MISSING_INPUT,
+            "план релиза не проверяем: scope без repo/change — пересобери "
+            "inspect (J41; контракт §2)")]
+    for path in plan_release_paths(Path(repo), str(change_id)):
+        if not path.is_file():
+            continue
+        ctx["evidence"].add(str(path))
+        text = path.read_text(encoding="utf-8", errors="replace")
+        if not PLAN_FLOW_RE.search(text):
+            return [Finding(
+                PLAN_FLOW_UNDECLARED,
+                f"план релиза {path.name} не объявляет воркфлоу — нужна строка "
+                f"«Флоу: N» (N 1–5, допускается **жирное**) (J41; правило "
+                f"фабрики: план фиксирует, по какой схеме релиз ведется)")]
+        return []
+    return [Finding(
+        PLAN_RELEASE_MISSING,
+        f"план релиза не найден: ни PLAN-{change_id}.md в корне репо, ни "
+        f"openspec/changes/{change_id}/PLAN.md (J41; правило фабрики: релиз "
+        f"стартует с плана ПМ, СА лишь детализирует)")]
 
 
 def _arch_review_done(snapshot: dict, ctx: dict) -> list:
@@ -674,7 +745,13 @@ def check_approve_requirements(snapshot, action, ctx, flow):
 
 
 def check_create_change(snapshot, action, ctx, flow):
-    return list(_requirements_approved(snapshot, ctx))
+    # J41: create_change — старт change-пакета; ворота требуют план релиза
+    # (PLAN-<change>.md / openspec/changes/<id>/PLAN.md с объявленным
+    # воркфлоу) вместе с утвержденными requirements — иначе план появился бы
+    # только «когда удобно» (урок P15: план жил в переписке, не артефактом).
+    out = list(_requirements_approved(snapshot, ctx))
+    out.extend(_plan_release(snapshot, ctx))
+    return out
 
 
 def check_needs_arch(snapshot, action, ctx, flow):
@@ -690,6 +767,10 @@ def check_dev_task(snapshot, action, ctx, flow):
     # (review-001 R4: dev_task при draft requirements молчаливо ALLOW).
     out = list(_requirements_approved(snapshot, ctx))
     out.extend(_arch_review_done(snapshot, ctx))
+    # J41 (транзитивная защита): dev не стартует без плана релиза даже при
+    # проскоченном СА-этапе — план обязан существовать на КАЖДОМ этапе работы
+    # change-пакета, а не «всплывать» к релизу (урок P15 add-wiki).
+    out.extend(_plan_release(snapshot, ctx))
     out.extend(_require_task(snapshot, action, ctx))
     out.extend(_deps_findings(action, ctx))
     if action.task_parallel:

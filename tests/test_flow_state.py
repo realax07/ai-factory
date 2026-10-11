@@ -61,7 +61,9 @@ def make_repo(
     with_review: bool = False,
 ) -> Path:
     repo = tmp_path / "proj"
-    repo.mkdir()
+    # J41 (conftest.plan_release_fixture): каталог может быть уже создан
+    # autouse-фикстурой (PLAN-add-widget.md подложен) — exist_ok обязателен.
+    repo.mkdir(exist_ok=True)
     subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
     subprocess.run(["git", "config", "user.email", "t@t"], cwd=repo, check=True)
     subprocess.run(["git", "config", "user.name", "t"], cwd=repo, check=True)
@@ -206,7 +208,7 @@ class TestGit:
     def test_missing_git_ref(self, tmp_path):
         # пустой репозиторий без коммитов: HEAD — отсутствующий ref
         repo = tmp_path / "empty"
-        repo.mkdir()
+        repo.mkdir(exist_ok=True)
         subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
         reg = registry_file(tmp_path, '{"sessions": []}')
         s = inspect_json(repo, registry=reg)

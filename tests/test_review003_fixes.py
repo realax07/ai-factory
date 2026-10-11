@@ -43,7 +43,9 @@ def write(repo: Path, rel: str, text: str) -> None:
 
 def make_repo(tmp_path: Path) -> tuple[Path, str]:
     repo = tmp_path / "proj"
-    repo.mkdir()
+    # J41 (conftest.plan_release_fixture): каталог может быть уже создан
+    # autouse-фикстурой (PLAN-add-widget.md подложен) — exist_ok обязателен.
+    repo.mkdir(exist_ok=True)
     subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
     subprocess.run(["git", "config", "user.email", "t@t"], cwd=repo, check=True)
     subprocess.run(["git", "config", "user.name", "t"], cwd=repo, check=True)

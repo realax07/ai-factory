@@ -583,6 +583,12 @@ class TestParallelDeps:
         # независимость проверяем на задаче без deps
         tasks2 = "- [x] 1.1 готово\n- [ ] 1.3 [P] вторая независимая\n"
         repo2 = make_repo(tmp_path / "b", tasks=tasks2)
+        # J41: второй fixture-репо (tmp_path/b) — conftest-фикстура подкладывает
+        # PLAN только в tmp_path/proj; для ALLOW второму репо нужен свой план.
+        write(repo2, "PLAN-add-widget.md",
+              "# PLAN-add-widget — план релиза (fixture, второе репо)\n\n"
+              "**Флоу: 1** (J41 fixture: план обязателен в каждом репо).\n")
+        commit_all(repo2, "plan release (fixture b)")
         s2 = snapshot_for(repo2, reg, task_id="1.3")
         d2 = ft.check_action(s2, act(task_id="1.3", task_parallel=True,
                                      parallel_confirmed=True))
