@@ -1,6 +1,14 @@
-# AI Factory — конвейер разработки ПО из агентов
+# AI Factory — Harness-as-a-Service: конвейер разработки ПО из агентов
 
-> **AI Factory** — производственный конвейер, в котором программное обеспечение разрабатывает не один «универсальный» LLM-агент, а **коллектив изолированных агентов-специалистов**: бизнес-аналитик, системный аналитик, разработчик, ревьюер, QA-контур из четырех ролей, архитектор, DevOps, валидатор дизайна. Порядок работы обеспечивается не дисциплиной, а **исполняемыми воротами**: скрипты и CI физически не пропускают шаги мимо процесса.
+> **AI Factory** — исполняемый harness для разработки ПО коллективом изолированных
+> LLM-агентов: бизнес-аналитик, системный аналитик, разработчик, ревьюер, QA-контур,
+> архитектор, DevOps, валидатор дизайна. Порядок работы обеспечивается не дисциплиной,
+> а **исполняемыми воротами**: скрипты и CI физически не пропускают шаги мимо процесса.
+>
+> **Harness-as-a-service:** фабрика — машина-одиночка (исполняемый слой: state-машина
+> этапов, ворота, энфорсер делегаций), проекты — тонкие клиенты (собственные код, спеки
+> и автономные CI-ворота). Развертывание конвейера в новый проект — одна команда
+> (factory_init); ядро обслуживает все проекты по путям.
 >
 > Оперативные правила — [AGENTS.md](AGENTS.md), статус — [PLAN.md](PLAN.md), уроки — [backlog/MAP.md](backlog/MAP.md), контракты — [contracts/artifact_contract.md](contracts/artifact_contract.md).
 
@@ -104,17 +112,16 @@ AI Factory отвечает на каждую: **каждая роль — из�
 | 4 | **dev** | [dev_agent.md](agents/dev_agent.md) | Реализация одной задачи tasks.md (worktree, ветка, PR) | задача → код + PR |
 | 4a | **dev_lead** | [dev_lead_agent.md](agents/dev_lead_agent.md) | Merge и консолидация результатов параллельных dev-сабагентов в интеграционную ветку (J9): ПМ в продуктовом репо git не касается | approved-ветки → merge + сводный отчет |
 | 5 | **code_reviewer** | [code_reviewer_agent.md](agents/code_reviewer_agent.md) | Ревью диффа по 3 кругам (спека = закон / практики / интеграция) | PR → approve / return |
-| 6 | **qa_checklist** | [qa_checklist_agent.md](agents/qa_checklist_agent.md) | Спека → чеклист CHK-N, границы/негатив, дефекты спеки | спека → чеклист |
-| 7 | **qa_case_author** | [qa_case_author_agent.md](agents/qa_case_author_agent.md) | Чеклист → кейсы TC-N (1 кейс = 1 файл) | чеклист → кейсы |
-| 8 | **qa_case_reviewer** | [qa_case_reviewer_agent.md](agents/qa_case_reviewer_agent.md) | Ревью кейсов (партиями ≤12, файл за файлом, append-замечания) | кейсы → approve / return |
-| 9 | **qa_automation** | [qa_automation_agent.md](agents/qa_automation_agent.md) | Approved-кейсы → автотесты; явные порты стендов; баг-репорты | кейсы → сьют |
-| 10 | **qa_regression_analyst** | (при первом релизе, G5) | Валидация меток регресса → манифест | метки → манифест |
-| 11 | **architect** | [architect_agent.md](agents/architect_agent.md) | Ревью change-пакетов СА, архитектурная карта, допущения | пакет → ревью + `architecture/map.md` |
-| 12 | **devops** | [devops_agent.md](agents/devops_agent.md) | Факты инфры командами ДО скрипта → RUNBOOK → deploy.sh | среда → RUNBOOK + deploy |
-| 13 | **design_validator** | [design_validator_agent.md](agents/design_validator_agent.md) | Реализованный UI vs дизайн-артефакты (ловит «браузерные дефолты») | UI → вердикты соответствия |
-| 13a | **ui_designer** | [ui_designer_agent.md](agents/ui_designer_agent.md) | Мокапы и дизайн-токены (HTML, зона `design/`), до dev-внедрения; Заказчик выбирает вариант | спека → мокапы + токены |
+| 6 | **qa_case_author** *(без чеклиста, J23)* | [qa_case_author_agent.md](agents/qa_case_author_agent.md) | Спека (Requirements+Scenarios) → кейсы TC-N напрямую (1 кейс = 1 файл); негатив/границыы; дефекты спеки — дефектами | спека → кейсы |
+| 7 | **qa_case_reviewer** | [qa_case_reviewer_agent.md](agents/qa_case_reviewer_agent.md) | Ревью кейсов (партиями ≤12, файл за файлом, append-замечания); оси: покрытие сценариев спеки, негатив/границыы, дефекты спеки | кейсы → approve / return |
+| 8 | **qa_automation** | [qa_automation_agent.md](agents/qa_automation_agent.md) | Approved-кейсы → автотесты; явные порты стендов; баг-репорты | кейсы → сьют |
+| 9 | **qa_regression_analyst** | (при первом релизе, G5) | Валидация меток регресса → манифест | метки → манифест |
+| 10 | **architect** | [architect_agent.md](agents/architect_agent.md) | Ревью change-пакетов СА, архитектурная карта, допущения | пакет → ревью + `architecture/map.md` |
+| 11 | **devops** | [devops_agent.md](agents/devops_agent.md) | Факты инфры командами ДО скрипта → RUNBOOK → deploy.sh | среда → RUNBOOK + deploy |
+| 12 | **design_validator** | [design_validator_agent.md](agents/design_validator_agent.md) | Реализованный UI vs дизайн-артефакты (ловит «браузерные дефолты») | UI → вердикты соответствия |
+| 12a | **ui_designer** | [ui_designer_agent.md](agents/ui_designer_agent.md) | Мокапы и дизайн-токены (HTML, зона `design/`), до dev-внедрения; Заказчик выбирает вариант | спека → мокапы + токены |
 | — | **ПМ** | main-сессия (ПМ-сабагент не внедряется, решение 2026-10-10 — см. выше) | Диалог с Заказчиком, сборка задач, приемка фактами, push, PLAN/BACKLOG, диспатч сабагентов (через [delegate_gate](scripts/delegate_gate.py)) | — |
-| 14 | **debug** (эскалационный, 2026-10-03) | [debug_agent.md](agents/debug_agent.md) | Изолированная диагностика по эскалации `needs-debug:` от любого сабагента (через ПМ): воспроизведение, среда/код/тест вердикт, база граблей проекта. **Запись в продукт запрещена** — фиксы текстом в отчете, код меняет исходный dev | эскалация → вердикт + база граблей |
+| 13 | **debug** (эскалационный, 2026-10-03) | [debug_agent.md](agents/debug_agent.md) | Изолированная диагностика по эскалации `needs-debug:` от любого сабагента (через ПМ): воспроизведение, среда/код/тест вердикт, база граблей проекта. **Запись в продукт запрещена** — фиксы текстом в отчете, код меняет исходный dev | эскалация → вердикт + база граблей |
 
 **Самоулучшение (E16):** агент, поймав 2 одинаковые ошибки подряд, пишет «проблема → решение → предложение» в `agents/<роль>_improvements.md` и меняет подход — работа доделывается, урок накапливается. Транскрипты всех сессий архивируются (`session_archive.py`) с детерминированным разбором паттернов неуспеха (ретроспектива 48 сессий: топ-причина — среда исполнения; профилактика вшита в [AGENTS.md](AGENTS.md)).
 
@@ -136,7 +143,7 @@ AI Factory отвечает на каждую: **каждая роль — из�
  dev → PR → CI (flow.yml) → code_reviewer (approve → merge | return → доработка)
      │
      ▼  после всех задач
- qa_checklist → чеклист → qa_case_author → кейсы → qa_case_reviewer (approve)
+ qa_case_author (спека → кейсы TC, трассировка к Req/Scenario) → qa_case_reviewer (approve)
      │
      ▼
  qa_automation → сьют (pytest) → ревью кода тестов
@@ -207,8 +214,8 @@ AI Factory отвечает на каждую: **каждая роль — из�
 
 1. **Заказчик → БА → СА**: `requirements.md` — 7 разделов, FR-N/NFR-N, MoSCoW, преамбула ответственности, статусная модель (ЧЕРНОВИК → … → УТВЕРЖДЕН — только Заказчик), `docs/ba/answers_roundN.md` каждого раунда обязателен.
 2. **СА → Разработка**: change-пакет (proposal, specs/дельты, **research.md** — альтернативы до design, design, tasks с **[P]-маркерами**) + `sdd.md`; Must покрыт, каждый Requirement со Scenario, атомарные задачи. Вход: УТВЕРЖДЕН + answers. Ревью: **architect**.
-3. **СА → qa_impact**: при MODIFIED/REMOVED дельтах — вердикт по каждому затронутому тесту до qa_checklist.
-4. **Чеклисты → кейсы**: полное покрытие CHK, негативы/границы для валидаций, дефекты спеки эскалированы.
+3. **СА → qa_impact**: при MODIFIED/REMOVED дельтах — вердикт по каждому затронутому тесту до кейсов.
+4. **Спека → кейсы**: полное покрытие сценариев Requirements (трассировка TC → Req/Scenario), негативы/границыы, дефекты спеки эскалированы/зафиксированы.
 5. **Автор ⇄ Ревьюер**: new/ → reviews/ → approved/; партии ≤12 (алфавитный сплит, последовательный запуск); approve без blocker/major.
 6. **Автотесты только по approved**, TC-трассировка обязательна, time.sleep запрещен.
 7. **Архивация**: все tasks [x] + зеленый QA + решение ПМ → дельты в master-spec → пакет в archive (неслитый archive = FLOW-ERROR).

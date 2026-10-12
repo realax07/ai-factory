@@ -24,7 +24,7 @@
       ▼  (цикл на каждую задачу tasks.md)
 [dev | 1 задача/сессия] → код → [code_reviewer | approve/return] → влитая задача
                                                                     │
-      [qa_automation] ← approved/* ← [qa_reviewer] ⇄ new/* ← [qa_author] ← checklists ← [qa_checklist]
+      [qa_automation] ← approved/* ← [qa_reviewer] ⇄ new/* ← [qa_author] ← спека (напрямую, без чеклиста — J23)
       → [интегратор|ПМ] → АРХИВАЦИЯ: дельты слиты в openspec/specs/ (master-spec, as is) → пакет в changes/archive/ (контракт 7)
 ```
 
@@ -179,7 +179,7 @@ PR в main — единственный путь изменений. Ревью�
 |---|---|---|
 | Код продукта (`backend/`, `frontend/`) | dev | code_reviewer |
 | Автотесты (`tests/**`) | qa_automation | qa_case_reviewer (G8: оси ревью кода тестов) |
-| Кейсы/чеклисты (`test-model/`) | qa_author / qa_checklist | qa_case_reviewer |
+| Кейсы (`test-model/`) | qa_case_author (спека → кейсы, без чеклиста — J23) | qa_case_reviewer |
 | Спеки, sdd (`openspec/`, `sdd.md`) | СА | ПМ + валидация |
 | Пайплайн (`scripts/`, `flow.yml`) | dev | code_reviewer (G7) |
 
