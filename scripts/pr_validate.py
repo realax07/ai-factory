@@ -64,10 +64,8 @@ def check_change(repo: Path, change_id: str, marker: str = "") -> list[str]:
     if has_modified and not impact.is_file():
         missing.append(f"test-model/impact/{change_id}.md: нет impact-анализа при MODIFIED/REMOVED дельтах (H5)")
 
-    # Чеклист (контракт 4)
-    cl = repo / "test-model" / "checklists" / f"{change_id}.md"
-    if not cl.is_file():
-        missing.append(f"test-model/checklists/{change_id}.md: чеклист отсутствует (контракт 4)")
+    # remove-qa-checklist: чеклист больше не обязателен (контракт 4) — кейсы
+    # трассируются к спеке напрямую; существующие чеклисты не проверяются.
 
     # Кейсы: approved обязательны (контракт 6); new допустим только если PR не финальный
     appr = repo / "test-model" / "approved" / change_id

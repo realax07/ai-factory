@@ -1221,7 +1221,15 @@ def _test_model_sub(snapshot, ctx, sub, deny_detail):
     return out
 
 
-def check_qa_checklist(snapshot, action, ctx, flow):
+# remove-qa-checklist: этап qa_checklist упразднен — check_qa_checklist и
+# его Stage удалены (PLAN-remove-qa-checklist.md; матрица Заказчика 2026-10-12).
+
+
+def check_qa_cases(snapshot, action, ctx, flow):
+    """Вход этапа qa_cases — от merge_task/design_validation, без чеклиста
+    (remove-qa-checklist): кейсы пишутся по спеке НАПРЯМУЮ, трассировка
+    TC → ### Requirement:/#### Scenario:. Источник требований обязан
+    существовать: дельты change или существующие спеки (контракт 4)."""
     out: list = []
     deltas, d_status, out0 = _fact_ready(snapshot, "change.spec_deltas", ctx)
     out.extend(out0)
@@ -1234,16 +1242,10 @@ def check_qa_checklist(snapshot, action, ctx, flow):
     )
     if not has_source and not (out0 or out1):
         out.append(Finding(INVALID_GATE,
-                           "чеклист требует спеку/дельты — источника нет "
-                           "(контракт 3/4; evidence: openspec/specs/, "
+                           "кейсы требуют спеку/дельту — источника нет "
+                           "(контракт 4; evidence: openspec/specs/, "
                            "openspec/changes/<id>/specs/)"))
     return out
-
-
-def check_qa_cases(snapshot, action, ctx, flow):
-    return list(_test_model_sub(
-        snapshot, ctx, "checklists",
-        "кейсы требуют чеклист — test-model/checklists/ пуст (контракт 4)"))
 
 
 def check_qa_review(snapshot, action, ctx, flow):
@@ -1591,12 +1593,10 @@ STAGE_TABLE: dict[int, tuple[Stage, ...]] = {
         Stage("merge_task", ("dev_lead", "integrator"), False,
               ("pm_bounds_check --require-review", "pr_validate",
                "branch protection (внеш.)"), check_merge_task),
-        Stage("qa_checklist", ("qa_checklist",), False,
-              ("flow_check (контракт 3)",), check_qa_checklist),
-        # Решение Заказчика 3.1 (S5, 2026-10-02): роли практики из
-        # agents/README.md добавлены в граф — раньше имена qa_case_author /
-        # qa (как в сценарии shadow-R6) давали MISSING_INPUT, хотя
-        # agents/README.md определяет их как легальные роли конвейера.
+        # Решение Заказчика 3.1 (S5): роли практики qa_author/qa_case_author —
+        # легальные роли конвейера (agents/README.md). remove-qa-checklist:
+        # этап qa_checklist удален из Флоу 1, qa_cases принимает вход напрямую
+        # от merge_task/design_validation (PLAN-remove-qa-checklist.md).
         Stage("qa_cases", ("qa_author", "qa_case_author"), False,
               ("flow_check (контракт 4)",), check_qa_cases),
         Stage("qa_review", ("qa_case_reviewer",), False,
