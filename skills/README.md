@@ -8,6 +8,8 @@
 |---|---|---|
 | [requirements-elaboration](requirements-elaboration/) | Elicitation и структурирование ТЗ (IEEE 830/29148, MoSCoW) | БА |
 | [openspec-authoring](openspec-authoring/) | Спеки, change-пакеты, SDD по конвенциям Fission-AI | СА |
+| [brainstorming](brainstorming/) | Прояснение замысла до требований (альтернативы, anti-scope) | БА |
+| [service-decomposition](service-decomposition/) | Границы сервисов, владение схемой БД, сквозные процессы, швы делегаций | СА, dev_lead |
 | [test-case-design](test-case-design/) | Чеклисты и тест-кейсы: покрытие, границы, трассировка | QA-чеклисты, QA-автор |
 | [case-review](case-review/) | Ревью кейсов: оси проверки, серьезности, итерации | QA-ревьюер |
 | [test-automation](test-automation/) | Автотесты pytest/requests/playwright с трассировкой | QA-автоматизатор |
