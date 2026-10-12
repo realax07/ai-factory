@@ -346,39 +346,38 @@ def check(repo: Path) -> int:
             if n_req and n_scn == 0:
                 errors += errs(f"{sf.relative_to(repo)}: {n_req} Requirement без Scenario")
 
-    # --- Этап QA: чеклист требует спеку/дельты (контракт 3/4) ---
-    checklists = list((tm / "checklists").glob("*.md")) if (tm / "checklists").is_dir() else []
-    has_spec_source = bool(active_changes) or (
-        specs_dir.is_dir() and any(specs_dir.rglob("spec.md"))
-    )
-    for cl in checklists:
-        if not has_spec_source:
-            errors += errs(f"{cl.relative_to(repo)}: чеклист без спеки (контракт 3)")
-            continue
-        text = cl.read_text(encoding="utf-8")
-        rows = [ln for ln in text.splitlines() if re.match(r"^\|\s*CHK-", ln)]
-        if not rows:
-            errors += errs(f"{cl.relative_to(repo)}: нет строк чеклиста CHK-*")
-        bad_src = [ln for ln in rows if not re.search(r"FR-\d+|NFR-\d+|Requirement", ln)]
-        if bad_src:
-            errors += errs(
-                f"{cl.relative_to(repo)}: {len(bad_src)} CHK-строк без источника FR/NFR (rule 6)"
-            )
-        if "Дефекты спеки" not in text:
-            errors += errs(f"{cl.relative_to(repo)}: нет раздела «Дефекты спеки»")
+    # --- remove-qa-checklist: контракт 3 (валидация чеклистов) удален ---
+    # Этап qa_checklist упразднен: новые чеклисты не требуются и не
+    # проверяются; существующие в test-model/checklists/ — append-only
+    # история (не удаляются, но и не валидируются).
 
-    # --- Кейсы new/: требуют чеклист (контракт 4), CHK-ссылки и формат H1 ---
+    # --- Кейсы new/: формат H1 + трассировка к спеке (контракт 4) ---
     # H1: 1 кейс = 1 файл, имя файла = ID кейса (допускается суффикс -update).
     # Заголовки кейсов: # TC-... или ## TC-... (оба уровня приняты практикой).
+    # remove-qa-checklist: чеклист больше не предшественник кейсов — кейс
+    # обязан трассироваться к спеке (### Requirement:/#### Scenario:),
+    # «кейсы без чеклиста» больше не нарушение.
     TC_HEAD = re.compile(r"^#{1,3}\s+(TC-[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*-\d{3})", re.M)
+    TRACE_RE = re.compile(r"(?:Requirement|Scenario):\s*([^\n|]+)", re.I)
     new_dir = tm / "new"
     case_files = list(new_dir.rglob("*.md")) if new_dir.is_dir() else []
-    cl_ids = {cl.stem for cl in checklists}
+    # Корпус заголовков спеки: master-spec + дельты активных пакетов.
+    trace_titles: set[str] = set()
+    if specs_dir.is_dir():
+        for sf in specs_dir.rglob("spec.md"):
+            text = sf.read_text(encoding="utf-8", errors="replace")
+            trace_titles.update(
+                t.strip() for t in re.findall(r"^### Requirement:\s*(.+)$", text, re.M))
+            trace_titles.update(
+                t.strip() for t in re.findall(r"^#### Scenario:\s*(.+)$", text, re.M))
+    for d in active_changes:
+        for sf in d.rglob("spec.md"):
+            text = sf.read_text(encoding="utf-8", errors="replace")
+            trace_titles.update(
+                t.strip() for t in re.findall(r"^### Requirement:\s*(.+)$", text, re.M))
+            trace_titles.update(
+                t.strip() for t in re.findall(r"^#### Scenario:\s*(.+)$", text, re.M))
     for cf in case_files:
-        if cf.parent.name not in cl_ids:
-            errors += errs(
-                f"{cf.relative_to(repo)}: кейсы без чеклиста test-model/checklists/{cf.parent.name}.md (контракт 4)"
-            )
         text = cf.read_text(encoding="utf-8")
         tcs = TC_HEAD.findall(text)
         if not tcs:
@@ -392,9 +391,14 @@ def check(repo: Path) -> int:
             errors += errs(
                 f"{cf.relative_to(repo)}: имя файла не совпадает с ID кейса {tcs[0]} (H1)"
             )
-        orphan = [tc for tc in tcs if f"[{tc}]" not in text and "CHK-" not in text]
-        if orphan:
-            errors += errs(f"{cf.relative_to(repo)}: кейсы без CHK-трассировки (rule 6)")
+        # Трассировка TC → Requirement/Scenario спеки (контракт 4): кейс без
+        # ссылки на заголовок спеки — дефект трассировки (rule 6).
+        refs = [t.strip() for t in TRACE_RE.findall(text)]
+        if not refs or not any(r in trace_titles for r in refs):
+            errors += errs(
+                f"{cf.relative_to(repo)}: кейс без трассировки к спеке "
+                f"(### Requirement:/#### Scenario:) — дефект (контракт 4)"
+            )
 
     # --- approved/: требуют review с вердиктом «одобрить» (контракт 5/6) ---
     rev_dir = tm / "reviews"
@@ -480,8 +484,10 @@ def check(repo: Path) -> int:
                 f = pkg / name
                 if f.is_file():
                     cover_texts.append(f.read_text(encoding="utf-8", errors="replace"))
+        # remove-qa-checklist: чеклисты — append-only история (в т.ч. archive/),
+        # corpus читает их рекурсивно, покрытие маршрутов не осиротает.
         if (tm / "checklists").is_dir():
-            for cf in (tm / "checklists").glob("*.md"):
+            for cf in sorted((tm / "checklists").rglob("*.md")):
                 cover_texts.append(cf.read_text(encoding="utf-8", errors="replace"))
         corpus = "\n".join(cover_texts)
         allowlist = {"/health", "/api/health", "/login", "/logout"}

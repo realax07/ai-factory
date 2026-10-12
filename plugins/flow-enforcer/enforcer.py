@@ -103,7 +103,7 @@ ROLE_ACTIONS = {
     "sa": "create_change",
     "code_reviewer": "code_review",
     "qa_automation": "qa_automation",
-    "qa_checklist": "qa_checklist",
+    # remove-qa-checklist: роль/действие qa_checklist упразднены.
     "qa_author": "qa_cases",
     "qa_case_author": "qa_cases",
     "qa_case_reviewer": "qa_review",
@@ -156,7 +156,8 @@ SEQUENCE_PREREQS: dict[int, dict[str, frozenset]] = {
         "code_review": frozenset({"dev_task"}),
         "accept_review": frozenset({"code_review"}),
         "merge_task": frozenset({"accept_review"}),
-        "qa_checklist": frozenset({"merge_task"}),
+        # remove-qa-checklist: этап qa_checklist удален — qa_cases принимает
+        # вход напрямую от merge_task (и design_validation, когда фаза была).
         "qa_cases": frozenset({"merge_task"}),
         "qa_review": frozenset({"qa_cases"}),
         "qa_impact_analysis": frozenset({"merge_task"}),

@@ -268,24 +268,40 @@ class TestFlow1:
         assert any("requirements.md" in x for x in d.details)
 
     def test_qa_chain_order(self, tmp_path):
-        """QA не сводится к одной булевой: чеклист → кейсы → ревью → автотесты."""
+        """QA не сводится к одной булевой: спека → кейсы → ревью → автотесты.
+        remove-qa-checklist: этап qa_checklist удален — qa_cases ALLOW без
+        чеклиста (вход от merge_task/design_validation, трассировка к спеке)."""
         import shutil
         repo = make_repo(tmp_path)
         reg = make_registry(tmp_path)
 
         s = snapshot_for(repo, reg)
-        assert ft.check_action(
-            s, act(requested_action="qa_checklist", actor_role="qa_checklist")
-        ).status == "ALLOW"
+        # действие qa_checklist больше не в графе Флоу 1 (UNKNOWN: не входит
+        # в граф; роль qa_checklist не проходит role-check)
+        d_old = ft.check_action(
+            s, act(requested_action="qa_checklist", actor_role="qa_checklist"))
+        assert d_old.status != "ALLOW"
 
-        # кейсы без чеклиста → DENY
+        # кейсы без чеклиста → ALLOW (чеклист больше не предшественник)
         repo2 = make_repo(tmp_path / "b")
         (repo2 / "test-model" / "checklists" / "add-widget.md").unlink()
         commit_all(repo2)
         s2 = snapshot_for(repo2, reg)
         d2 = ft.check_action(s2, act(requested_action="qa_cases",
                                      actor_role="qa_author"))
-        assert d2.status == "DENY" and has_code(d2, ft.INVALID_GATE)
+        assert d2.status == "ALLOW", d2.details
+
+        # кейсы без спеки и без дельт (источника нет) → DENY
+        repo3 = make_repo(tmp_path / "c")
+        import shutil as _sh
+        _sh.rmtree(repo3 / "openspec" / "changes" / "add-widget" / "specs")
+        _sh.rmtree(repo3 / "openspec" / "specs")
+        commit_all(repo3)
+        s3 = snapshot_for(repo3, reg)
+        d3 = ft.check_action(s3, act(requested_action="qa_cases",
+                                     actor_role="qa_author"))
+        assert d3.status == "DENY"
+        assert any("источника нет" in x or "specs" in x for x in d3.details)
 
         # автотесты без approved → DENY (approved-каталога нет вообще)
         repo4 = make_repo(tmp_path / "d")
@@ -908,7 +924,9 @@ class TestNext:
         data = json.loads(r.stdout)
         actions = [c["action"] for c in data["candidates"]]
         assert "dev_task" in actions
-        assert "qa_checklist" in actions
+        # remove-qa-checklist: этап qa_checklist удален из графа Флоу 1.
+        assert "qa_checklist" not in actions
+        assert "qa_cases" in actions
         assert "release" not in actions
         assert "create_change" not in actions
 

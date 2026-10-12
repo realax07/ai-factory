@@ -77,9 +77,8 @@ ROLE_ZONE_POLICY: dict[str, tuple[str, ...]] = {
     "code_reviewer": (
         "code-reviews/*/review-*.md",
     ),
-    "qa_checklist": (
-        "test-model/checklists/**",
-    ),
+    # remove-qa-checklist: зона роли qa_checklist удалена (роль упразднена);
+    # test-model/checklists/ — append-only история, новых чеклистов не пишут.
     "qa_author": (
         "test-model/new/*/**",
     ),

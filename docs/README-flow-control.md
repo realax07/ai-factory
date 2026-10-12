@@ -34,7 +34,7 @@
 Заказчик: «погнали» → requirements.md (БА, ревью, УТВЕРЖДЕН)
   → create_change (sa) → sdd.md → architecture_review
   → цикл задач: dev_task → code_review → merge_task   ← [P]-задачи параллельно (зоны из reservation)
-  → qa_impact_analysis → qa_checklist → qa_cases → qa_review
+  → qa_impact_analysis → qa_cases → qa_review
   → approved кейсов СВОЕГО пакета → qa_automation
   → archive_change (sa, дельты слиты) → release (ТОЛЬКО после archive, 3.2-Б)
 ```
