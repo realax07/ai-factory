@@ -27,7 +27,7 @@ metadata:
 ## Карта стадий пяти флоу
 
 **Флоу 1 — полный (фича):**
-`approve_requirements` (заказчик/pm, требуется человеческое одобрение) → `create_change` (sa) → `architecture_review` (pm) → `dev_task` (dev) → `code_review` + `accept_review` (code_reviewer) → `merge_task` (dev_lead) → `qa_checklist` (qa_checklist) → `qa_cases` (qa_case_author) → `qa_review` (qa_case_reviewer) → `qa_impact_analysis` (qa_impact_analyst) → `qa_automation` (qa_automation) → `archive_change` (sa/dev_lead) → `release` (pm, только после archive).
+`approve_requirements` (заказчик/pm, требуется человеческое одобрение) → `create_change` (sa) → `architecture_review` (pm) → `dev_task` (dev) → `code_review` + `accept_review` (code_reviewer) → `merge_task` (dev_lead) → `qa_cases` (qa_case_author; спека → кейсы напрямую, без чеклиста — J23) → `qa_review` (qa_case_reviewer) → `qa_impact_analysis` (qa_impact_analyst) → `qa_automation` (qa_automation) → `archive_change` (sa/dev_lead) → `release` (pm, только после archive).
 
 **Флоу 2 — багфикс:** `dev_task` по существующей спеке с BUG-NNN. Если фикс меняет ожидаемое поведение/API/схему (spec_delta) — обязательная эскалация: create_change (Флоу 1) или решение Заказчика. Молча расширить фикс = DENY.
 
