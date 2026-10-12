@@ -84,8 +84,16 @@
 - режимы `FLOW_ENFORCER_MODE`: `permissive` (дефолт; без маркеров — пропуск+лог) / `strict` (без маркеров — block);
 - bypass только дословной строкой `flow: bypass --by customer` (пишется в incident-лог);
 - fail-closed: исключение/таймаут хука блокирует делегацию, не пропускает.
+- **flow-aware (J43.1, 2026-10-12)**: заголовок несет номер флоу и scope —
+  `flow: flow=<1-5> role=<роль> repo=<путь> scope=<id>`; scope по флоу:
+  Ф1 change-id, Ф2 BUG-NNN, Ф3 incident-id, Ф4 chore-slug, Ф5 slug. Валидация —
+  `flowctl prepare --flow N` с входами своего флоу (Ф2: BUG-репорт; Ф3: incident_ref;
+  Ф4: план; Ф5: экспресс-файл). План релиза: Ф1/Ф2/Ф4 обязателен, Ф3 — incident_ref,
+  Ф5 — нет. `flowctl phase --flow N --scope S` — память фазы (последний этап scope);
+  sequence-gate (env, off по умолчанию) блокирует нарушение порядка этапов
+  (SEQUENCE_VIOLATION). Легаси-маркер `change=` без `flow=` → трактовка Флоу 1.
 
-Отключение плагина — правка защищенной зоны профиля, требует согласия Заказчика (как AGENTS.md). Подробности: `plugins/README.md`, backlog J43.
+Отключение плагина — правка защищенной зоны профиля, требует согласия Заказчика (как AGENTS.md). Подробности: `plugins/README.md`, backlog J43/J43.1.
 
 ## Ретро-пополнение бэклога (стоящее правило)
 
