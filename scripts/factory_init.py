@@ -5,7 +5,7 @@
 под проект и прогоняет post-init ворота (flow_check на пустом проекте = OK).
 
 Usage:
-  python3 ~/ai-factory/scripts/factory_init.py --target /path/to/repo --name "My Project" [--force]
+  python3 ~/ai-factory/scripts/factory_init.py --target /path/to/repo --name "My Project" [--force] [--skip-plugin]
 
 Что устанавливается:
   scripts/flow_check.py, scripts/pr_validate.py, scripts/session_worktree.sh,
@@ -18,7 +18,12 @@ Usage:
   .github/workflows/flow.yml,
   openspec/ (скелет specs/ + changes/archive/), test-model/ (checklists/new/reviews/approved/bugs),
   architecture/ (пустая, для map.md архитектора),
-  skills/ — 8 скиллов конвейера (factory-flow + 7 ролевых)
+  skills/ — 8 скиллов конвейера (factory-flow + 7 ролевых),
+  ПЛЮС плагин flow-enforcer (J43): копия plugins/flow-enforcer/ в
+  ~/.hermes/plugins/flow-enforcer/ (машина, не проект) и — если в
+  ~/.hermes/config.yaml уже есть блок plugins.enabled — добавление строки
+  '- flow-enforcer' в него. Нет блока → печатается инструкция, конфиг НЕ
+  правится автоматически. Отключить шаг: --skip-plugin.
 
 Промпты ролей копируются в <target>/agents/ — фабрика самодостаточна после установки.
 Каждый промпт получает шапку-версию (yaml-комментарий с sha эталона); при наличии
@@ -27,12 +32,99 @@ Usage:
 Post-init ворота: flow_check <target> должен завершиться exit 0.
 """
 import argparse
+import os
+import re
 import shutil
 import subprocess
 import sys
 from pathlib import Path
 
 FACTORY = Path(__file__).resolve().parent.parent
+PLUGIN_NAME = "flow-enforcer"
+
+
+def install_plugin(skip: bool = False) -> bool:
+    """Шаг установки плагина flow-enforcer (J43): копия в
+    ~/.hermes/plugins/flow-enforcer/ + 'flow-enforcer' в plugins.enabled
+    ~/.hermes/config.yaml.
+
+    yaml правится ТОЛЬКО добавлением строки в СУЩЕСТВУЮЩИЙ блок
+    plugins.enabled (включая inline-список 'enabled: [a, b]'). Блока нет —
+    печатаем инструкцию, конфиг НЕ правим. Возврат: True — шаг ОК/пропущен.
+    """
+    if skip:
+        print("  плагин flow-enforcer: пропуск (--skip-plugin)")
+        return True
+
+    hermes_home = Path(os.environ.get(
+        "HERMES_HOME", str(Path.home() / ".hermes")))
+    src = FACTORY / "plugins" / PLUGIN_NAME
+    dst = hermes_home / "plugins" / PLUGIN_NAME
+    if not src.is_dir():
+        print(f"  FACTORY-INIT WARNING: {src} не найден — плагин не установлен")
+        return False
+    try:
+        if dst.is_dir():
+            shutil.copytree(src, dst, dirs_exist_ok=True)
+            print(f"  плагин flow-enforcer: обновлен {dst}")
+        else:
+            shutil.copytree(src, dst)
+            print(f"  плагин flow-enforcer: установлен {dst}")
+    except OSError as exc:
+        print(f"  FACTORY-INIT WARNING: копия плагина не удалась: {exc}")
+        return False
+
+    config = hermes_home / "config.yaml"
+    if not config.is_file():
+        print("  plugins.enabled: конфиг ~/.hermes/config.yaml не найден — "
+              "включи вручную:\n"
+              "    plugins:\n"
+              "      enabled:\n"
+              f"        - {PLUGIN_NAME}")
+        return True
+
+    text = config.read_text(encoding="utf-8")
+    if re.search(rf"^\s*-\s+{re.escape(PLUGIN_NAME)}\s*$", text, re.M):
+        print(f"  plugins.enabled: '{PLUGIN_NAME}' уже включен")
+        return True
+
+    # Блок plugins.enabled: либо 'enabled:' со списком-строками ниже,
+    # либо inline 'enabled: [ ... ]' под 'plugins:'.
+    block = re.search(r"^plugins:\s*$", text, re.M)
+    if block is None:
+        print("  plugins.enabled: блока plugins: в config.yaml нет — "
+              "включи вручную (автоправка не выполнялась):\n"
+              "    plugins:\n"
+              "      enabled:\n"
+              f"        - {PLUGIN_NAME}")
+        return True
+    head = text[block.end():]
+    enabled = re.search(r"^([ \t]+)enabled:(.*)$", head, re.M)
+    if enabled is None:
+        print("  plugins.enabled: ключа enabled внутри plugins: нет — "
+              "включи вручную (автоправка не выполнялась):\n"
+              "    plugins:\n"
+              "      enabled:\n"
+              f"        - {PLUGIN_NAME}")
+        return True
+    indent, inline = enabled.group(1), enabled.group(2).strip()
+    if inline.startswith("["):
+        # inline-список: добавляем элемент в скобки
+        inner = inline[1:-1].strip()
+        items = f"{inner}, " if inner else ""
+        new_line = f"{indent}enabled: [{items}{PLUGIN_NAME}]"
+        new_text = (text[:block.end()] + head[:enabled.start()]
+                    + new_line + head[enabled.end():])
+        config.write_text(new_text, encoding="utf-8")
+        print(f"  plugins.enabled: '{PLUGIN_NAME}' добавлен (inline-список)")
+        return True
+    # список строками: вставляем сразу после 'enabled:'
+    new_text = (text[:block.end()] + head[:enabled.end()] + "\n"
+                + indent + "  " + f"- {PLUGIN_NAME}"
+                + head[enabled.end():])
+    config.write_text(new_text, encoding="utf-8")
+    print(f"  plugins.enabled: '{PLUGIN_NAME}' добавлен в существующий блок")
+    return True
 
 COPY_FILES = [
     "scripts/flow_check.py",
@@ -106,6 +198,8 @@ def main() -> int:
     ap.add_argument("--target", required=True, help="путь к целевому git-репозиторию")
     ap.add_argument("--name", required=True, help="имя проекта (для constitution)")
     ap.add_argument("--force", action="store_true", help="перезаписывать существующие файлы")
+    ap.add_argument("--skip-plugin", action="store_true",
+                    help="не устанавливать плагин flow-enforcer в ~/.hermes/plugins")
     args = ap.parse_args()
 
     target = Path(args.target).resolve()
@@ -179,6 +273,10 @@ def main() -> int:
         ok = False
     else:
         print(f"  openspec CLI: {r.stdout.strip()}")
+
+    # 4a. Плагин flow-enforcer (J43): машина (~/.hermes/plugins), не проект
+    if not install_plugin(skip=args.skip_plugin):
+        ok = False
 
     # 5. Post-init ворота: flow_check = OK на пустом проекте
     r = subprocess.run(["python3", str(FACTORY / "scripts/flow_check.py"), str(target)],
