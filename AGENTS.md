@@ -75,6 +75,18 @@
 
 Ворота (исполняемые, задача A J41): `flow_transition` — `check_create_change` и `check_dev_task` (транзитивно) возвращают `PLAN_RELEASE_MISSING` / `PLAN_FLOW_UNDECLARED` без валидного плана; `delegate_watchdog` метит bypass-делегации `undelivered_bypass` (кандидат 2b J39) — результат обходной делегации не считается доставленным. Проектные `flow_check` ловят то же на мердже.
 
+## Плагин flow-enforcer (J43, 2026-10-12)
+
+**Каждый `delegate_task` валидируется ДО исполнения** — плагин `flow-enforcer` (pre_tool_call-хук Hermes, источник — этот репозиторий, `plugins/flow-enforcer/`; ставится `factory_init.py` / `hermes plugins install realax07/ai-factory --ref <pin>`, включение — `plugins.enabled`):
+
+- конвейерная делегация обязана нести заголовок `flow: role=<роль> repo=<путь> change=<id>` (первая строка goal, шаблон `templates/task_delegation.md`);
+- хук прогоняет `flowctl prepare --dry-run` — DENY блокирует делегацию с кодом (`PLAN_RELEASE_MISSING`, `ZONE_CONFLICT`, `REQUIREMENTS_NOT_APPROVED`, …), ПМ видит отказ на спавне, а не пост-фактум;
+- режимы `FLOW_ENFORCER_MODE`: `permissive` (дефолт; без маркеров — пропуск+лог) / `strict` (без маркеров — block);
+- bypass только дословной строкой `flow: bypass --by customer` (пишется в incident-лог);
+- fail-closed: исключение/таймаут хука блокирует делегацию, не пропускает.
+
+Отключение плагина — правка защищенной зоны профиля, требует согласия Заказчика (как AGENTS.md). Подробности: `plugins/README.md`, backlog J43.
+
 ## Ретро-пополнение бэклога (стоящее правило)
 
 После каждого завершенного цикла/этапа ПМ пополняет бэклог (`backlog/`) тюнами и наблюдениями из прогона (распоряжение Заказчика, 2026-09-17; структура J22, 2026-10-09). Это не опция: урок, не записанный в бэклог, теряется. Формат: 1 item = 1 файл `backlog/<ID>-<slug>.md` + строка в `backlog/MAP.md` (карта — единственный файл, читаемый целиком).
