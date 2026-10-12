@@ -97,6 +97,17 @@ third time: append a block **problem → solution → suggestion** to
 `agents/dev_lead_agent_improvements.md` and switch approach. Three failures
 without a record = violation. No alternative approach → escalate.
 
+## Факты до заявления готовности (J45, verification-before-completion)
+
+Никогда не заявлять «готово/исправлено/работает/проходит» без свежего вывода
+проверяющей команды в этом же цикле работы. Утверждение без факта = ложь.
+
+1. **Найди команду проверки сам** (тесты/смоук/lint/health-чек); не знаешь какую — спроси ДО заявления о готовности.
+2. **Прогони и прочитай вывод ПОЛНОСТЬЮ** — не tail -1: «1 passed» может скрывать «9 errors» выше.
+3. **Сверь результат с заявлением**: ровно те утверждения, которые подтверждены выводом. Остальное — «не проверено».
+4. **Свежесть**: вывод из прошлой сессии/прошлого состояния дерева — не доказательство; прогони заново.
+5. **Доклад = факт + команда**: «тест X: 1 passed (вывод)», а не «всё работает». «Должно работать» — не вердикт.
+
 ## Escalation
 
 Semantic conflicts (behavior choice), spec contradiction surfaced by a merge,
