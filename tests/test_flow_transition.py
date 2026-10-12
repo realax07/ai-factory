@@ -660,6 +660,11 @@ class TestParallelDeps:
 class TestFlow2:
     def _bug_snapshot(self, tmp_path: Path, **kw):
         repo = make_repo(tmp_path, **kw)
+        # J43.1: легкий план Флоу 2 — общий test-model/bugs/PLAN.md (один на
+        # все баги, со строкой «Флоу: 2»); пишется ПОСЛЕ make_repo и до
+        # снимка (снимок читает рабочее дерево; коммит не обязателен).
+        write(repo, "test-model/bugs/PLAN.md",
+              "# PLAN — багфиксы\n\n**Флоу: 2** (легкий план).\n")
         reg = make_registry(tmp_path)
         s = snapshot_for(repo, reg, flow=2, change_id="BUG-042")
         return repo, reg, s
@@ -748,6 +753,9 @@ class TestFlow3:
 class TestFlow4:
     def _chore_snapshot(self, tmp_path: Path, **kw):
         repo = make_repo(tmp_path, **kw)
+        # J43.1: легкий план Флоу 4 — PLAN-chore.md в корне (change_id="chore").
+        write(repo, "PLAN-chore.md",
+              "# PLAN-chore\n\n**Флоу: 4** (легкий план).\n")
         reg = make_registry(tmp_path)
         s = snapshot_for(repo, reg, flow=4, change_id="chore")
         return repo, reg, s
@@ -1023,6 +1031,10 @@ class TestCLI:
 
     def test_next_no_candidates_exit2(self, tmp_path):
         repo = make_repo(tmp_path)
+        write(repo, "test-model/bugs/BUG-042.md", "# BUG-042\n\nфикс\n")
+        write(repo, "test-model/bugs/PLAN.md",
+              "# PLAN — багфиксы\n\n**Флоу: 2** (легкий план).\n")
+        commit_all(repo)
         reg = make_registry(tmp_path)
         r = run_cli("next", "--repo", str(repo), "--project", "proj",
                     "--flow", "2", "--change", "BUG-042",

@@ -300,9 +300,25 @@ PLAN_FLOW_RE = re.compile(
     r"^\s*\*{0,2}\s*Флоу:\s*([1-5])\s*\*{0,2}[^\n]*$", re.M)
 
 
-def plan_release_paths(repo: Path, change_id: str) -> list[Path]:
-    """Кандидаты-пути плана релиза change-пакета (J41): корень репо и каталог
-    change-пакета. Оба расположения легальны, порядок не важен."""
+def plan_release_paths(repo: Path, change_id: str, flow: int = 1) -> list[Path]:
+    """Кандидаты-пути плана релиза (J41 + J43.1: легкий план Флоу 2/4).
+
+    Флоу 1 (change-пакет): корень репо и каталог change-пакета — оба
+    расположения легальны, порядок не важен.
+    Флоу 2 (J43.1, матрица Заказчика 2026-10-12: план обязателен, легкий):
+    PLAN-BUG-NNN.md в корне репо ИЛИ общий test-model/bugs/PLAN.md (один
+    на все баги допустим — содержит строку «Флоу: 2» и покрывает).
+    Флоу 4 (легкий): PLAN-<slug>.md в корне репо.
+    Флоу 3/5: план не требуем (решение Заказчика: incident_ref уже есть /
+    экспресс-режим) — путь не вызывается воротами этих флоу.
+    """
+    if flow == 2:
+        return [
+            Path(repo) / f"PLAN-{change_id}.md",
+            Path(repo) / "test-model" / "bugs" / "PLAN.md",
+        ]
+    if flow == 4:
+        return [Path(repo) / f"PLAN-{change_id}.md"]
     rel = f"openspec/changes/{change_id}"
     return [
         Path(repo) / f"PLAN-{change_id}.md",
@@ -311,21 +327,26 @@ def plan_release_paths(repo: Path, change_id: str) -> list[Path]:
 
 
 def _plan_release(snapshot: dict, ctx: dict) -> list:
-    """План релиза change-пакета существует и объявляет воркфлоу (J41).
+    """План релиза существует и объявляет воркфлоу (J41; J43.1 для Флоу 2/4).
 
     В духе _requirements_approved: change-идентификатор берется из scope
     снимка (тот же, что использует change.package); файл ищется в легальных
-    расположениях (корень репо / каталог change-пакета). Отсутствие файла —
-    DENY PLAN_RELEASE_MISSING (урок P15: без артефакта ворота бессильны);
-    файл без объявления воркфлоу (строка вида «Флоу: N», N 1–5, допускается
-    жирное выделение) — DENY PLAN_FLOW_UNDECLARED: воркфлоу фиксирует, по
-    какой схеме ПМ поведет релиз (кто/что/этапы), без него план — не план.
+    расположениях СВОЕГО флоу (plan_release_paths): Флоу 1 — корень репо /
+    каталог change-пакета; Флоу 2 — PLAN-BUG-NNN.md в корне или общий
+    test-model/bugs/PLAN.md; Флоу 4 — PLAN-<slug>.md в корне (матрица
+    Заказчика 2026-10-12: Флоу 1/2/4 — план обязателен, 2/4 легкий; Флоу 3/5 —
+    план не требуем, ворота этих флоу _plan_release не вызывают). Отсутствие
+    файла — DENY PLAN_RELEASE_MISSING (урок P15: без артефакта ворота
+    бессильны); файл без объявления воркфлоу (строка вида «Флоу: N», N 1–5,
+    допускается жирное выделение) — DENY PLAN_FLOW_UNDECLARED: воркфлоу
+    фиксирует, по какой схеме ПМ поведет релиз, без него план — не план.
     Файл есть и воркфлоу объявлен — находок нет (ALLOW не «рисуем», просто
     не добавляем причин).
     """
     scope = snapshot.get("scope", {})
     change_id = scope.get("change")
     repo = scope.get("repo")
+    flow = scope.get("flow", 1)
     ctx["checked"].add("plan.release")
     # Как _requirements_approved: нет входа — MISSING_INPUT (честный отказ),
     # не молчаливое разрешение.
@@ -334,7 +355,8 @@ def _plan_release(snapshot: dict, ctx: dict) -> list:
             MISSING_INPUT,
             "план релиза не проверяем: scope без repo/change — пересобери "
             "inspect (J41; контракт §2)")]
-    for path in plan_release_paths(Path(repo), str(change_id)):
+    paths = plan_release_paths(Path(repo), str(change_id), flow)
+    for path in paths:
         if not path.is_file():
             continue
         ctx["evidence"].add(str(path))
@@ -348,9 +370,10 @@ def _plan_release(snapshot: dict, ctx: dict) -> list:
         return []
     return [Finding(
         PLAN_RELEASE_MISSING,
-        f"план релиза не найден: ни PLAN-{change_id}.md в корне репо, ни "
-        f"openspec/changes/{change_id}/PLAN.md (J41; правило фабрики: релиз "
-        f"стартует с плана ПМ, СА лишь детализирует)")]
+        f"план релиза не найден (Флоу {flow}): ни одного из: "
+        f"{', '.join(str(p) for p in paths)} (J41/J43.1; правило фабрики: "
+        f"релиз стартует с плана ПМ, СА лишь детализирует; легкий план "
+        f"Флоу 2/4: цель, строка «Флоу: N», зоны записи, критерий приемки)")]
 
 
 def _arch_review_done(snapshot: dict, ctx: dict) -> list:
@@ -1397,13 +1420,35 @@ def check_release(snapshot, action, ctx, flow):
 
 def check_bug_fix(snapshot, action, ctx, flow):
     out: list = []
+    # J43.1 (матрица Заказчика 2026-10-12): Флоу 2 — план релиза ОБЯЗАТЕЛЕН
+    # (легкий: PLAN-BUG-NNN.md в корне или общий test-model/bugs/PLAN.md).
+    # Транзитивно с первого этапа: фикс не стартует без плана (урок P15).
+    out.extend(_plan_release(snapshot, ctx))
+    scope = snapshot.get("scope", {})
+    bug_id = str(scope.get("change") or "")
+    repo = scope.get("repo")
     value, status, out0 = _fact_ready(snapshot, "test_model.present", ctx)
     out.extend(out0)
     if status == "ready" and isinstance(value, dict) and not value.get("bugs"):
         out.append(Finding(
             MISSING_INPUT,
-            f"баг-репорт test-model/bugs/{snapshot.get('scope', {}).get('change', '')}.md "
+            f"баг-репорт test-model/bugs/{bug_id}.md "
             f"отсутствует — Флоу 2 требует BUG-NNN репорт (ТЗ 03 п.3)"))
+    elif (status == "ready" and repo and bug_id and not any(
+            p.get("code") == "FLOW_ID_INVALID"
+            for p in snapshot.get("problems", []))
+            and not (Path(repo) / "test-model" / "bugs" /
+                     f"{bug_id}.md").is_file()):
+        # J43.1: легальный общий план test-model/bugs/PLAN.md делает каталог
+        # bugs/ непустым (факт test_model.present грубый: dir non-empty) —
+        # требуем репорт ИМЕННО этого BUG-NNN. При невалидном scope-id
+        # (FLOW_ID_INVALID) точная проверка не применяется — scope и так
+        # дает AMBIGUOUS_STATE/UNKNOWN.
+        out.append(Finding(
+            MISSING_INPUT,
+            f"баг-репорт test-model/bugs/{bug_id}.md "
+            f"отсутствует — Флоу 2 требует BUG-NNN репорт (ТЗ 03 п.3; "
+            f"план каталога не считается репортом)"))
     specs_value, specs_status, out1 = _fact_ready(snapshot, "specs.present", ctx)
     out.extend(out1)
     if specs_status != "ready" or (
@@ -1450,6 +1495,9 @@ def check_deploy_rollback(snapshot, action, ctx, flow):
 
 def check_chore_task(snapshot, action, ctx, flow):
     out: list = []
+    # J43.1 (матрица Заказчика 2026-10-12): Флоу 4 — план релиза ОБЯЗАТЕЛЕН
+    # (легкий: PLAN-<slug>.md в корне репо; та же «Флоу: N»-строка).
+    out.extend(_plan_release(snapshot, ctx))
     ctx["checked"].add("protected paths (J3)")
     protected = [
         p for p in action.paths

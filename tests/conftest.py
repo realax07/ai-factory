@@ -34,6 +34,13 @@ PLAN_FIXTURE_TEXT = (
     "## Этапы\n\n1. dev\n2. review\n3. merge\n"
 )
 
+# Примечание J43.1: план Флоу 2 (test-model/bugs/PLAN.md) и Флоу 4
+# (PLAN-chore.md) фикстура НЕ кладет — их расположение делает непустым
+# факт test-model.present/bugs (flow_state) и ломает чужие допущения.
+# Флоу-специфичные планы пишут сами сьюты-помощники (TestFlow2/TestFlow4
+# в test_flow_transition.py) и тесты правил (test_j41_plan_release.py,
+# test_j431_flow_aware.py — оба с no_plan_fixture).
+
 
 @pytest.fixture(autouse=True)
 def plan_release_fixture(request, tmp_path):
@@ -46,8 +53,9 @@ def plan_release_fixture(request, tmp_path):
     "proj" через repo.mkdir() без exist_ok: mkdir(exist_ok=True) здесь
     совместим с обоими вариантами (git init и запись PLAN в уже
     существующий каталог легальны). Ворота ищут план относительно
-    scope.repo (корень репо или каталог change-пакета). Отключение:
-    pytest.mark.no_plan_fixture — для тестов самого J41-правила.
+    scope.repo (свои для каждого флоу пути — flow_transition.
+    plan_release_paths). Отключение: pytest.mark.no_plan_fixture — для
+    тестов самих J41/J43.1-правил.
     """
     if request.node.get_closest_marker("no_plan_fixture"):
         yield
