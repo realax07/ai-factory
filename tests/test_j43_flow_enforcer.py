@@ -83,6 +83,7 @@ MARKERS = {"role": "dev", "repo": "/tmp/proj", "change": "add-widget",
 
 
 def test_a_non_delegate_tool_no_directive():
+    """TC-J43-001: J43 flow-enforcer."""
     for tool in ("terminal", "read_file", "write_file", "web_search"):
         assert enforcer.flow_enforce(tool, {"command": "ls"}, "t1") is None
 
@@ -91,6 +92,7 @@ def test_a_non_delegate_tool_no_directive():
 
 
 def test_b_strict_missing_markers_block_code():
+    """TC-J43-002: J43 flow-enforcer."""
     import os
     os.environ["FLOW_ENFORCER_MODE"] = "strict"
     try:
@@ -103,6 +105,7 @@ def test_b_strict_missing_markers_block_code():
 
 
 def test_c_permissive_missing_markers_passes_and_logs(plugin_env):
+    """TC-J43-003: J43 flow-enforcer."""
     res = enforcer.flow_enforce(
         "delegate_task", delegate_args("почини стили"), "t3")
     assert res is None
@@ -115,6 +118,7 @@ def test_c_permissive_missing_markers_passes_and_logs(plugin_env):
 
 
 def test_d_bypass_marker_passes_and_logs(plugin_env):
+    """TC-J43-004: J43 flow-enforcer."""
     goal = "flow: bypass --by customer\n" + HEADER_GOAL
     res = enforcer.flow_enforce(
         "delegate_task", delegate_args(goal), "t4")
@@ -130,6 +134,7 @@ def test_d_bypass_marker_passes_and_logs(plugin_env):
 
 
 def test_e_prepare_ok_allows(monkeypatch):
+    """TC-J43-005: J43 flow-enforcer."""
     calls = install_fake_run(monkeypatch, rc=0, out="prepared: true\n")
     res = enforcer.flow_enforce(
         "delegate_task", delegate_args(HEADER_GOAL), "t5")
@@ -143,6 +148,7 @@ def test_e_prepare_ok_allows(monkeypatch):
 
 
 def test_f_prepare_fail_blocks_with_code(monkeypatch):
+    """TC-J43-006: J43 flow-enforcer."""
     out = json.dumps({"reason": "PLAN_RELEASE_MISSING",
                       "note": "план релиза не найден"})
     install_fake_run(monkeypatch, rc=1, out=out)
@@ -154,6 +160,7 @@ def test_f_prepare_fail_blocks_with_code(monkeypatch):
 
 
 def test_f2_stderr_included_in_block(monkeypatch):
+    """TC-J43-007: J43 flow-enforcer."""
     install_fake_run(monkeypatch, rc=2, out="", err="ZONE_OUTSIDE_POLICY: x")
     res = enforcer.flow_enforce(
         "delegate_task", delegate_args(HEADER_GOAL), "t6b")
@@ -165,6 +172,7 @@ def test_f2_stderr_included_in_block(monkeypatch):
 
 
 def test_g_exception_fail_closed(monkeypatch):
+    """TC-J43-008: J43 flow-enforcer."""
     def _boom(argv, **kw):
         raise RuntimeError("flowctl exploded")
 
@@ -180,10 +188,12 @@ def test_g_exception_fail_closed(monkeypatch):
 
 
 def test_h_parse_markers_from_goal_header():
+    """TC-J43-009: J43 flow-enforcer."""
     assert enforcer.parse_markers(delegate_args(HEADER_GOAL)) == MARKERS
 
 
 def test_h2_parse_markers_from_context_fallback(monkeypatch):
+    """TC-J43-010: J43 flow-enforcer."""
     install_fake_run(monkeypatch, rc=0, out="")
     goal = "Задача: виджет"
     context = "role: qa_automation repo: /tmp/proj change: add-widget"
@@ -195,11 +205,13 @@ def test_h2_parse_markers_from_context_fallback(monkeypatch):
 
 
 def test_h3_parse_markers_none():
+    """TC-J43-011: J43 flow-enforcer."""
     assert enforcer.parse_markers(delegate_args("без маркеров")) is None
     assert enforcer.parse_markers({}) is None
 
 
 def test_h4_role_action_mapping():
+    """TC-J43-012: J43 flow-enforcer."""
     assert enforcer.ROLE_ACTIONS["dev"] == "dev_task"
     assert enforcer.ROLE_ACTIONS["code_reviewer"] == "code_review"
     assert enforcer.ROLE_ACTIONS["qa_automation"] == "qa_automation"
@@ -218,7 +230,7 @@ REQ_APPROVED = ("# ТЗ\n\n> Статус: УТВЕРЖДЕН | Автор: ba_a
 
 @pytest.mark.no_plan_fixture
 def test_i_real_prepare_latency(tmp_path, monkeypatch):
-    """Реальный flowctl prepare --dry-run на fixture-репо: ALLOW + замер.
+    """TC-J43-013: Реальный flowctl prepare --dry-run на fixture-репо: ALLOW + замер.
 
     Отчет по латентности — duration_s в логе и в выводе теста.
     """
@@ -278,7 +290,7 @@ def test_i_real_prepare_latency(tmp_path, monkeypatch):
 
 @pytest.mark.no_plan_fixture
 def test_j_slow_prepare_logs_warning(tmp_path, monkeypatch):
-    """Порог WARNING: prepare дольше 10с пишет WARNING в лог (мок времени)."""
+    """TC-J43-014: Порог WARNING: prepare дольше 10с пишет WARNING в лог (мок времени)."""
     times = iter([0.0, float(enforcer.SLOW_PREPARE_SECONDS) + 1.0])
     real_monotonic = enforcer.time.monotonic
     monkeypatch.setattr(
@@ -315,6 +327,7 @@ def _hermes_home(tmp_path, monkeypatch, config: str | None):
 
 
 def test_k_install_plugin_copies_and_enables(tmp_path, monkeypatch):
+    """TC-J43-015: J43 flow-enforcer."""
     fi = _init(tmp_path)
     home = _hermes_home(tmp_path, monkeypatch,
                         "plugins:\n  enabled:\n    - other-plugin\n")
@@ -331,6 +344,7 @@ def test_k_install_plugin_copies_and_enables(tmp_path, monkeypatch):
 
 
 def test_k2_install_plugin_already_enabled(tmp_path, monkeypatch):
+    """TC-J43-016: J43 flow-enforcer."""
     fi = _init(tmp_path)
     cfg_text = "plugins:\n  enabled:\n    - flow-enforcer\n"
     home = _hermes_home(tmp_path, monkeypatch, cfg_text)
@@ -339,6 +353,7 @@ def test_k2_install_plugin_already_enabled(tmp_path, monkeypatch):
 
 
 def test_k3_install_plugin_no_block_prints_instruction(tmp_path, monkeypatch, capsys):
+    """TC-J43-017: J43 flow-enforcer."""
     fi = _init(tmp_path)
     home = _hermes_home(tmp_path, monkeypatch, "llm:\n  model: x\n")
     assert fi.install_plugin() is True
@@ -349,6 +364,7 @@ def test_k3_install_plugin_no_block_prints_instruction(tmp_path, monkeypatch, ca
 
 
 def test_k4_install_plugin_skip(tmp_path, monkeypatch):
+    """TC-J43-018: J43 flow-enforcer."""
     fi = _init(tmp_path)
     home = _hermes_home(tmp_path, monkeypatch, None)
     assert fi.install_plugin(skip=True) is True
@@ -356,6 +372,7 @@ def test_k4_install_plugin_skip(tmp_path, monkeypatch):
 
 
 def test_k5_bootstrap_hint(tmp_path, monkeypatch, capsys):
+    """TC-J43-019: J43 flow-enforcer."""
     sys.path.insert(0, str(FACTORY / "scripts"))
     import factory_bootstrap as fb
     home = _hermes_home(tmp_path, monkeypatch, None)
