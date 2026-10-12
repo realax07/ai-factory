@@ -174,6 +174,52 @@ class TestCreateChangeRequiresPlan:
         assert (repo / "openspec/changes/add-widget/PLAN.md") in paths
 
 
+# ------------------------- J43.1: план Флоу 2/4 подключен к воротам флоу
+
+
+class TestJ431PlanWiring:
+    """J43.1: check_bug_fix (Флоу 2) и check_chore_task (Флоу 4) вызывают
+    _plan_release — легкий план обязателен так же, как для Флоу 1.
+    Полные сценарии планов Флоу 2/4 — tests/test_j431_flow_aware.py."""
+
+    def _spy(self, monkeypatch) -> list:
+        calls: list = []
+        original = ft._plan_release
+
+        def _spy_wrap(snapshot, ctx):
+            calls.append(snapshot.get("scope", {}).get("flow"))
+            return original(snapshot, ctx)
+
+        monkeypatch.setattr(ft, "_plan_release", _spy_wrap)
+        return calls
+
+    def test_bug_fix_checks_plan(self, tmp_path, monkeypatch):
+        repo = make_repo(tmp_path)
+        write(repo, "test-model/bugs/BUG-042.md", "# BUG-042\n\nфикс\n")
+        commit_all(repo, "bug report")
+        reg = make_registry(tmp_path)
+        calls = self._spy(monkeypatch)
+        d = ft.check_action(snapshot_for(repo, reg, flow=2,
+                                         change_id="BUG-042"),
+                            act(requested_action="bug_fix"))
+        assert calls == [2]  # _plan_release вызван с флоу 2
+        # PLAN-файла Флоу 2 нет (fixture кладет только Флоу 1) → DENY
+        assert d.status == "DENY"
+        assert has_code(d, ft.PLAN_RELEASE_MISSING)
+
+    def test_chore_task_checks_plan(self, tmp_path, monkeypatch):
+        repo = make_repo(tmp_path)
+        reg = make_registry(tmp_path)
+        calls = self._spy(monkeypatch)
+        d = ft.check_action(snapshot_for(repo, reg, flow=4,
+                                         change_id="chore"),
+                            act(requested_action="chore_task",
+                                paths=("scripts/tool.py",)))
+        assert calls == [4]  # _plan_release вызван с флоу 4
+        assert d.status == "DENY"
+        assert has_code(d, ft.PLAN_RELEASE_MISSING)
+
+
 # --------------------------------- (б) план без объявления воркфлоу
 
 

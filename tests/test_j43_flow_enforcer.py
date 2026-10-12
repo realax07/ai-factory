@@ -49,6 +49,11 @@ def plugin_env(tmp_path, monkeypatch):
                        str(tmp_path / "state" / "active_sessions.json"))
     monkeypatch.setenv("FLOW_ENFORCER_MODE", "permissive")
     monkeypatch.setenv("AI_FACTORY_HOME", str(FACTORY))
+    # J43.1: env-fallback флоу и опциональная последовательность не должны
+    # прилетать из окружения разработчика — детерминизм сьюта.
+    monkeypatch.delenv("FLOW_ENFORCER_FLOW", raising=False)
+    monkeypatch.delenv("FLOW_ENFORCER_SEQUENCE", raising=False)
+    monkeypatch.delenv("FLOW_ENFORCER_PROJECT", raising=False)
     yield state
 
 
@@ -75,8 +80,10 @@ HEADER_GOAL = (
     "flow: role=dev repo=/tmp/proj change=add-widget\n"
     "Задача: реализовать виджет. Зона записи: src/.\n"
 )
-MARKERS = {"role": "dev", "repo": "/tmp/proj", "change": "add-widget",
-           "task": None}
+# J43.1: парсер возвращает scope (легаси change= → scope) и flow=None
+# (энфорсер возьмет env-fallback с WARNING).
+MARKERS = {"role": "dev", "repo": "/tmp/proj", "scope": "add-widget",
+           "task": None, "flow": None}
 
 
 # ------------------------------------------------------------ (а) триггер
@@ -308,6 +315,259 @@ def test_j_slow_prepare_logs_warning(tmp_path, monkeypatch):
     assert "slow_prepare" in log and "WARNING" in log
 
 
+# ============================== J43.1: flow-aware энфорсер + новый маркер
+
+
+def _make_repo(tmp_path: Path, name: str, files: dict) -> Path:
+    """Git-репо с файлами (fixture для РЕАЛЬНОГО flowctl prepare)."""
+    repo = tmp_path / name
+    repo.mkdir(parents=True, exist_ok=True)  # exist_ok: conftest-fixture
+    # пишет планы в tmp_path/proj до тела теста
+    def _git(*a: str) -> None:
+        subprocess.run(["git", "-C", str(repo), *a], check=True,
+                       capture_output=True, text=True)
+    _git("init", "-q")
+    _git("config", "user.email", "t@t")
+    _git("config", "user.name", "t")
+    for rel, text in files.items():
+        p = repo / rel
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(text, encoding="utf-8")
+    _git("add", "-A")
+    _git("-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "init")
+    return repo
+
+
+BUG_REPORT = "# BUG-042\n\n## Ожидаемое/фактическое\nожидалось a, фактически b\n"
+EXISTING_SPEC = ("# Спеки\n\nopenspec/specs/widget/spec.md описывает "
+                 "ожидаемое поведение\n")
+WIDGET_SPEC = ("### Requirement: W\n#### Scenario: S\n"
+               "- GIVEN a\n- WHEN b\n- THEN c\n")
+PLAN_FLOW2 = ("# PLAN — багфиксы\n\n**Флоу: 2** (легкий план: цель — фикс "
+              "BUG-042; зоны: src/; критерий: регресс зелен).\n")
+PLAN_FLOW4 = ("# PLAN-chore-cleanup\n\n**Флоу: 4** (легкий план: цель — "
+              "чистка скриптов; зоны: scripts/; критерий: тесты зеленые).\n")
+
+
+def flow2_goal(repo: Path) -> dict:
+    return delegate_args(
+        f"flow: flow=2 role=dev repo={repo} scope=BUG-042\n"
+        "Задача: фикс бага. Зона записи: src/.\n")
+
+
+def flow4_goal(repo: Path) -> dict:
+    return delegate_args(
+        f"flow: flow=4 role=dev repo={repo} scope=chore-cleanup\n"
+        "Задача: обслуживание. Зона записи: scripts/.\n")
+
+
+def _log_entries(plugin_env) -> list[dict]:
+    return [json.loads(l) for l in
+            (plugin_env / "flow-enforcer.log").read_text("utf-8").splitlines()
+            if l.strip()]
+
+
+class TestJ431Marker:
+    """J43.1: новый заголовок flow=/scope= и его очевидные ошибки."""
+
+    def test_new_header_parsed(self):
+        goal = ("flow: flow=2 role=dev repo=/tmp/proj scope=BUG-042\n"
+                "Задача: фикс.\n")
+        m = enforcer.parse_markers(delegate_args(goal))
+        assert m == {"role": "dev", "repo": "/tmp/proj", "scope": "BUG-042",
+                     "task": None, "flow": 2}
+
+    def test_flow9_invalid(self):
+        goal = ("flow: flow=9 role=dev repo=/tmp/proj scope=add-widget\n")
+        res = enforcer.flow_enforce("delegate_task", delegate_args(goal), "d1")
+        assert res is not None and res["action"] == "block"
+        assert "FLOW_MARKER_INVALID" in res["message"]
+
+    def test_empty_scope_invalid(self):
+        goal = "flow: flow=2 role=dev repo=/tmp/proj scope=\n"
+        res = enforcer.flow_enforce("delegate_task", delegate_args(goal), "d2")
+        assert res is not None and res["action"] == "block"
+        assert "FLOW_MARKER_INVALID" in res["message"]
+
+    def test_flow2_scope_must_be_bug_nnn(self):
+        goal = ("flow: flow=2 role=dev repo=/tmp/proj scope=add-widget\n")
+        res = enforcer.flow_enforce("delegate_task", delegate_args(goal), "d3")
+        assert res is not None and res["action"] == "block"
+        assert "BUG-NNN" in res["message"]
+
+    def test_legacy_marker_flow1_warning(self, plugin_env, monkeypatch):
+        """(г) старый 'change=' без flow= → трактовка flow=1 + WARNING в лог."""
+        install_fake_run(monkeypatch, rc=0, out="")
+        res = enforcer.flow_enforce(
+            "delegate_task", delegate_args(HEADER_GOAL), "d4")
+        assert res is None
+        entries = _log_entries(plugin_env)
+        fallback = [e for e in entries if e.get("event") == "flow_fallback"]
+        assert fallback and fallback[-1]["level"] == "WARNING"
+        assert fallback[-1]["flow"] == 1
+
+    def test_marker_flow_wins_over_env(self, plugin_env, monkeypatch):
+        """flow= из маркера сильнее env FLOW_ENFORCER_FLOW (без WARNING)."""
+        monkeypatch.setenv("FLOW_ENFORCER_FLOW", "1")
+        calls = install_fake_run(monkeypatch, rc=0, out="")
+        res = enforcer.flow_enforce(
+            "delegate_task", flow2_goal(Path("/tmp/proj")), "d5")
+        assert res is None
+        argv = calls[0]
+        assert argv[argv.index("--flow") + 1] == "2"
+        entries = _log_entries(plugin_env)
+        assert not [e for e in entries if e.get("event") == "flow_fallback"]
+
+    def test_flow_aware_role_action_and_change(self, monkeypatch):
+        """prepare вызывается с --flow N, --change <scope>, действие — своего
+        флоу (Ф2 dev → bug_fix)."""
+        calls = install_fake_run(monkeypatch, rc=0, out="")
+        enforcer.flow_enforce(
+            "delegate_task", flow2_goal(Path("/tmp/proj")), "d6")
+        argv = calls[0]
+        assert argv[argv.index("--flow") + 1] == "2"
+        assert argv[argv.index("--change") + 1] == "BUG-042"
+        assert argv[argv.index("--action") + 1] == "bug_fix"
+
+
+class TestJ431FlowAwareEnforce:
+    """(а)/(б)/(в): РЕАЛЬНЫЙ flowctl prepare на fixture-репо Флоу 2/4."""
+
+    def test_a_flow2_with_bug_report_allows(self, tmp_path, plugin_env):
+        repo = _make_repo(tmp_path, "proj", {
+            "test-model/bugs/BUG-042.md": BUG_REPORT,
+            "openspec/specs/widget/spec.md": WIDGET_SPEC,
+            "test-model/bugs/PLAN.md": PLAN_FLOW2,
+            "src/fix.py": "X = 1\n",
+        })
+        res = enforcer.flow_enforce(
+            "delegate_task", flow2_goal(repo), "j1")
+        assert res is None, f"ожидался ALLOW, получен block: {res}"
+        entry = _log_entries(plugin_env)[-1]
+        assert entry["event"] == "prepare_result" and entry["rc"] == 0
+        assert entry["flow"] == 2 and entry["action"] == "bug_fix"
+
+    def test_b_flow2_without_bug_report_blocks(self, tmp_path, plugin_env):
+        repo = _make_repo(tmp_path, "proj", {
+            # BUG-репорта НЕТ
+            "openspec/specs/widget/spec.md": WIDGET_SPEC,
+            "test-model/bugs/PLAN.md": PLAN_FLOW2,
+            "src/fix.py": "X = 1\n",
+        })
+        res = enforcer.flow_enforce(
+            "delegate_task", flow2_goal(repo), "j2")
+        assert res is not None and res["action"] == "block"
+        # текст про отсутствие репорта (ошибка по существу, не фильтруется)
+        assert "баг-репорт" in res["message"]
+
+    def test_v_flow4_with_plan_allows_via_no_change_filter(
+            self, tmp_path, plugin_env):
+        """(в) Ф4 chore-slug + план → ALLOW: prepare отклоняет ровно из-за
+        отсутствия change-пакета/scope-id, PLAN-<slug>.md существует →
+        post-filter трактует как ALLOW с логом 'flow-4 no-change scope ok'."""
+        repo = _make_repo(tmp_path, "proj", {
+            "PLAN-chore-cleanup.md": PLAN_FLOW4,
+            "scripts/tool.py": "X = 1\n",
+        })
+        res = enforcer.flow_enforce(
+            "delegate_task", flow4_goal(repo), "j3")
+        assert res is None, f"ожидался ALLOW, получен block: {res}"
+        events = [e.get("event") for e in _log_entries(plugin_env)]
+        assert "flow-4 no-change scope ok" in events
+
+    def test_v2_flow4_without_plan_blocks_plan_missing(self, tmp_path):
+        repo = _make_repo(tmp_path, "proj", {
+            # плана НЕТ
+            "scripts/tool.py": "X = 1\n",
+        })
+        res = enforcer.flow_enforce(
+            "delegate_task", flow4_goal(repo), "j4")
+        assert res is not None and res["action"] == "block"
+        assert "PLAN_RELEASE_MISSING" in res["message"]
+
+    def test_substantive_error_not_filtered(self, tmp_path, plugin_env):
+        """Post-filter не применяется, если среди причин есть ошибка ПО СУЩЕСТВУ
+        (нет BUG-репорта) — даже при существующем scope-файле."""
+        repo = tmp_path / "proj"
+        (repo / "test-model" / "bugs").mkdir(parents=True, exist_ok=True)
+        # scope-файл ЕСТЬ — но вывод ворот содержит ошибку по существу рядом
+        # с ожидаемым классом: post-filter не применяется (ровно = все).
+        (repo / "test-model" / "bugs" / "BUG-042.md").write_text(
+            "# BUG-042\n", encoding="utf-8")
+        out = json.dumps({"decision": {
+            "status": "DENY",
+            "details": [
+                "AMBIGUOUS_STATE: scope не соответствует выбранному флоу: "
+                "Флоу 4 (обслуживание) требует маркер [chore]",
+                "MISSING_INPUT: баг-репорт test-model/bugs/BUG-042.md "
+                "отсутствует — Флоу 2 требует BUG-NNN репорт",
+            ]}})
+        markers = {"role": "dev", "repo": str(repo), "scope": "BUG-042",
+                   "task": None, "flow": 2}
+        decision = enforcer.parse_decision_output(out)
+        assert enforcer.no_change_scope_ok(markers, 2, decision) is False
+
+
+class TestJ431Sequence:
+    """(ж) FLOW_ENFORCER_SEQUENCE=1: нарушение и допустимый переход."""
+
+    def _with_prepare_and_phase(self, monkeypatch, phase_payload: dict):
+        """Мок subprocess: prepare → rc 0; phase → phase_payload."""
+        calls: list[list[str]] = []
+
+        def _fake(argv, **kw):
+            calls.append(list(argv))
+            if "phase" in argv:
+                return subprocess.CompletedProcess(
+                    [], 0, json.dumps(phase_payload), "")
+            return subprocess.CompletedProcess([], 0, '{"decision": {}}', "")
+
+        monkeypatch.setattr(enforcer.subprocess, "run", _fake)
+        return calls
+
+    PHASE_AFTER_MERGE = {
+        "schema_version": "flowctl-phase/1",
+        "phase": {"action": "merge_task", "actor_role": "dev_lead",
+                  "finished_status": "accepted",
+                  "timestamp": "2026-10-12T10:00:00+00:00"},
+        "completed_actions": ["approve_requirements", "create_change",
+                              "dev_task", "code_review", "accept_review",
+                              "merge_task"],
+    }
+
+    def test_zh_allowed_next_after_merge(self, monkeypatch):
+        monkeypatch.setenv("FLOW_ENFORCER_SEQUENCE", "1")
+        self._with_prepare_and_phase(monkeypatch, self.PHASE_AFTER_MERGE)
+        goal = ("flow: flow=1 role=dev repo=/tmp/proj scope=add-widget\n")
+        res = enforcer.flow_enforce(
+            "delegate_task", delegate_args(goal), "s1")
+        assert res is None  # dev_task новой задачи после merge_task допустим
+
+    def test_zh_violation_qa_automation_first(self, monkeypatch):
+        monkeypatch.setenv("FLOW_ENFORCER_SEQUENCE", "1")
+        self._with_prepare_and_phase(monkeypatch, {
+            "schema_version": "flowctl-phase/1", "phase": "none",
+            "completed_actions": []})
+        goal = ("flow: flow=1 role=qa_automation repo=/tmp/proj "
+                "scope=add-widget\n")
+        res = enforcer.flow_enforce(
+            "delegate_task", delegate_args(goal), "s2")
+        assert res is not None and res["action"] == "block"
+        assert "SEQUENCE_VIOLATION" in res["message"]
+        assert "qa_cases" in res["message"]  # незакрытый предшественник
+
+    def test_sequence_off_by_default(self, monkeypatch):
+        monkeypatch.delenv("FLOW_ENFORCER_SEQUENCE", raising=False)
+        calls = self._with_prepare_and_phase(monkeypatch, {
+            "schema_version": "flowctl-phase/1", "phase": "none"})
+        goal = ("flow: flow=1 role=qa_automation repo=/tmp/proj "
+                "scope=add-widget\n")
+        res = enforcer.flow_enforce(
+            "delegate_task", delegate_args(goal), "s3")
+        assert res is None
+        assert all("phase" not in c for c in calls)  # phase не вызывался
+
+
 # ------------------------------------- factory_init: шаг установки плагина
 
 
@@ -376,6 +636,10 @@ def test_k5_bootstrap_hint(tmp_path, monkeypatch, capsys):
     sys.path.insert(0, str(FACTORY / "scripts"))
     import factory_bootstrap as fb
     home = _hermes_home(tmp_path, monkeypatch, None)
+    # HERMES_HOME у fb — конистра времени импорта; на машине с УСТАНОВЛЕННЫМ
+    # плагином (~/.hermes/plugins/flow-enforcer) константа указывает на реальный
+    # дом. Изолируем: тест проверяет логику подсказки, а не машину.
+    monkeypatch.setattr(fb, "HERMES_HOME", home)
     fb.plugin_hint()
     assert "НЕ установлен" in capsys.readouterr().out
     (home / "plugins" / "flow-enforcer").mkdir()
