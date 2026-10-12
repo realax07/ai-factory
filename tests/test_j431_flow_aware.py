@@ -124,6 +124,7 @@ class TestFlow2PlanGate:
         return repo
 
     def test_plan_bug_nnn_in_root_allows(self, tmp_path):
+        """TC-J431-001: J43.1 flow-aware."""
         repo = self._bug_repo(tmp_path)
         reg = make_registry(tmp_path)
         d = ft.check_action(snapshot_for(repo, reg, flow=2,
@@ -132,7 +133,7 @@ class TestFlow2PlanGate:
         assert d.status == "ALLOW", d.details
 
     def test_shared_bugs_plan_allows(self, tmp_path):
-        """Один test-model/bugs/PLAN.md на все баги допустим (содержит
+        """TC-J431-002: Один test-model/bugs/PLAN.md на все баги допустим (содержит
         строку «Флоу: 2» и покрывает)."""
         repo = self._bug_repo(tmp_path, shared_plan=True)
         reg = make_registry(tmp_path)
@@ -142,7 +143,7 @@ class TestFlow2PlanGate:
         assert d.status == "ALLOW", d.details
 
     def test_shared_plan_does_not_count_as_bug_report(self, tmp_path):
-        """J43.1: общий test-model/bugs/PLAN.md делает каталог bugs/ непустым
+        """TC-J431-003: J43.1: общий test-model/bugs/PLAN.md делает каталог bugs/ непустым
         (грубый факт test_model.present) — но репорта BUG-NNN нет → DENY."""
         repo = self._bug_repo(tmp_path, with_plan=False, with_report=False)
         write(repo, "test-model/bugs/PLAN.md", PLAN_FLOW2)
@@ -156,6 +157,7 @@ class TestFlow2PlanGate:
         assert any("не считается репортом" in x for x in d.details)
 
     def test_missing_plan_deny(self, tmp_path):
+        """TC-J431-004: J43.1 flow-aware."""
         repo = self._bug_repo(tmp_path, with_plan=False)
         reg = make_registry(tmp_path)
         d = ft.check_action(snapshot_for(repo, reg, flow=2,
@@ -166,6 +168,7 @@ class TestFlow2PlanGate:
         assert any("test-model" in x and "PLAN" in x for x in d.details)
 
     def test_plan_without_flow_line_deny(self, tmp_path):
+        """TC-J431-005: J43.1 flow-aware."""
         repo = self._bug_repo(tmp_path)
         write(repo, "PLAN-BUG-042.md", "# PLAN без воркфлоу\n\nцель: фикс\n")
         commit_all(repo)
@@ -177,7 +180,7 @@ class TestFlow2PlanGate:
         assert has_code(d, ft.PLAN_FLOW_UNDECLARED)
 
     def test_flow1_plan_paths_do_not_cover_flow2(self, tmp_path):
-        """PLAN в каталоге change-пакета (легально для Флоу 1) НЕ покрывает
+        """TC-J431-006: PLAN в каталоге change-пакета (легально для Флоу 1) НЕ покрывает
         Флоу 2 — у Флоу 2 свои легальные расположения."""
         repo = self._bug_repo(tmp_path, with_plan=False)
         write(repo, "openspec/changes/BUG-042/PLAN.md", PLAN_FLOW2)
@@ -207,7 +210,7 @@ class TestFlow4PlanGate:
         return repo
 
     def test_plan_slug_in_root_allows(self, tmp_path):
-        """План Флоу 4 закрывает план-ворота: PLAN_RELEASE_MISSING нет.
+        """TC-J431-007: План Флоу 4 закрывает план-ворота: PLAN_RELEASE_MISSING нет.
         (Сам ALLOW для slug дает post-filter энфорсера — prepare при slug
         честно дает UNKNOWN/AMBIGUOUS_STATE о формате scope-id [chore];
         см. test_v_flow4_with_plan_allows_via_no_change_filter.)"""
@@ -222,6 +225,7 @@ class TestFlow4PlanGate:
         assert has_code(d, ft.AMBIGUOUS_STATE)  # scope-id: slug ≠ [chore]
 
     def test_missing_plan_deny(self, tmp_path):
+        """TC-J431-008: J43.1 flow-aware."""
         repo = self._chore_repo(tmp_path, with_plan=False)
         reg = make_registry(tmp_path)
         d = ft.check_action(snapshot_for(repo, reg, flow=4,
@@ -233,15 +237,18 @@ class TestFlow4PlanGate:
         assert any("PLAN-chore-cleanup.md" in x for x in d.details)
 
     def test_plan_release_paths_flow4(self, tmp_path):
+        """TC-J431-009: J43.1 flow-aware."""
         paths = ft.plan_release_paths(tmp_path, "chore-cleanup", 4)
         assert paths == [tmp_path / "PLAN-chore-cleanup.md"]
 
     def test_plan_release_paths_flow2(self, tmp_path):
+        """TC-J431-010: J43.1 flow-aware."""
         paths = ft.plan_release_paths(tmp_path, "BUG-042", 2)
         assert paths == [tmp_path / "PLAN-BUG-042.md",
                          tmp_path / "test-model" / "bugs" / "PLAN.md"]
 
     def test_plan_release_paths_flow1_unchanged(self, tmp_path):
+        """TC-J431-011: J43.1 flow-aware."""
         paths = ft.plan_release_paths(tmp_path, "add-widget", 1)
         assert paths == [tmp_path / "PLAN-add-widget.md",
                          tmp_path / "openspec" / "changes" / "add-widget" /
@@ -279,7 +286,7 @@ class TestPhaseCommand:
         return json.loads(r.stdout)
 
     def test_phase_empty(self, tmp_path):
-        """(е) пустое состояние → {phase: 'none'}."""
+        """TC-J431-012: (е) пустое состояние → {phase: 'none'}."""
         state = tmp_path / "state" / "flowctl_state.json"
         write_state(state, {})
         data = self._phase(state)
@@ -287,7 +294,7 @@ class TestPhaseCommand:
         assert data["phase"] == "none"
 
     def test_phase_after_prepare(self, tmp_path):
-        """(е) после prepare (record status=prepared, не завершен) — последний
+        """TC-J431-013: (е) после prepare (record status=prepared, не завершен) — последний
         run возвращается с finished_status=prepared."""
         state = tmp_path / "state" / "flowctl_state.json"
         write_state(state, {"c1": run("prepared", "dev_task", SCOPE,
@@ -300,7 +307,7 @@ class TestPhaseCommand:
         assert data["completed_actions"] == []  # prepared — не завершен
 
     def test_phase_after_finish(self, tmp_path):
-        """(е) после finish accepted — finished_status=accepted, действие в
+        """TC-J431-014: (е) после finish accepted — finished_status=accepted, действие в
         completed_actions."""
         state = tmp_path / "state" / "flowctl_state.json"
         write_state(state, {
@@ -317,6 +324,7 @@ class TestPhaseCommand:
         assert set(data["completed_actions"]) == {"dev_task", "code_review"}
 
     def test_phase_filters_other_scope(self, tmp_path):
+        """TC-J431-015: J43.1 flow-aware."""
         state = tmp_path / "state" / "flowctl_state.json"
         other = dict(SCOPE, change="other-change", flow=2)
         write_state(state, {
@@ -326,7 +334,7 @@ class TestPhaseCommand:
         assert data["phase"] == "none"
 
     def test_phase_real_prepare_then_phase(self, tmp_path):
-        """Интеграция: РЕАЛЬНЫЙ prepare (не dry) пишет run в state — phase его
+        """TC-J431-016: Интеграция: РЕАЛЬНЫЙ prepare (не dry) пишет run в state — phase его
         видит (finished_status=prepared)."""
         from test_flowctl import make_repo  # fixture-репо Флоу 1
         repo = make_repo(tmp_path)
@@ -352,7 +360,7 @@ class TestPhaseCommand:
 
 class TestSequencePrereqs:
     def test_sequence_prereqs_match_stage_table(self):
-        """SEQUENCE_PREREQS — производная STAGE_TABLE: каждое действие и
+        """TC-J431-017: SEQUENCE_PREREQS — производная STAGE_TABLE: каждое действие и
         предшественник существуют в таблице флоу и предшественник стоит
         РАНЬШЕ действия (механическая синхронизация с flow_transition)."""
         for flow, table in ft.STAGE_TABLE.items():
@@ -365,23 +373,27 @@ class TestSequencePrereqs:
                     assert order[p] < order[action], (flow, action, p)
 
     def test_every_stage_has_prereq_entry(self):
+        """TC-J431-018: J43.1 flow-aware."""
         for flow, table in ft.STAGE_TABLE.items():
             prereqs = enforcer.SEQUENCE_PREREQS.get(flow, {})
             for s in table:
                 assert s.action in prereqs, (flow, s.action)
 
     def test_completed_statuses_mirror_flowctl(self):
+        """TC-J431-019: J43.1 flow-aware."""
         sys.path.insert(0, str(SCRIPTS))
         import flowctl
         assert enforcer.COMPLETED_STATUSES == tuple(
             flowctl.PHASE_COMPLETED_STATUSES)
 
     def test_violation_qa_automation_before_qa_cases(self):
+        """TC-J431-020: J43.1 flow-aware."""
         phase = {"phase": "none", "completed_actions": []}
         v = enforcer.sequence_violation(1, "qa_automation", phase)
         assert v and "qa_cases" in v and "SEQUENCE" not in v
 
     def test_violation_merge_without_review(self):
+        """TC-J431-021: J43.1 flow-aware."""
         phase = {"phase": {"action": "dev_task",
                            "finished_status": "accepted"},
                  "completed_actions": ["create_change", "dev_task"]}
@@ -389,7 +401,7 @@ class TestSequencePrereqs:
         assert v and "accept_review" in v
 
     def test_allowed_rework_after_returned_review(self):
-        """Ф1: после code_review с вердиктом return следующий dev_task той же
+        """TC-J431-022: Ф1: после code_review с вердиктом return следующий dev_task той же
         задачи допустим (предшественники create_change уже завершены)."""
         phase = {"phase": {"action": "code_review",
                            "finished_status": "returned"},
@@ -398,7 +410,7 @@ class TestSequencePrereqs:
         assert enforcer.sequence_violation(1, "dev_task", phase) is None
 
     def test_allowed_new_task_after_merge(self):
-        """Ф1: после merge_task dev_task новой задачи допустим."""
+        """TC-J431-023: Ф1: после merge_task dev_task новой задачи допустим."""
         phase = {"phase": {"action": "merge_task",
                            "finished_status": "accepted"},
                  "completed_actions": ["create_change", "dev_task",
@@ -407,10 +419,12 @@ class TestSequencePrereqs:
         assert enforcer.sequence_violation(1, "dev_task", phase) is None
 
     def test_flow2_bug_fix_first_is_allowed(self):
+        """TC-J431-024: J43.1 flow-aware."""
         phase = {"phase": "none", "completed_actions": []}
         assert enforcer.sequence_violation(2, "bug_fix", phase) is None
 
     def test_flow3_stabilize_then_accept_review(self):
+        """TC-J431-025: J43.1 flow-aware."""
         phase = {"phase": {"action": "emergency_stabilize",
                            "finished_status": "accepted"},
                  "completed_actions": ["emergency_stabilize"]}
@@ -420,6 +434,7 @@ class TestSequencePrereqs:
         assert v and "accept_review" in v
 
     def test_unknown_action_and_missing_data_do_not_violate(self):
+        """TC-J431-026: J43.1 flow-aware."""
         assert enforcer.sequence_violation(1, "неизвестное", {"phase": "none"}) \
             is None
         assert enforcer.sequence_violation(1, "dev_task", None) is None
@@ -443,6 +458,7 @@ class TestSequenceGateEnforcer:
                "task": None, "flow": 1}
 
     def test_gate_off_by_default(self, monkeypatch):
+        """TC-J431-027: J43.1 flow-aware."""
         monkeypatch.delenv("FLOW_ENFORCER_SEQUENCE", raising=False)
         calls = self._fake_phase(monkeypatch, {"phase": "none"})
         assert enforcer.sequence_gate(self.MARKERS, 1, "qa_automation",
@@ -450,6 +466,7 @@ class TestSequenceGateEnforcer:
         assert calls == []  # phase даже не вызывался
 
     def test_gate_on_blocks_violation(self, monkeypatch):
+        """TC-J431-028: J43.1 flow-aware."""
         monkeypatch.setenv("FLOW_ENFORCER_SEQUENCE", "1")
         self._fake_phase(monkeypatch, {"phase": "none",
                                        "completed_actions": []})
@@ -459,6 +476,7 @@ class TestSequenceGateEnforcer:
         assert "последний завершенный этап" in res["message"]
 
     def test_gate_on_allows_proper_next(self, monkeypatch):
+        """TC-J431-029: J43.1 flow-aware."""
         monkeypatch.setenv("FLOW_ENFORCER_SEQUENCE", "1")
         self._fake_phase(monkeypatch, {
             "phase": {"action": "merge_task",
