@@ -18,7 +18,9 @@ Usage:
      Опционально --with-e2e: плюс smoke flowctl на fixture-репо.
 
 Ничего НЕ делает: не трогает секреты, не пушит, не создает проектов
-(проекты — factory_init.py --target).
+(проекты — factory_init.py --target), НЕ ставит плагин flow-enforcer
+(плагин — про проект/конвейер: его ставит factory_init.py, здесь только
+подсказка, если он отсутствует).
 """
 import argparse
 import json
@@ -128,6 +130,21 @@ def acceptance_tests() -> bool:
     return r.returncode == 0
 
 
+def plugin_hint() -> None:
+    """Подсказка об установке flow-enforcer (J43): bootstrap про машину,
+    init про проекты — сам плагин здесь НЕ ставится."""
+    dst = HERMES_HOME / "plugins" / "flow-enforcer"
+    if dst.is_dir():
+        step(f"плагин flow-enforcer: установлен ({dst})")
+        return
+    step("плагин flow-enforcer НЕ установлен (J43: pre_tool_call-энфорсер "
+         "делегаций). Поставь при развертывании проекта:\n"
+         "  python3 scripts/factory_init.py --target <repo> --name <name>   # ставит плагин\n"
+         "  # или штатно: hermes plugins install realax07/ai-factory --ref <commit>\n"
+         "  # и включи: plugins.enabled: [flow-enforcer] в ~/.hermes/config.yaml\n"
+         "  # см. plugins/README.md. Bootstrap плагин не ставит (init про проекты).")
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--flow-mode", choices=("shadow", "enforcing"), default="shadow",
@@ -140,6 +157,7 @@ def main() -> int:
     env_ok = check_env()
     step("2/4 state-каталоги и режим")
     state_dirs()
+    plugin_hint()
     if args.flow_mode != "shadow":
         # перезаписываем дефолт, если явно попросили
         payload = json.loads(MODE_FILE.read_text(encoding="utf-8"))

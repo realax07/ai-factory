@@ -1,0 +1,8 @@
+name: flow-enforcer
+version: "0.1.0"
+description: >-
+  J43 pre_tool_call-энфорсер делегаций: перехватывает delegate_task, парсит
+  маркеры flow (role/repo/change) из goal/context, валидирует делегацию через
+  flowctl prepare --dry-run (план релиза, requirements, зоны, policy) и
+  блокирует делегации мимо конвейера. Bypass — только дословный маркер
+  'flow: bypass --by customer' (логируется в incident-файл).
