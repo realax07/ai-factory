@@ -6,8 +6,15 @@
 
   1. Заголовок (канонический формат J43.1, см. templates/task_delegation.md):
          flow: flow=<1-5> role=<роль> repo=<путь> scope=<идентификатор>
+               [paths=<путь1,путь2,...>] [kind=docs|product]
      scope — по флоу: Ф1 change-id; Ф2 BUG-NNN (репорт test-model/bugs/);
      Ф3 incident-id (формат любой, обязателен); Ф4 chore-slug; Ф5 slug.
+     paths — относительные пути задачи через запятую; попадают в flowctl
+     prepare как --path (зоны/вороты видят РЕАЛЬНЫЕ пути задачи;
+     BUG-AF-RECHECK-001: отсутствие путей ≠ docs-only). kind — тип задачи:
+     docs (облегченный маршрут, пути не обязательны) | product (пути
+     обязательны). kind не указан → WARNING и трактовка как product:
+     без paths — block PATHS_MISSING (fail-closed, честный MISSING-класс).
   2. Старый формат (обратная совместимость): 'flow: role=R repo=P change=C'
      без flow= — трактуется как Флоу 1 (env-fallback), с WARNING в лог.
   3. Одиночные маркеры: 'role: X', 'repo: P', 'change:/scope: C' в тех же
@@ -84,14 +91,19 @@ FLOW_MARKER_INVALID = "FLOW_MARKER_INVALID"
 # Канонический заголовок J43.1: 'flow: flow=N role=R repo=P scope=S'
 # (порядок ключей не строгий; change= — легаси-алиас scope).
 HEADER_LINE_RE = re.compile(r"^\s*flow:\s*(?P<rest>\S.*?)\s*$")
-HEADER_PAIR_RE = re.compile(r"\b(flow|role|repo|scope|change|task)=([^\s]+)")
-EMPTY_VALUE_RE = re.compile(r"\b(?:scope|change)=(?:\s|$)")
+HEADER_PAIR_RE = re.compile(
+    r"\b(flow|role|repo|scope|change|task|kind|paths)=([^\s]+)")
+EMPTY_VALUE_RE = re.compile(r"\b(?:scope|change|paths)=(?:\s|$)")
+MARKER_KINDS = ("docs", "product")
 SINGLE_RE = {
     "role": re.compile(r"\brole:\s*([^\s,;]+)"),
     "repo": re.compile(r"\brepo:\s*([^\s,;]+)"),
     "change": re.compile(r"\bchange:\s*([^\s,;]+)"),
     "scope": re.compile(r"\bscope:\s*([^\s,;]+)"),
     "task": re.compile(r"\btask:\s*([^\s,;]+)"),  # опциональный (dev_task)
+    "kind": re.compile(r"\bkind:\s*(docs|product)\b"),
+    # paths: список через запятую — запятая НЕ разделитель маркера
+    "paths": re.compile(r"\bpaths:\s*(\S+)"),
 }
 
 BUG_ID_RE = re.compile(r"^BUG-\d{3}$", re.IGNORECASE)
@@ -240,6 +252,13 @@ def _parse_header(texts: list[str]) -> dict | None:
             if rest.startswith("bypass"):
                 continue  # bypass-маркер обрабатывается до разбора
             if EMPTY_VALUE_RE.search(rest):
+                which = "paths" if re.search(r"\bpaths=", rest) else "scope"
+                if which == "paths":
+                    raise FlowMarkerError(
+                        "пустой paths в заголовке flow: — перечисли "
+                        "относительные пути через запятую (paths=src/x.py,"
+                        "backend/y.py) или убери поле (kind=docs — пути не "
+                        "обязательны)")
                 raise FlowMarkerError(
                     "пустой scope в заголовке flow: — scope обязателен "
                     "(Ф1 change-id, Ф2 BUG-NNN, Ф3 incident-id, Ф4 chore-slug, "
@@ -253,20 +272,24 @@ def _parse_header(texts: list[str]) -> dict | None:
 
 
 def parse_markers(args: dict) -> dict | None:
-    """Достает role/repo/scope/flow: сначала заголовок 'flow: ...', затем
-    одиночные маркеры 'role:/repo:/change:/scope:'. flow — ТОЛЬКО из заголовка
-    (flow=N); None — если в маркере нет flow= (энфорсер возьмет env-fallback с
-    WARNING). Очевидные ошибки (flow вне 1–5, пустой scope) → FlowMarkerError.
+    """Достает role/repo/scope/flow/kind/paths: сначала заголовок 'flow: ...',
+    затем одиночные маркеры 'role:/repo:/change:/scope:/kind:/paths:'.
+    flow — ТОЛЬКО из заголовка (flow=N); None — если в маркере нет flow=
+    (энфорсер возьмет env-fallback с WARNING). paths — список относительных
+    путей (запятая-разделитель; BUG-AF-RECHECK-001). Очевидные ошибки (flow
+    вне 1–5, пустой scope, неизвестный kind, пустой paths) → FlowMarkerError.
     Возвращает None, если обязательных маркеров нет."""
     texts = _marker_texts(args)
     header = _parse_header(texts)
     found: dict = {"role": None, "repo": None, "scope": None,
-                   "task": None, "flow": None}
+                   "task": None, "flow": None, "kind": None, "paths": None}
     if header:
         found["role"] = header.get("role")
         found["repo"] = header.get("repo")
         found["scope"] = header.get("scope") or header.get("change")
         found["task"] = header.get("task")
+        found["kind"] = header.get("kind")
+        found["paths"] = header.get("paths")
         raw_flow = header.get("flow")
         if raw_flow is not None:
             found["flow"] = _validate_flow(raw_flow)
@@ -281,8 +304,31 @@ def parse_markers(args: dict) -> dict | None:
     role, repo, scope = found["role"], found["repo"], found["scope"]
     if role and repo and scope:
         return {"role": role, "repo": repo, "scope": scope,
-                "task": found["task"], "flow": found["flow"]}
+                "task": found["task"], "flow": found["flow"],
+                "kind": _validate_kind(found["kind"]),
+                "paths": _split_paths(found["paths"])}
     return None
+
+
+def _validate_kind(kind: str | None) -> str | None:
+    """kind маркера (BUG-AF-RECHECK-001): docs | product; неизвестный —
+    очевидная ошибка маркера (FLOW_MARKER_INVALID)."""
+    if kind is None:
+        return None
+    if kind not in MARKER_KINDS:
+        raise FlowMarkerError(
+            f"kind={kind!r} не поддерживается — ожидается kind=docs|product "
+            "(docs — облегченный маршрут без путей; product — пути "
+            "обязательны)")
+    return kind
+
+
+def _split_paths(raw: str | None) -> list[str]:
+    """paths=<путь1,путь2,...> → список относительных путей (без пустых)."""
+    if not raw:
+        return []
+    paths = [p.strip() for p in raw.split(",") if p.strip()]
+    return paths
 
 
 def _validate_flow(raw_flow: str) -> int:
@@ -377,6 +423,10 @@ def prepare_command(markers: dict, flow: int, action: str) -> list[str]:
     ]
     if markers.get("task"):
         argv += ["--task", markers["task"]]
+    # BUG-AF-RECHECK-001: пути задачи попадают в prepare (--path, повторяемый)
+    # — ворота зон/конфликтов/arch-review работают с РЕАЛЬНЫМИ путями задачи.
+    for path in markers.get("paths") or ():
+        argv += ["--path", path]
     # Флоу 3: scope = incident-id — фиксируется как incident_ref (ТЗ 03 п.4).
     if flow == 3:
         argv += ["--incident-ref", markers["scope"]]
@@ -578,6 +628,25 @@ def flow_enforce(tool_name: str, args: dict, task_id: str = "",
         if not from_marker:
             # WARNING уже в логе (flow_fallback); дублируем факт в prepare_result
             pass
+
+        # BUG-AF-RECHECK-001: отсутствие путей ≠ docs-only. kind=docs —
+        # облегченный маршрут (пути не обязательны); product / kind не указан
+        # (WARNING + трактовка как product) — без paths честный MISSING-отказ.
+        kind = markers.get("kind")
+        paths = markers.get("paths") or []
+        if kind is None:
+            log_event({"event": "kind_assumed_product", "level": "WARNING",
+                       "task_id": task_id,
+                       "note": "kind не указан — задача трактуется как "
+                               "product (fail-closed); для docs-задачи укажи "
+                               "kind=docs в заголовке flow:"})
+        if kind != "docs" and not paths:
+            return {"action": "block", "message": (
+                "FLOW-ENFORCER [PATHS_MISSING]: продуктовая задача без путей "
+                "(BUG-AF-RECHECK-001: отсутствие путей ≠ docs-only). Добавь в "
+                "заголовок paths=<путь1,путь2,...> (относительные пути задачи "
+                "через запятую) или kind=docs для docs-задачи без продуктовых "
+                "путей.")}
 
         rc, out, duration = run_prepare(markers, flow, action)
         log_event({"event": "prepare_result", "task_id": task_id,

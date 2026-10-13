@@ -77,13 +77,15 @@ def install_fake_run(monkeypatch, rc: int, out: str, err: str = "") -> list:
 
 
 HEADER_GOAL = (
-    "flow: role=dev repo=/tmp/proj change=add-widget\n"
+    "flow: role=dev repo=/tmp/proj change=add-widget paths=src/widget.py\n"
     "Задача: реализовать виджет. Зона записи: src/.\n"
 )
 # J43.1: парсер возвращает scope (легаси change= → scope) и flow=None
-# (энфорсер возьмет env-fallback с WARNING).
+# (энфорсер возьмет env-fallback с WARNING). BUG-AF-RECHECK-001: paths —
+# список относительных путей задачи.
 MARKERS = {"role": "dev", "repo": "/tmp/proj", "scope": "add-widget",
-           "task": None, "flow": None}
+           "task": None, "flow": None, "kind": None,
+           "paths": ["src/widget.py"]}
 
 
 # ------------------------------------------------------------ (а) триггер
@@ -203,7 +205,8 @@ def test_h2_parse_markers_from_context_fallback(monkeypatch):
     """TC-J43-010: J43 flow-enforcer."""
     install_fake_run(monkeypatch, rc=0, out="")
     goal = "Задача: виджет"
-    context = "role: qa_automation repo: /tmp/proj change: add-widget"
+    context = ("role: qa_automation repo: /tmp/proj change: add-widget\n"
+               "paths: tests/test_widget.py")
     res = enforcer.flow_enforce(
         "delegate_task", delegate_args(goal, context), "t8")
     assert res is None
@@ -279,7 +282,8 @@ def test_i_real_prepare_latency(tmp_path, monkeypatch):
     monkeypatch.setenv("FLOW_ENFORCER_REGISTRY", str(registry))
     monkeypatch.setenv("FLOW_ENFORCER_MODE", "strict")
 
-    goal = (f"flow: role=dev repo={repo} change=add-widget\n"
+    goal = (f"flow: role=dev repo={repo} change=add-widget "
+            "paths=src/widget.py\n"
             "task: 1.1\nЗадача: виджет.\n")
     res = enforcer.flow_enforce("delegate_task", delegate_args(goal), "t9")
     assert res is None, f"ожидался ALLOW, получен block: {res}"
@@ -351,13 +355,15 @@ PLAN_FLOW4 = ("# PLAN-chore-cleanup\n\n**Флоу: 4** (легкий план: �
 
 def flow2_goal(repo: Path) -> dict:
     return delegate_args(
-        f"flow: flow=2 role=dev repo={repo} scope=BUG-042\n"
+        f"flow: flow=2 role=dev repo={repo} scope=BUG-042 "
+        "paths=src/fix.py\n"
         "Задача: фикс бага. Зона записи: src/.\n")
 
 
 def flow4_goal(repo: Path) -> dict:
     return delegate_args(
-        f"flow: flow=4 role=dev repo={repo} scope=chore-cleanup\n"
+        f"flow: flow=4 role=dev repo={repo} scope=chore-cleanup "
+        "paths=scripts/tool.py\n"
         "Задача: обслуживание. Зона записи: scripts/.\n")
 
 
@@ -371,11 +377,13 @@ class TestJ431Marker:
     """J43.1: новый заголовок flow=/scope= и его очевидные ошибки."""
 
     def test_new_header_parsed(self):
-        goal = ("flow: flow=2 role=dev repo=/tmp/proj scope=BUG-042\n"
+        goal = ("flow: flow=2 role=dev repo=/tmp/proj scope=BUG-042 "
+                "paths=src/fix.py,backend/api.py kind=product\n"
                 "Задача: фикс.\n")
         m = enforcer.parse_markers(delegate_args(goal))
         assert m == {"role": "dev", "repo": "/tmp/proj", "scope": "BUG-042",
-                     "task": None, "flow": 2}
+                     "task": None, "flow": 2, "kind": "product",
+                     "paths": ["src/fix.py", "backend/api.py"]}
 
     def test_flow9_invalid(self):
         goal = ("flow: flow=9 role=dev repo=/tmp/proj scope=add-widget\n")
@@ -538,7 +546,8 @@ class TestJ431Sequence:
     def test_zh_allowed_next_after_merge(self, monkeypatch):
         monkeypatch.setenv("FLOW_ENFORCER_SEQUENCE", "1")
         self._with_prepare_and_phase(monkeypatch, self.PHASE_AFTER_MERGE)
-        goal = ("flow: flow=1 role=dev repo=/tmp/proj scope=add-widget\n")
+        goal = ("flow: flow=1 role=dev repo=/tmp/proj scope=add-widget "
+                "paths=src/widget.py\n")
         res = enforcer.flow_enforce(
             "delegate_task", delegate_args(goal), "s1")
         assert res is None  # dev_task новой задачи после merge_task допустим
@@ -549,7 +558,7 @@ class TestJ431Sequence:
             "schema_version": "flowctl-phase/1", "phase": "none",
             "completed_actions": []})
         goal = ("flow: flow=1 role=qa_automation repo=/tmp/proj "
-                "scope=add-widget\n")
+                "scope=add-widget paths=tests/test_widget.py\n")
         res = enforcer.flow_enforce(
             "delegate_task", delegate_args(goal), "s2")
         assert res is not None and res["action"] == "block"
@@ -561,7 +570,7 @@ class TestJ431Sequence:
         calls = self._with_prepare_and_phase(monkeypatch, {
             "schema_version": "flowctl-phase/1", "phase": "none"})
         goal = ("flow: flow=1 role=qa_automation repo=/tmp/proj "
-                "scope=add-widget\n")
+                "scope=add-widget paths=tests/test_widget.py\n")
         res = enforcer.flow_enforce(
             "delegate_task", delegate_args(goal), "s3")
         assert res is None

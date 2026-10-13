@@ -47,9 +47,15 @@ python3 scripts/factory_init.py --target <repo> --name "<проект>"
 Первая строка goal (см. templates/task_delegation.md, чеклист 0):
 
 ```
-flow: role=<роль> repo=<путь> change=<id>
+flow: role=<роль> repo=<путь> change=<id> paths=<путь1,путь2> [kind=docs|product]
 task: <id задачи tasks.md>        # опционально, для dev_task
 ```
+
+`paths=` — относительные пути задачи через запятую (идут в flowctl prepare
+как `--path`; BUG-AF-RECHECK-001: без путей продуктовая задача блокируется
+`PATHS_MISSING`, отсутствие путей ≠ docs-only). `kind=docs` — облегченный
+маршрут без путей; `kind=product` (или kind не указан — с WARNING) требует
+paths.
 
 Роль → действие ворот (flowctl): dev→dev_task, sa→create_change,
 code_reviewer→code_review, qa_automation→qa_automation, ...

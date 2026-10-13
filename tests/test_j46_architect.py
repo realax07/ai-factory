@@ -365,7 +365,8 @@ class TestEnforcerArchitect:
 
         monkeypatch.setattr(enforcer.subprocess, "run", _fake)
         goal = (f"flow: flow=1 role=architect repo={tmp_path} "
-                "scope=add-widget\nЗадача: архитектурное ревью.\n")
+                "scope=add-widget paths=architecture/map.md\n"
+                "Задача: архитектурное ревью.\n")
         res = enforcer.flow_enforce("delegate_task", {"goal": goal}, "t-j46")
         assert res is None  # ALLOW, sequence-проверка выключена
         assert calls, "prepare не вызван"
