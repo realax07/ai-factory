@@ -172,6 +172,11 @@ SKILL_DIRS = [
     "skills/requirements-elaboration",
     "skills/test-automation",
     "skills/test-case-design",
+    # J45 (2026-10-13): расширение скиллового контура
+    "skills/brainstorming",
+    "skills/service-decomposition",
+    "skills/playwright-pro",
+    "skills/handoff",
 ]
 
 # Каталоги журналов решений и релизов (аудит-след Flow Control).
