@@ -60,6 +60,6 @@
 
 - [x] **J46** — Архитектор: актор architecture_review (был pm — легаси), ворота ARCH_REVIEW_MISSING на dev_task, map.md обязателен, «Карта: …» в arch-ревью архивов, enforcer role=architect; промпт обновлен (551 passed, PR #83-серия: фабрика j46+pm-промпт, проект #164, ретро-миграция #165). Разовая синхронизация карты архитектором — первая живая делегация (J44-исполнение). — 2026-10-13
 
-- [x] **J47** — Дизайн-контур: design/tokens.html — единственный источник токенов (снимок прод :root), design/README.md — дизайн-контракт, archive/ = as-is визуальное состояние; промпты ui_designer/design_validator обновлены (ekotov-wiki PR #167, фабрика PR #95). — 2026-10-13
+- [x] **J47** — Дизайн-контур: design/tokens.html — единственный источник токенов (снимок прод :root), design/README.md — дизайн-контракт, archive/ = as-is визуальное состояние; промпты ui_designer/design_validator обновлены (ekotov-wiki PR #167, фабрика PR #95). + скилл playwright-pro (дистиллят claude-skills playwright-pro: golden rules/локаторы/pitfalls/flaky-таксономия, PR #99) — 2026-10-13
 
 - [ ] **J48** — Инцидент-протокол Флоу 3: severity-матрица S1–S3 (найдено в claude-skills incident-commander), initial response 0–15 мин, post-mortem обязателен S1/S2; change-пакет после обдумывания. — 2026-10-13
