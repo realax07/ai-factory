@@ -399,22 +399,42 @@ def product_paths(action: "ActionRequest") -> list[str]:
     ]
 
 
+ARCH_REVIEW_FILE_RE = re.compile(r"^review-(\d{3})-architecture\.md$", re.I)
+
+
 def architecture_review_verdict(repo: Path, change_id: str) -> tuple[bool, list[str]]:
     """(есть_верdict_approve, файлы) по test-model/reviews/<change>/ (J46).
 
     Вердикт парсится как для code_review (flow_check.parse_verdict, формат
-    «## Вердикт: …»); засчитывается только approve — «return» означает
-    доработку, ворота ее вердиктом не считает.
+    «## Вердикт: …»). Действует вердикт ПОСЛЕДНЕЙ итерации —
+    review-NNN-architecture с максимальным NNN (BUG-AF-RECHECK-003): поздний
+    return отменяет ранее approve; approve→return→approve — последняя.
+    return вердиктом не считается. Неоднозначность — файлы вне канонической
+    схемы review-NNN-architecture.md (номер итерации неопределим) или
+    несколько файлов с одинаковым максимальным NNN → (False, files) —
+    решает человек, молчаливой подмены старым approve нет.
     """
     rev_dir = Path(repo) / "test-model" / "reviews" / change_id
     if not rev_dir.is_dir():
         return False, []
     files = sorted(rev_dir.glob("review-*-architecture.md"))
+    if not files:
+        return False, []
+    parsed = []
     for rf in files:
-        text = rf.read_text(encoding="utf-8", errors="replace")
-        if flow_check.parse_verdict(text) == "approve":
-            return True, [str(f) for f in files]
-    return False, [str(f) for f in files]
+        m = ARCH_REVIEW_FILE_RE.match(rf.name)
+        if m is None:
+            # Неопределимый номер итерации — неоднозначность (не молчаливое
+            # «файла нет»): разрешение не рискуем
+            return False, [str(f) for f in files]
+        parsed.append((int(m.group(1)), rf))
+    max_rev = max(rev for rev, _ in parsed)
+    latest = [rf for rev, rf in parsed if rev == max_rev]
+    str_files = [str(f) for f in files]
+    if len(latest) > 1:
+        return False, str_files  # неоднозначность: одинаковый максимальный NNN
+    text = latest[0].read_text(encoding="utf-8", errors="replace")
+    return flow_check.parse_verdict(text) == "approve", str_files
 
 
 def _arch_review_gate(snapshot: dict, action: "ActionRequest", ctx: dict) -> list:
@@ -441,10 +461,12 @@ def _arch_review_gate(snapshot: dict, action: "ActionRequest", ctx: dict) -> lis
     if files:
         return [Finding(
             ARCH_REVIEW_MISSING,
-            f"architecture-ревью без вердикта approve (J46): "
+            f"architecture-ревью без вердикта approve актуальной итерации "
+            f"(J46; BUG-AF-RECHECK-003: вердикт review-NNN с максимальным "
+            f"номером решает, поздний return отменяет старый approve): "
             f"{', '.join(Path(f).name for f in files)} — нужен "
             f"«## Вердикт: approve» (формат agents/architect_agent.md); "
-            f"этап architecture_review — роль architect")]
+            f"этап architecture_review — роль архитектора")]
     return [Finding(
         ARCH_REVIEW_MISSING,
         f"architecture-ревью отсутствует: нет "

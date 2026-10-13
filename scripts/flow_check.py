@@ -120,12 +120,32 @@ def parse_verdict(text: str) -> str | None:
     return None
 
 
-def approved_review_tasks(repo: Path, change_id: str) -> dict[str, str]:
-    """task-id → имя последнего review-файла с вердиктом approve (code-reviews/<change-id>/)."""
-    covered: dict[str, tuple[int, str]] = {}
+def approved_review_tasks(repo: Path, change_id: str,
+                          warns: list[str] | None = None) -> dict[str, str]:
+    """task-id → имя review-файла АКТУАЛЬНОЙ итерации с вердиктом approve
+    (code-reviews/<change-id>/; BUG-AF-RECHECK-003).
+
+    Действует вердикт ПОСЛЕДНЕЙ итерации задачи (max rev среди ВСЕХ
+    review-файлов задачи — имена и review-mapping.json): approve→return —
+    не покрыто; return→approve — покрыто; approve→return→approve — покрыто
+    последней. Файлы одной итерации (одинаковый rev, напр. копии-привязки
+    review-<task>-NNN.md к review-NNN.md) согласованы: вердикты должны
+    совпадать, мета Reviewer-Delegation достаточна хотя бы у одного файла
+    итерации. Нечитаемый или противоречивый вердикт последней итерации —
+    задача НЕ покрыта + сообщение в warns (если передан), не молчаливая
+    подмена старым approve.
+    """
+
+    def _warn(msg: str) -> None:
+        if warns is not None:
+            warns.append(msg)
+
     cr_dir = repo / "code-reviews" / change_id
     if not cr_dir.is_dir():
         return {}
+    # Все файлы-кандидаты: (rev, имя файла, задачи) — из имен (два формата)
+    # и исторической карты review-mapping.json.
+    entries: list[tuple[int, str, list[str]]] = []
     for rf in cr_dir.glob("review-*.md"):
         m = REVIEW_FILE_REV_FIRST.match(rf.name)
         if m:
@@ -139,16 +159,7 @@ def approved_review_tasks(repo: Path, change_id: str) -> dict[str, str]:
         # или нести суффикс (review-001-1.1-auth-me.md) — задачи = все числовые
         # идентификаторы вида N[.N...] в task-части имени
         nums = re.findall(r"\d+(?:\.\d+)*", task)
-        tasks = nums if nums else [task]
-        text = rf.read_text(encoding="utf-8", errors="replace")
-        verdict = parse_verdict(text)
-        meta = REVIEWER_META_RE.search(text)
-        if verdict == "approve" and meta:
-            for task_id in tasks:
-                if task_id not in covered or rev > covered[task_id][0]:
-                    covered[task_id] = (rev, rf.name)
-    # Исторические ревью с нестандартными именами (Флоу 4, карта покрытия
-    # review-mapping.json: файл → список task-id). Мета обязательна и здесь.
+        entries.append((rev, rf.name, nums if nums else [task]))
     mapping_file = cr_dir / "review-mapping.json"
     if mapping_file.is_file():
         try:
@@ -156,19 +167,60 @@ def approved_review_tasks(repo: Path, change_id: str) -> dict[str, str]:
         except json.JSONDecodeError:
             mapping = {}
         for fname, task_ids in mapping.items():
-            if fname.startswith("_"):
+            if fname.startswith("_") or not isinstance(task_ids, list):
                 continue
-            rf = cr_dir / fname
-            if not rf.is_file():
+            if not (cr_dir / fname).is_file():
                 continue
-            verdict = parse_verdict(rf.read_text(encoding="utf-8", errors="replace"))
-            meta = REVIEWER_META_RE.search(rf.read_text(encoding="utf-8", errors="replace"))
-            if verdict == "approve" and meta:
-                rev = int(fname.split("-")[1]) if fname.split("-")[1].isdigit() else 0
-                for task_id in task_ids:
-                    if task_id not in covered or rev > covered[task_id][0]:
-                        covered[task_id] = (rev, fname)
-    return {task: name for task, (_, name) in covered.items()}
+            parts = fname.split("-")
+            # «review-002.md» → rev 002 (суффикс .md отсекается); без номера — 0
+            num = parts[1].split(".")[0] if len(parts) > 1 else ""
+            rev = int(num) if num.isdigit() else 0
+            entries.append((rev, fname, [str(t) for t in task_ids]))
+
+    # Актуальная итерация каждой задачи: max rev; файлы одной итерации
+    # (одинаковый rev) собираются вместе — вердикт решает итерация целиком.
+    latest: dict[str, tuple[int, dict[str, tuple[str | None, bool]]]] = {}
+    for rev, fname, tasks in entries:
+        text = (cr_dir / fname).read_text(encoding="utf-8", errors="replace")
+        verdict = parse_verdict(text)
+        meta = bool(REVIEWER_META_RE.search(text))
+        for task_id in tasks:
+            cur = latest.get(task_id)
+            if cur is None or rev > cur[0]:
+                latest[task_id] = (rev, {fname: (verdict, meta)})
+            elif rev == cur[0]:
+                cur[1].setdefault(fname, (verdict, meta))
+
+    covered: dict[str, str] = {}
+    for task_id, (rev, files) in sorted(latest.items()):
+        names = ", ".join(sorted(files))
+        verdicts = {v for v, _ in files.values() if v is not None}
+        if not verdicts:
+            _warn(
+                f"{change_id}: задача {task_id}: вердикт последней итерации "
+                f"(rev {rev:03d}: {names}) не читается — задача НЕ покрыта "
+                f"(BUG-AF-RECHECK-003: не подменяем старым approve)")
+            continue
+        if len(verdicts) > 1:
+            _warn(
+                f"{change_id}: задача {task_id}: противоречивые вердикты "
+                f"последней итерации (rev {rev:03d}: {names}) — задача НЕ "
+                f"покрыта, нужно решение ревьюера")
+            continue
+        if "return" in verdicts:
+            continue  # легитимный возврат: покрытия нет до нового approve
+        # Все вердикты итерации — approve: мета Reviewer-Delegation достаточна
+        # хотя бы у одного файла этой итерации (копии-привязки ссылаются на
+        # источник, мета живет в первичном review-файле).
+        if not any(meta for _, meta in files.values()):
+            _warn(
+                f"{change_id}: задача {task_id}: approve последней итерации "
+                f"(rev {rev:03d}: {names}) без Reviewer-Delegation — задача "
+                f"НЕ покрыта (защита SELF_REVIEW, J10)")
+            continue
+        covered[task_id] = next(
+            fname for fname, (_, meta) in sorted(files.items()) if meta)
+    return covered
 
 
 def archived_package_has_product_deltas(d: Path) -> bool:
@@ -380,7 +432,12 @@ def check(repo: Path) -> int:
             if tasks_file.is_file():
                 closed = closed_dev_tasks(tasks_file.read_text(encoding="utf-8", errors="replace"))
                 if closed:
-                    covered = approved_review_tasks(repo, d.name)
+                    review_warns: list[str] = []
+                    covered = approved_review_tasks(repo, d.name, review_warns)
+                    # BUG-AF-RECHECK-003: нечитаемая/противоречивая последняя
+                    # итерация — не молчаливая подмена старым approve, а WARNING.
+                    for w in review_warns:
+                        warns(f"code-reviews/: {w}")
                     if not covered:
                         errors += errs(
                             f"openspec/changes/{d.name}: {len(closed)} закрытых dev-задач без "
