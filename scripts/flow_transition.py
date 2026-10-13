@@ -76,11 +76,21 @@ EXTERNAL_ENFORCEMENT_UNKNOWN = "EXTERNAL_ENFORCEMENT_UNKNOWN"
 # читаемая причина, DENY перечисляет все).
 PLAN_RELEASE_MISSING = "PLAN_RELEASE_MISSING"
 PLAN_FLOW_UNDECLARED = "PLAN_FLOW_UNDECLARED"
+# J46 (архитектор — актор ревью, вердикт-ворота): dev_task продуктового пакета
+# без architecture-ревью с вердиктом — DENY (ворота не дают devs стартовать,
+# пока архитектор не вынес вердикт; урок P15 — новый домен без арх-ревью).
+ARCH_REVIEW_MISSING = "ARCH_REVIEW_MISSING"
 REASON_CODES = (
     MISSING_INPUT, INVALID_GATE, HUMAN_APPROVAL_REQUIRED, WRONG_ROLE,
     ZONE_CONFLICT, STALE_EVIDENCE, AMBIGUOUS_STATE, STALE_SNAPSHOT,
     EXTERNAL_ENFORCEMENT_UNKNOWN, PLAN_RELEASE_MISSING, PLAN_FLOW_UNDECLARED,
+    ARCH_REVIEW_MISSING,
 )
+
+# J46: продуктовые дельты пакета — пути в этих зонах (те же зоны, что и в
+# политике зон dev/architect; docs-only и бэклог-пакеты продуктовых дельт
+# не имеют и architecture-ревью не требуют).
+PRODUCT_DELTA_PREFIXES = ("backend/", "services/", "frontend/", "design/")
 
 # Политика перехода к merge/release (пересмотр плана P0.1, п.3; вопрос ПМ —
 # дефолт true): действие, требующее внешний факт (branch protection),
@@ -374,6 +384,74 @@ def _plan_release(snapshot: dict, ctx: dict) -> list:
         f"{', '.join(str(p) for p in paths)} (J41/J43.1; правило фабрики: "
         f"релиз стартует с плана ПМ, СА лишь детализирует; легкий план "
         f"Флоу 2/4: цель, строка «Флоу: N», зоны записи, критерий приемки)")]
+
+
+def product_paths(action: "ActionRequest") -> list[str]:
+    """Пути запроса в продуктовых зонах (J46): backend/services/frontend/design.
+
+    Путь матчится по префиксу зоны (backend/app/x.py) или совпадает с ней
+    самой (backend) — тот же стиль, что protected-пути check_chore_task.
+    """
+    return [
+        p for p in (action.paths or ())
+        if any(p == pe.rstrip("/") or p.startswith(pe)
+               for pe in PRODUCT_DELTA_PREFIXES)
+    ]
+
+
+def architecture_review_verdict(repo: Path, change_id: str) -> tuple[bool, list[str]]:
+    """(есть_верdict_approve, файлы) по test-model/reviews/<change>/ (J46).
+
+    Вердикт парсится как для code_review (flow_check.parse_verdict, формат
+    «## Вердикт: …»); засчитывается только approve — «return» означает
+    доработку, ворота ее вердиктом не считает.
+    """
+    rev_dir = Path(repo) / "test-model" / "reviews" / change_id
+    if not rev_dir.is_dir():
+        return False, []
+    files = sorted(rev_dir.glob("review-*-architecture.md"))
+    for rf in files:
+        text = rf.read_text(encoding="utf-8", errors="replace")
+        if flow_check.parse_verdict(text) == "approve":
+            return True, [str(f) for f in files]
+    return False, [str(f) for f in files]
+
+
+def _arch_review_gate(snapshot: dict, action: "ActionRequest", ctx: dict) -> list:
+    """Вердикт-ворота архитектора (J46): dev_task пакета с продуктовыми
+    дельтами требует test-model/reviews/<change>/review-NNN-architecture.md
+    с вердиктом approve. Пакеты без продуктовых дельт (docs-only, бэклог)
+    ворота не проходят. Отсутствие scope-входов — честный MISSING_INPUT
+    (контракт §2), не молчаливое разрешение.
+    """
+    if not product_paths(action):
+        return []
+    ctx["checked"].add("arch.review")
+    scope = snapshot.get("scope", {})
+    repo = scope.get("repo")
+    change_id = scope.get("change")
+    if not repo or not change_id:
+        return [Finding(
+            MISSING_INPUT,
+            "architecture-ревью не проверяемо: scope без repo/change — "
+            "пересобери inspect (J46; контракт §2)")]
+    ok, files = architecture_review_verdict(Path(repo), str(change_id))
+    if ok:
+        return []
+    if files:
+        return [Finding(
+            ARCH_REVIEW_MISSING,
+            f"architecture-ревью без вердикта approve (J46): "
+            f"{', '.join(Path(f).name for f in files)} — нужен "
+            f"«## Вердикт: approve» (формат agents/architect_agent.md); "
+            f"этап architecture_review — роль architect")]
+    return [Finding(
+        ARCH_REVIEW_MISSING,
+        f"architecture-ревью отсутствует: нет "
+        f"test-model/reviews/{change_id}/review-NNN-architecture.md — "
+        f"пакет с продуктовыми дельтами ({', '.join(product_paths(action))}) "
+        f"не стартует dev-задачи без вердикта архитектора (J46; "
+        f"этап architecture_review — роль architect)")]
 
 
 def _arch_review_done(snapshot: dict, ctx: dict) -> list:
@@ -794,6 +872,10 @@ def check_dev_task(snapshot, action, ctx, flow):
     # проскоченном СА-этапе — план обязан существовать на КАЖДОМ этапе работы
     # change-пакета, а не «всплывать» к релизу (урок P15 add-wiki).
     out.extend(_plan_release(snapshot, ctx))
+    # J46 (вердикт-ворота архитектора): продуктовый пакет не стартует dev
+    # без architecture-ревью с вердиктом approve (транзитивно с этапа
+    # architecture_review — тот же транзитивный принцип, что у плана J41).
+    out.extend(_arch_review_gate(snapshot, action, ctx))
     out.extend(_require_task(snapshot, action, ctx))
     out.extend(_deps_findings(action, ctx))
     if action.task_parallel:
@@ -1579,7 +1661,11 @@ STAGE_TABLE: dict[int, tuple[Stage, ...]] = {
               ("flow_check C1/E3",), check_approve_requirements),
         Stage("create_change", ("sa",), True,
               ("openspec validate --strict",), check_create_change),
-        Stage("architecture_review", ("pm",), False,
+        # J46 (решение Заказчика 2026-10-12: «Давай. Но ты еще забыл про map»):
+        # architecture_review — этап роли architect, не pm (легаси; реальных
+        # вызовов архитектора — 1 за историю). Зона роли в политике уже есть
+        # (architecture/** + test-model/reviews/*/review-*-architecture.md).
+        Stage("architecture_review", ("architect",), False,
               ("flow_check (контракт 2)",), check_needs_arch),
         Stage("dev_task", ("dev",), False,
               ("flow_check", "pm_bounds_check (J9/J10)"), check_dev_task),
