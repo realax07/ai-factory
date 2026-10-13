@@ -101,6 +101,9 @@ FLOW_IDS = (1, 2, 3, 4, 5)
 ROLE_ACTIONS = {
     "dev": "dev_task",
     "sa": "create_change",
+    # J46: архитектор — актор architecture_review (синхронно с STAGE_TABLE:
+    # этап после create_change, до dev_task).
+    "architect": "architecture_review",
     "code_reviewer": "code_review",
     "qa_automation": "qa_automation",
     # remove-qa-checklist: роль/действие qa_checklist упразднены.

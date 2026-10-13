@@ -32,6 +32,17 @@ REVIEWER_META_RE = re.compile(r"Reviewer-Delegation[^A-Za-z0-9]{0,6}(deleg[-_][A
 VERDICT_RETURN_RE = re.compile(r"\b(return|доработк\w*)\b", re.I)
 QA_SECTION = "6"  # раздел 6.x — QA-цикл, не dev (J10)
 
+# --- J46: карта архитектуры — обязательный артефакт (решение Заказчика
+# 2026-10-12: «ты еще забыл про map. Она же основной была») ---
+# Строка-вердикт по карте в architecture-ревью: «Карта: обновлена» (когда
+# architecture/** менялся в пакете) ИЛИ «Карта: без изменений» (с
+# обоснованием). Регистр точный — машиночитаемый контракт, не проза.
+MAP_VERDICT_RE = re.compile(
+    r"^\s*\*{0,2}\s*Карта:\s*(обновлена|без изменений)\s*\*{0,2}\s*$", re.M)
+# Продуктовые дельты архивного пакета: эвристика по текстам пакета (те же
+# зоны, что в воротах dev_task — flow_transition.PRODUCT_DELTA_PREFIXES).
+ARCHIVED_PRODUCT_PATH_RE = re.compile(r"\b(backend|services|frontend|design)/")
+
 
 def archived_delta_problems(repo: Path) -> dict[str, list[str]]:
     """Контракт 7: Requirements дельт archived-пакетов против master-spec.
@@ -160,6 +171,39 @@ def approved_review_tasks(repo: Path, change_id: str) -> dict[str, str]:
     return {task: name for task, (_, name) in covered.items()}
 
 
+def archived_package_has_product_deltas(d: Path) -> bool:
+    """Архивный пакет касается продуктового кода (J46): его тексты
+    (proposal/design/tasks/sdd) упоминают пути backend/|services/|frontend/|design/.
+    Детерминированная эвристика: у архива нет diff'а — зоны берутся из
+    описания пакета; тот же набор зон, что в воротах dev_task."""
+    for name in ("proposal.md", "design.md", "tasks.md", "sdd.md"):
+        f = d / name
+        if f.is_file() and ARCHIVED_PRODUCT_PATH_RE.search(
+                f.read_text(encoding="utf-8", errors="replace")):
+            return True
+    return False
+
+
+def map_verdict_ok(repo: Path, change_id: str) -> tuple[bool, str]:
+    """(ok, что_не_так) — вердикт по карте в architecture-ревью архива (J46).
+
+    Файл ищется в test-model/reviews/<change>/review-NNN-architecture.md;
+    если architecture-ревью нет вовсе — проверка неприменима (ретро-пакеты
+    до J46, миграцию строк делает ПМ) → (True, ""). Если файлы есть, хотя
+    бы один обязан нести «Карта: обновлена» или «Карта: без изменений».
+    """
+    rev_dir = repo / "test-model" / "reviews" / change_id
+    files = sorted(rev_dir.glob("review-*-architecture.md")) \
+        if rev_dir.is_dir() else []
+    if not files:
+        return True, ""
+    for rf in files:
+        if MAP_VERDICT_RE.search(rf.read_text(encoding="utf-8",
+                                              errors="replace")):
+            return True, ""
+    return False, ", ".join(rf.name for rf in files)
+
+
 def errs(*msg):
     for m in msg:
         print(f"FLOW-ERROR: {m}")
@@ -176,6 +220,17 @@ def check(repo: Path) -> int:
     errors = 0
     openspec = repo / "openspec"
     tm = repo / "test-model"
+
+    # --- J46 (а): карта архитектуры — обязательный артефакт проекта ---
+    # Проект с продуктовым кодом (backend/ или services/) обязан нести
+    # architecture/map.md — основной артефакт роли архитектора; отсутствие
+    # = FLOW-ERROR (решение Заказчика 2026-10-12).
+    if (repo / "backend").is_dir() or (repo / "services").is_dir():
+        if not (repo / "architecture" / "map.md").is_file():
+            errors += errs(
+                "карта архитектуры отсутствует (J46): нет architecture/map.md — "
+                "основной артефакт роли architect обязателен для проекта с "
+                "backend/ или services/")
 
     # --- factory-init: рассинхрон промптов с эталоном фабрики (если фабрика на машине) ---
     project_agents = repo / "agents"
@@ -276,6 +331,22 @@ def check(repo: Path) -> int:
                     f"openspec/changes/archive/{d.name}: master-spec не соответствует дельтам (контракт 7): "
                     + "; ".join(delta_problems[:5])
                 )
+
+    # --- J46 (б): архивный пакет с продуктовыми дельтами обязан нести
+    # вердикт по карте в architecture-ревью («Карта: обновлена» /
+    # «Карта: без изменений»; строку пишет архитектор при ревью пакета).
+    # Ревью нет вовсе — проверка неприменима (ретро-пакеты до J46; миграцию
+    # строк «Карта:» в существующие ревью делает ПМ отдельно).
+    for d in archived_changes:
+        if not archived_package_has_product_deltas(d):
+            continue
+        ok, files = map_verdict_ok(repo, d.name)
+        if not ok:
+            errors += errs(
+                f"openspec/changes/archive/{d.name}: в architecture-ревью нет "
+                f"вердикта по карте (J46): {files} — нужна строка "
+                f"«Карта: обновлена» или «Карта: без изменений» "
+                f"(контракт 7-дополнение, J46)")
 
     if ch_dir.is_dir():
         for d in sorted(p for p in ch_dir.iterdir() if p.is_dir()):
