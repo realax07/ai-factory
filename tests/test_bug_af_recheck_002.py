@@ -239,3 +239,30 @@ def test_bypass_skips_prepare_and_paths_gate(tmp_path, monkeypatch):
             f"{MARKER}\n")  # без paths → без bypass был бы PATHS_MISSING
     res = enforcer.flow_enforce("delegate_task", delegate_args(goal), "b7")
     assert res is None
+
+
+# ---------------------------------------- формат scope Флоу 2 (BUG-...-NNN)
+#
+# Синхронизация validate_scope_for_flow с правилом имен репортов
+# test-model/bugs/ расширенным в 5c21489: BUG-<КОМПЛЕКС>-NNN
+# (канонично r'^BUG-(?:[A-Z0-9]+-)*\d{3}$').
+
+
+@pytest.mark.parametrize("scope", ["BUG-AF-RECHECK-001", "BUG-001"])
+def test_flow2_scope_bug_complex_valid(scope):
+    """Ф2 scope: BUG-<КОМПЛЕКС>-NNN и классический BUG-NNN оба валидны."""
+    enforcer.validate_scope_for_flow(2, scope)  # не бросает
+
+
+@pytest.mark.parametrize("scope", [
+    "bug-001",                # lowercase — отклонение (нет IGNORECASE)
+    "BUG-AF_RECHECK-001",     # underscore — не дефис-разделитель
+    "BUG-AF-RECHECK-001A",    # мусорный суффикс после NNN
+    "BUG-AF-RECHECK-",        # нет финального NNN
+    "AF-RECHECK-001",         # нет префикса BUG-
+])
+def test_flow2_scope_bug_complex_invalid(scope):
+    """Ф2 scope: lowercase / underscore / суффикс / отсутствие NNN —
+    отклонение (FlowMarkerError → block FLOW_MARKER_INVALID)."""
+    with pytest.raises(enforcer.FlowMarkerError):
+        enforcer.validate_scope_for_flow(2, scope)

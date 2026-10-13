@@ -402,7 +402,8 @@ class TestJ431Marker:
         goal = ("flow: flow=2 role=dev repo=/tmp/proj scope=add-widget\n")
         res = enforcer.flow_enforce("delegate_task", delegate_args(goal), "d3")
         assert res is not None and res["action"] == "block"
-        assert "BUG-NNN" in res["message"]
+        # BUG-AF-RECHECK: формат расширен до BUG-<КОМПЛЕКС>-NNN
+        assert "BUG-<КОМПЛЕКС>-NNN" in res["message"]
 
     def test_legacy_marker_flow1_warning(self, plugin_env, monkeypatch):
         """(г) старый 'change=' без flow= → трактовка flow=1 + WARNING в лог."""

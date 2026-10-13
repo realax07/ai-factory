@@ -7,7 +7,8 @@
   1. Заголовок (канонический формат J43.1, см. templates/task_delegation.md):
          flow: flow=<1-5> role=<роль> repo=<путь> scope=<идентификатор>
                [paths=<путь1,путь2,...>] [kind=docs|product]
-     scope — по флоу: Ф1 change-id; Ф2 BUG-NNN (репорт test-model/bugs/);
+     scope — по флоу: Ф1 change-id; Ф2 BUG-<КОМПЛЕКС>-NNN (репорт
+     test-model/bugs/; BUG-001 и BUG-AF-RECHECK-001 оба валидны);
      Ф3 incident-id (формат любой, обязателен); Ф4 chore-slug; Ф5 slug.
      paths — относительные пути задачи через запятую; попадают в flowctl
      prepare как --path (зоны/вороты видят РЕАЛЬНЫЕ пути задачи;
@@ -20,8 +21,9 @@
   3. Одиночные маркеры: 'role: X', 'repo: P', 'change:/scope: C' в тех же
      строках; task: — опциональный (dev_task уровня задачи).
 
-Очевидные ошибки маркера (flow=9, пустой scope, Ф2 без формата BUG-NNN) →
-block FLOW_MARKER_INVALID в ЛЮБОМ режиме: битый маркер хуже отсутствующего.
+Очевидные ошибки маркера (flow=9, пустой scope, Ф2 без формата
+BUG-<КОМПЛЕКС>-NNN) → block FLOW_MARKER_INVALID в ЛЮБОМ режиме: битый
+маркер хуже отсутствующего.
 
 Без маркеров решение по режиму FLOW_ENFORCER_MODE:
   - 'strict'     → block MARKERS_MISSING;
@@ -117,7 +119,12 @@ SINGLE_RE = {
     "paths": re.compile(r"\bpaths:\s*(\S+)"),
 }
 
-BUG_ID_RE = re.compile(r"^BUG-\d{3}$", re.IGNORECASE)
+# Формат scope Флоу 2 (BUG-AF-RECHECK: синхронно с правилом имен репортов
+# test-model/bugs/ из 5c21489): BUG- с опциональными сегментами-словами
+# (A-Z0-9, дефис-разделитель) и финальным NNN — канонично
+# r'^BUG-(?:[A-Z0-9]+-)*\d{3}$' (покрывает BUG-001 и BUG-AF-RECHECK-001;
+# lowercase/кириллица/пробелы — отклонение, поэтому БЕЗ re.IGNORECASE).
+BUG_ID_RE = re.compile(r"^BUG-(?:[A-Z0-9]+-)*\d{3}$")
 FLOW_IDS = (1, 2, 3, 4, 5)
 
 # Действие по роли: этапы STAGE_TABLE Флоу 1 (flow_transition.py).
@@ -272,8 +279,8 @@ def _parse_header(texts: list[str]) -> dict | None:
                         "обязательны)")
                 raise FlowMarkerError(
                     "пустой scope в заголовке flow: — scope обязателен "
-                    "(Ф1 change-id, Ф2 BUG-NNN, Ф3 incident-id, Ф4 chore-slug, "
-                    "Ф5 slug; см. templates/task_delegation.md)")
+                    "(Ф1 change-id, Ф2 BUG-<КОМПЛЕКС>-NNN, Ф3 incident-id, "
+                    "Ф4 chore-slug, Ф5 slug; см. templates/task_delegation.md)")
             pairs = dict(HEADER_PAIR_RE.findall(rest))
             if pairs.get("role") and pairs.get("repo") and (
                 pairs.get("scope") or pairs.get("change")
@@ -355,17 +362,19 @@ def _validate_flow(raw_flow: str) -> int:
 
 
 def validate_scope_for_flow(flow: int, scope: str) -> None:
-    """Формат scope своего флоу (J43.1): Ф2 — строго BUG-NNN (формат репорта
-    test-model/bugs/); Ф1 change-id / Ф3 incident-id / Ф4 chore-slug /
+    """Формат scope своего флоу (J43.1): Ф2 — BUG-<КОМПЛЕКС>-NNN (формат
+    репорта test-model/bugs/, расширен 5c21489: BUG-001 и BUG-AF-RECHECK-001
+    оба валидны); Ф1 change-id / Ф3 incident-id / Ф4 chore-slug /
     Ф5 slug — непустая строка (пустой отсечен при разборе)."""
     if not scope:
         raise FlowMarkerError(
-            "пустой scope — scope обязателен (Ф1 change-id, Ф2 BUG-NNN, "
-            "Ф3 incident-id, Ф4 chore-slug, Ф5 slug)")
+            "пустой scope — scope обязателен (Ф1 change-id, "
+            "Ф2 BUG-<КОМПЛЕКС>-NNN, Ф3 incident-id, Ф4 chore-slug, Ф5 slug)")
     if flow == 2 and not BUG_ID_RE.match(scope):
         raise FlowMarkerError(
-            f"Флоу 2 требует scope формата BUG-NNN, получено {scope!r} "
-            "(репорт test-model/bugs/<scope>.md)")
+            f"Флоу 2 требует scope формата BUG-<КОМПЛЕКС>-NNN "
+            f"(BUG-001 или BUG-AF-RECHECK-001; A-Z0-9, дефис-разделитель), "
+            f"получено {scope!r} (репорт test-model/bugs/<scope>.md)")
 
 
 def resolve_flow(markers: dict) -> tuple[int, bool]:
