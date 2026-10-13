@@ -45,6 +45,16 @@ license: MIT
 - После обрыва/падения: следующая сессия начинает с чтения последнего
   handoff + PLAN.md + `git log` — не с попытки вспомнить.
 
+## Инструмент (scripts/)
+
+**`scripts/handoff_scaffold.py`** — скелет handoff-документа (Состояние /
+В полете / Решения / Открытые вопросы / Следующий шаг) с датой и slug в имени.
+Append-only: существующий файл скрипт не перезаписывает.
+
+```bash
+python skills/handoff/scripts/handoff_scaffold.py "передача p16 волна 2" --dir docs/handoffs
+```
+
 ## Связанные скиллы
 
 `factory-flow` (где мы в флоу), `session_archive` (транскрипты — машина),
