@@ -65,10 +65,17 @@ code_reviewer→code_review, qa_automation→qa_automation, ...
 
 ## Bypass
 
-Дословная строка в goal: `flow: bypass --by customer` — явное распоряжение
-Заказчика. Делегация пропускается, факт пишется в incident-файл
-`~/.hermes/state/flow-enforcer-bypass.log` (timestamp, task_id, первые 200
-символов goal). Любой другой «bypass» не распознается.
+Дословная строка в goal `flow: bypass --by customer` — ЗАЯВКА на обход
+(BUG-AF-RECHECK-002): сама по себе она ничего не разрешает — goal формирует
+оркестратор, и цитата маркера в тексте неотличима от распоряжения. Обход
+действует ТОЛЬКО при записи в реестре решений Заказчика
+`~/.hermes/state/flow-bypass-decisions.json` (список записей
+`{"repo": ..., "scope": ..., "action": ..., "decision_ref": ..., "expires":
+"<UTC ISO>"}`), совпадающей по repo/scope/action и неистекшей. Нет записи,
+просрочена или другой scope/action — обычная проверка ворот (как правило
+DENY). Пропуск пишется в `~/.hermes/state/flow-enforcer-bypass.log`
+(timestamp, task_id, первые 200 символов goal, decision_ref, match).
+Любой другой «bypass» не распознается.
 
 ## Что логируется
 

@@ -10,7 +10,8 @@ flowctl prepare --dry-run на fixture-репо (замер латентност
   (а) не-delegate_task → нет директивы;
   (б) delegate_task без маркеров в strict → block MARKERS_MISSING;
   (в) в permissive → нет директивы (+ строка в логе);
-  (г) bypass-маркер → пропуск + запись в bypass-лог;
+  (г) bypass-маркер — только ЗАЯВКА: без записи в реестре решений
+      (FLOW_BYPASS_REGISTRY) делегация НЕ пропускается (BUG-AF-RECHECK-002);
   (д) flowctl prepare ok (мок subprocess) → ALLOW;
   (е) prepare fail → block с кодом из вывода;
   (ж) исключение в хуке → fail-closed block;
@@ -126,17 +127,17 @@ def test_c_permissive_missing_markers_passes_and_logs(plugin_env):
 # ------------------------------------------------------------ (г) bypass
 
 
-def test_d_bypass_marker_passes_and_logs(plugin_env):
-    """TC-J43-004: J43 flow-enforcer."""
-    goal = "flow: bypass --by customer\n" + HEADER_GOAL
-    res = enforcer.flow_enforce(
-        "delegate_task", delegate_args(goal), "t4")
-    assert res is None  # никакой subprocess не понадобился
-    blog = plugin_env / "flow-enforcer-bypass.log"
-    assert blog.is_file()
-    entry = json.loads(blog.read_text(encoding="utf-8").splitlines()[-1])
-    assert entry["task_id"] == "t4"
-    assert entry["goal_head"].startswith("flow: bypass --by customer")
+def test_d_bypass_marker_without_decision_does_not_pass(plugin_env,
+                                                        monkeypatch):
+    """TC-J43-004 (переписан, BUG-AF-RECHECK-002): маркер bypass в goal БЕЗ
+    записи в реестре решений НЕ пропускает делегацию: в strict без маркеров
+    конвейера — block MARKERS_MISSING; обычная проверка продолжается."""
+    monkeypatch.setenv("FLOW_ENFORCER_MODE", "strict")
+    goal = "flow: bypass --by customer\nпочини стили\n"
+    res = enforcer.flow_enforce("delegate_task", delegate_args(goal), "t4")
+    assert res is not None and res["action"] == "block"
+    assert "MARKERS_MISSING" in res["message"]
+    assert not (plugin_env / "flow-enforcer-bypass.log").exists()
 
 
 # ------------------------------------------------------- (д/е) subprocess

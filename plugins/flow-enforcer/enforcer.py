@@ -27,8 +27,17 @@ block FLOW_MARKER_INVALID в ЛЮБОМ режиме: битый маркер х
   - 'strict'     → block MARKERS_MISSING;
   - 'permissive' (дефолт) → пропуск + запись в лог (аудит-след).
 
-Bypass: дословная строка 'flow: bypass --by customer' в goal — явное
-распоряжение Заказчика: пропуск + запись в incident-файл.
+Bypass: дословная строка 'flow: bypass --by customer' в goal — ЗАЯВКА на
+обход, но сама по себе ничего не разрешает (BUG-AF-RECHECK-002: goal
+формирует оркестратор, цитата маркера в тексте тоже выглядит как маркер).
+Обход действует ТОЛЬКО при действующей записи в реестре решений Заказчика
+~/.hermes/state/flow-bypass-decisions.json (список записей
+{repo, scope, action, decision_ref, expires}; expires — UTC ISO): запись
+ищется по (repo, scope, action) и обязана быть неистекшей. Нет записи /
+просрочена / другой scope или action → bypass-ветка НЕ срабатывает, идет
+обычная проверка (как правило DENY). Ошибка чтения/разбора реестра — не
+разрешение (fail-closed). Запись в bypass-лог дополняется decision_ref и
+match (что именно совпало).
 
 Валидация: subprocess flowctl prepare --dry-run --json (--dry-run, чтобы
 энфорсер НЕ создавал reservation/zone-резерв; --json — чтобы вердикт парсился
@@ -72,6 +81,8 @@ Env:
   FLOW_ENFORCER_PROJECT    project-id для prepare/phase (дефолт: имя repo)
   FLOW_ENFORCER_FLOW       fallback-номер флоу, если в маркере нет flow=
   FLOW_ENFORCER_SEQUENCE   1 → проверка последовательности этапов (дефолт off)
+  FLOW_BYPASS_REGISTRY     путь к реестру bypass-решений (дефолт
+                           ~/.hermes/state/flow-bypass-decisions.json)
 """
 from __future__ import annotations
 
@@ -377,8 +388,55 @@ def resolve_flow(markers: dict) -> tuple[int, bool]:
     return flow, False
 
 
-def has_bypass(goal: str) -> bool:
+def bypass_requested(goal: str) -> bool:
+    """Маркер 'flow: bypass --by customer' в goal. Это ЗАЯВКА на обход, а не
+    разрешение (BUG-AF-RECHECK-002): goal формирует сам оркестратор, цитата
+    маркера внутри текста неотличима от распоряжения. Разрешает только
+    find_bypass_decision() — действующая запись в реестре решений."""
     return BYPASS_MARKER in (goal or "")
+
+
+def bypass_registry_path() -> Path:
+    """Путь реестра решений Заказчика (env FLOW_BYPASS_REGISTRY — для
+    изоляции тестов; дефолт ~/.hermes/state/flow-bypass-decisions.json)."""
+    return Path(os.environ.get(
+        "FLOW_BYPASS_REGISTRY",
+        str(state_dir() / "flow-bypass-decisions.json"))).expanduser()
+
+
+def find_bypass_decision(repo: str, scope: str, action: str) -> dict | None:
+    """Действующая запись реестра решений для (repo, scope, action) или None.
+
+    Запись действует, если совпадают repo/scope/action И expires (UTC, ISO)
+    еще не наступил. Нет файла, битый JSON, битая запись, нет/битый срок,
+    просрочено, другой scope/action — обхода НЕТ (ошибка проверки решения не
+    превращается в разрешение; BUG-AF-RECHECK-002).
+    """
+    try:
+        data = json.loads(bypass_registry_path().read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(data, list):
+        return None
+    now = datetime.now(timezone.utc)
+    for entry in data:
+        if not isinstance(entry, dict):
+            continue
+        if (str(entry.get("repo", "")) != repo
+                or str(entry.get("scope", "")) != scope
+                or str(entry.get("action", "")) != action):
+            continue
+        raw = entry.get("expires")
+        try:
+            expires = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+        except (TypeError, ValueError):
+            continue  # нет/нечитаемый срок — запись не действует
+        if expires.tzinfo is None:
+            expires = expires.replace(tzinfo=timezone.utc)
+        if expires <= now:
+            continue  # истекла
+        return entry
+    return None
 
 
 def _append_log(path: Path, payload: dict) -> None:
@@ -396,10 +454,15 @@ def log_event(payload: dict) -> None:
     _append_log(state_dir() / "flow-enforcer.log", payload)
 
 
-def log_bypass(task_id: str, goal: str) -> None:
+def log_bypass(task_id: str, goal: str, decision_ref: str | None = None,
+               match: dict | None = None) -> None:
+    """Аудит bypass: привязка к решению Заказчика (decision_ref из реестра) и
+    что именно совпало (repo/scope/action); BUG-AF-RECHECK-002."""
     _append_log(state_dir() / "flow-enforcer-bypass.log", {
         "task_id": task_id, "goal_head": (goal or "")[:200],
         "kind": "bypass --by customer",
+        "decision_ref": decision_ref,
+        "match": match or {},
     })
 
 
@@ -595,10 +658,10 @@ def flow_enforce(tool_name: str, args: dict, task_id: str = "",
         goal = args.get("goal") if isinstance(args.get("goal"), str) else ""
         log_event({"event": "delegate_task_seen", "task_id": task_id})
 
-        if has_bypass(goal):
-            log_bypass(task_id, goal)
-            log_event({"event": "bypass", "task_id": task_id})
-            return None
+        # BUG-AF-RECHECK-002: маркер bypass — ЗАЯВКА; разрешает только запись
+        # в реестре решений. Проверка возможна только когда известны
+        # repo/scope/action — после разбора маркеров (см. ниже).
+        bypass_wanted = bypass_requested(goal)
 
         try:
             markers = parse_markers(args)
@@ -616,8 +679,9 @@ def flow_enforce(tool_name: str, args: dict, task_id: str = "",
                     "конвейера. Добавь в goal заголовок "
                     "'flow: flow=<1-5> role=<роль> repo=<путь> "
                     "scope=<идентификатор>' (см. templates/task_delegation.md) "
-                    "или пройди flowctl prepare. Bypass — только "
-                    "'flow: bypass --by customer'.")}
+                    "или пройди flowctl prepare. Bypass — только 'flow: "
+                    "bypass --by customer' ПРИ действующей записи в реестре "
+                    "решений (~/.hermes/state/flow-bypass-decisions.json).")}
             log_event({"event": "markers_missing_permissive",
                        "task_id": task_id})
             return None
@@ -628,6 +692,26 @@ def flow_enforce(tool_name: str, args: dict, task_id: str = "",
         if not from_marker:
             # WARNING уже в логе (flow_fallback); дублируем факт в prepare_result
             pass
+
+        if bypass_wanted:
+            # BUG-AF-RECHECK-002: обход — только по действующей записи реестра
+            # решений Заказчика (repo/scope/action, неистекший expires).
+            decision = find_bypass_decision(markers["repo"], markers["scope"],
+                                            action)
+            if decision is not None:
+                match = {"repo": markers["repo"], "scope": markers["scope"],
+                         "action": action}
+                log_bypass(task_id, goal,
+                           decision_ref=decision.get("decision_ref"),
+                           match=match)
+                log_event({"event": "bypass", "task_id": task_id,
+                           "decision_ref": decision.get("decision_ref")})
+                return None
+            log_event({"event": "bypass_denied", "level": "WARNING",
+                       "task_id": task_id,
+                       "note": "маркер bypass без действующей записи реестра "
+                               "решений (нет/просрочена/другой scope|action) "
+                               "— обычная проверка ворот"})
 
         # BUG-AF-RECHECK-001: отсутствие путей ≠ docs-only. kind=docs —
         # облегченный маршрут (пути не обязательны); product / kind не указан
