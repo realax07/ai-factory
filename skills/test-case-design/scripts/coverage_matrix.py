@@ -2,9 +2,14 @@
 """Матрица покрытия: сценарии спеки ↔ тест-кейсы (TC).
 
 Скилл: test-case-design. Сопоставляет сценарии (заголовки «### Сценарий: …»
-в спеках) с кейсами каталога test-model: кейс «покрывает» сценарий, если в
-его файле встречается имя сценария или его идентификатор (SC/FR/NFR-N).
-Вывод: сценарии без кейсов (пробелы) и кейсы-сироты (нет ссылок на спеку).
+и канонические OpenSpec «#### Scenario: …») с кейсами каталога test-model:
+кейс «покрывает» сценарий, если в его файле встречается имя сценария или его
+идентификатор (SC/FR/NFR-N). Вывод: сценарии без кейсов (пробелы) и кейсы-
+сироты (нет ссылок на спеку и ни одного имени сценария).
+
+Диагностика (BUG-AF-RECHECK-004): 0 распознанных сценариев при поданных
+входных файлах — «СПЕКА НЕ РАСПОЗНАНА (0 сценариев)», exit 3 (и в strict,
+и без): ноль НЕ подтверждает покрытие. Отсутствующий вход — тоже exit 3.
 
 Usage:
     python coverage_matrix.py openspec/changes/add-wiki/ --cases test-model/new
@@ -15,7 +20,8 @@ import re
 import sys
 from pathlib import Path
 
-SCEN_RE = re.compile(r"^#{2,4}\s*Сценарий[:\s]\s*(.+)$", re.MULTILINE)
+SCEN_RE = re.compile(
+    r"^#{2,4}\s*(?:Сценарий|Scenario)[:\s]\s*(.+)$", re.MULTILINE)
 TC_RE = re.compile(r"\bTC-[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*\b")
 REF_RE = re.compile(r"\b(?:SC|FR|NFR)-[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*\b")
 
@@ -44,10 +50,26 @@ def main() -> int:
 
     # Сценарии: имя → источник
     scenarios: dict[str, str] = {}
+    input_files: list[Path] = []
     for spec in args.specs:
         for f in md_files(spec):
+            input_files.append(f)
             for m in SCEN_RE.finditer(read(f)):
                 scenarios.setdefault(m.group(1).strip(), str(f))
+
+    # BUG-AF-RECHECK-004: 0 распознанных сценариев — диагностическое
+    # состояние, НЕ «все покрыты»: без входа или без узнаваемых заголовков
+    # отчет о покрытии бессмыслен (exit 3 в обоих режимах).
+    if not scenarios:
+        if not input_files:
+            print("СПЕКА НЕ РАСПОЗНАНА (0 сценариев): входные файлы не "
+                  f"найдены: {', '.join(args.specs)}")
+        else:
+            print(f"СПЕКА НЕ РАСПОЗНАНА (0 сценариев): прочитано файлов: "
+                  f"{len(input_files)}, заголовки «Сценарий:/Scenario:» "
+                  f"не найдены (ожидаются «### Сценарий:» / "
+                  f"«#### Scenario:»)")
+        return 3
 
     # Кейсы: TC-ID → текст файла (поиск ссылки на сценарий ведем по тексту)
     tc_texts: dict[str, str] = {}
@@ -70,7 +92,14 @@ def main() -> int:
         if not covered:
             uncovered.append((name, src))
 
-    orphans = sorted(tc for tc, refs in tc_refs.items() if not refs)
+    # Кейсы-сироты: нет ссылки SC/FR/NFR И нет ни одного имени распознанного
+    # сценария (BUG-AF-RECHECK-004: корректная ссылка по имени сценария —
+    # не сирота только из-за отсутствия FR/SC-идентификатора).
+    scenario_names = [name.lower() for name in scenarios]
+    orphans = sorted(
+        tc for tc, refs in tc_refs.items()
+        if not refs and not any(name in tc_texts[tc]
+                                for name in scenario_names))
 
     if uncovered:
         print(f"\nБЕЗ КЕЙСОВ ({len(uncovered)}):")

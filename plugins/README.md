@@ -47,9 +47,18 @@ python3 scripts/factory_init.py --target <repo> --name "<проект>"
 Первая строка goal (см. templates/task_delegation.md, чеклист 0):
 
 ```
-flow: role=<роль> repo=<путь> change=<id>
+flow: role=<роль> repo=<путь> change=<id> paths=<путь1,путь2> [kind=docs|product]
 task: <id задачи tasks.md>        # опционально, для dev_task
 ```
+
+`paths=` — ТОЛЬКО относительные пути (от корня репозитория, без '..'-сегментов
+и абсолютных путей — иначе `FLOW_MARKER_INVALID`; MAJ-2 ревью
+BUG-AF-RECHECK) через запятую (идут в flowctl prepare как `--path`;
+BUG-AF-RECHECK-001: без путей продуктовая задача блокируется
+`PATHS_MISSING`, отсутствие путей ≠ docs-only). `kind=docs` без путей
+валиден ТОЛЬКО для docs_task/chore_task (MAJ-1 ревью BUG-AF-RECHECK:
+для dev_task kind=docs без путей — `PATHS_MISSING`); `kind=product` (или
+kind не указан — с WARNING) требует paths.
 
 Роль → действие ворот (flowctl): dev→dev_task, sa→create_change,
 code_reviewer→code_review, qa_automation→qa_automation, ...
@@ -59,10 +68,40 @@ code_reviewer→code_review, qa_automation→qa_automation, ...
 
 ## Bypass
 
-Дословная строка в goal: `flow: bypass --by customer` — явное распоряжение
-Заказчика. Делегация пропускается, факт пишется в incident-файл
-`~/.hermes/state/flow-enforcer-bypass.log` (timestamp, task_id, первые 200
-символов goal). Любой другой «bypass» не распознается.
+Дословная строка в goal `flow: bypass --by customer` — ЗАЯВКА на обход
+(BUG-AF-RECHECK-002): сама по себе она ничего не разрешает — goal формирует
+оркестратор, и цитата маркера в тексте неотличима от распоряжения. Обход
+действует ТОЛЬКО при записи в реестре решений Заказчика
+`~/.hermes/state/flow-bypass-decisions.json` (список записей
+`{"repo": ..., "scope": ..., "action": ..., "decision_ref": ..., "expires":
+"<UTC ISO>"}`), совпадающей по repo/scope/action и неистекшей. Требования к
+записи (MAJ-3 ревью BUG-AF-RECHECK):
+
+- `expires` — ТОЛЬКО с таймзоной (UTC ISO, `...Z` или `+00:00`). Naive-срок
+  (без таймзоны) — НЕВАЛИДНАЯ запись (молчаливая трактовка «naive = UTC» —
+  fail-open сдвиг); запись не действует.
+- НЕСКОЛЬКО одновременных неистекших записей под один (repo, scope, action) —
+  отказ (неоднозначность): обход не применяется, идет обычная проверка ворот.
+
+Нет записи, просрочена или другой scope/action — обычная проверка ворот (как
+правило DENY). Пропуск пишется в `~/.hermes/state/flow-enforcer-bypass.log`
+(timestamp, task_id, первые 200 символов goal, decision_ref, match; заявка
+bypass без маркеров в permissive-режиме — `bypass_requested_unfulfilled` в
+том же логе). Любой другой «bypass» не распознается.
+
+### Доверенная граница реестра (MAJ-3)
+
+Реестр решений — файл ВНЕ репозитория (`~/.hermes/state/`), ведет ЧЕЛОВЕК:
+ПМ добавляет запись только по прямому подтверждению Заказчика. Enforcer
+доверяет факту записи, но не может проверить её подлинность — это осознанная
+граница доверия. Env `FLOW_BYPASS_REGISTRY` (переопределение пути реестра) —
+ДЛЯ ТЕСТОВ: в продуктивной среде его не устанавливать (установка окружением =
+подмена реестра).
+
+Known limitation (открытый вопрос Заказчику): привязка записи к версии
+фабрики/плагина и ОТЗЫВ действующей записи (revocation) НЕ реализованы —
+отзыв сейчас возможен только правкой/удалением файла реестра человеком.
+Вопрос вынесен Заказчику вместе с этим ревью.
 
 ## Что логируется
 

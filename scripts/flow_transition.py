@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import posixpath
 import re
 import subprocess
 import sys
@@ -386,35 +387,73 @@ def _plan_release(snapshot: dict, ctx: dict) -> list:
         f"Флоу 2/4: цель, строка «Флоу: N», зоны записи, критерий приемки)")]
 
 
+def _canon_rel_path(p: str) -> str:
+    """Канонизация относительного пути (MAJ-2 ревью BUG-AF-RECHECK): срез
+    ведущих '/' и './', схлопывание сегментов (a/./b/, a/x/../b → b).
+    Оставшийся '..' — путь мимо канона (энфорсер такие --path отвергает
+    раньше); здесь он просто не матчится с зонами (fail-closed)."""
+    q = p.replace("\\", "/")
+    while q.startswith("./"):
+        q = q[2:]
+    q = q.lstrip("/")
+    q = posixpath.normpath(q)
+    return "" if q == "." else q
+
+
 def product_paths(action: "ActionRequest") -> list[str]:
     """Пути запроса в продуктовых зонах (J46): backend/services/frontend/design.
 
-    Путь матчится по префиксу зоны (backend/app/x.py) или совпадает с ней
-    самой (backend) — тот же стиль, что protected-пути check_chore_task.
+    Путь канонизируется (_canon_rel_path) и матчится по префиксу зоны
+    (backend/app/x.py) или совпадает с ней самой (backend) — тот же стиль,
+    что protected-пути check_chore_task. 'backendx/evil' с зоной 'backend'
+    НЕ матчится; 'backend/' и 'backend/./x' матчится после нормализации
+    (MAJ-2 ревью BUG-AF-RECHECK).
     """
-    return [
-        p for p in (action.paths or ())
-        if any(p == pe.rstrip("/") or p.startswith(pe)
-               for pe in PRODUCT_DELTA_PREFIXES)
-    ]
+    out: list[str] = []
+    for p in (action.paths or ()):
+        c = _canon_rel_path(p)
+        if c and any(c == pe.rstrip("/") or c.startswith(pe)
+                     for pe in PRODUCT_DELTA_PREFIXES):
+            out.append(p)
+    return out
+
+
+ARCH_REVIEW_FILE_RE = re.compile(r"^review-(\d{3})-architecture\.md$", re.I)
 
 
 def architecture_review_verdict(repo: Path, change_id: str) -> tuple[bool, list[str]]:
     """(есть_верdict_approve, файлы) по test-model/reviews/<change>/ (J46).
 
     Вердикт парсится как для code_review (flow_check.parse_verdict, формат
-    «## Вердикт: …»); засчитывается только approve — «return» означает
-    доработку, ворота ее вердиктом не считает.
+    «## Вердикт: …»). Действует вердикт ПОСЛЕДНЕЙ итерации —
+    review-NNN-architecture с максимальным NNN (BUG-AF-RECHECK-003): поздний
+    return отменяет ранее approve; approve→return→approve — последняя.
+    return вердиктом не считается. Неоднозначность — файлы вне канонической
+    схемы review-NNN-architecture.md (номер итерации неопределим) или
+    несколько файлов с одинаковым максимальным NNN → (False, files) —
+    решает человек, молчаливой подмены старым approve нет.
     """
     rev_dir = Path(repo) / "test-model" / "reviews" / change_id
     if not rev_dir.is_dir():
         return False, []
     files = sorted(rev_dir.glob("review-*-architecture.md"))
+    if not files:
+        return False, []
+    parsed = []
     for rf in files:
-        text = rf.read_text(encoding="utf-8", errors="replace")
-        if flow_check.parse_verdict(text) == "approve":
-            return True, [str(f) for f in files]
-    return False, [str(f) for f in files]
+        m = ARCH_REVIEW_FILE_RE.match(rf.name)
+        if m is None:
+            # Неопределимый номер итерации — неоднозначность (не молчаливое
+            # «файла нет»): разрешение не рискуем
+            return False, [str(f) for f in files]
+        parsed.append((int(m.group(1)), rf))
+    max_rev = max(rev for rev, _ in parsed)
+    latest = [rf for rev, rf in parsed if rev == max_rev]
+    str_files = [str(f) for f in files]
+    if len(latest) > 1:
+        return False, str_files  # неоднозначность: одинаковый максимальный NNN
+    text = latest[0].read_text(encoding="utf-8", errors="replace")
+    return flow_check.parse_verdict(text) == "approve", str_files
 
 
 def _arch_review_gate(snapshot: dict, action: "ActionRequest", ctx: dict) -> list:
@@ -441,10 +480,12 @@ def _arch_review_gate(snapshot: dict, action: "ActionRequest", ctx: dict) -> lis
     if files:
         return [Finding(
             ARCH_REVIEW_MISSING,
-            f"architecture-ревью без вердикта approve (J46): "
+            f"architecture-ревью без вердикта approve актуальной итерации "
+            f"(J46; BUG-AF-RECHECK-003: вердикт review-NNN с максимальным "
+            f"номером решает, поздний return отменяет старый approve): "
             f"{', '.join(Path(f).name for f in files)} — нужен "
             f"«## Вердикт: approve» (формат agents/architect_agent.md); "
-            f"этап architecture_review — роль architect")]
+            f"этап architecture_review — роль архитектора")]
     return [Finding(
         ARCH_REVIEW_MISSING,
         f"architecture-ревью отсутствует: нет "
@@ -555,10 +596,15 @@ def _deps_findings(action: ActionRequest, ctx: dict) -> list:
                 f"задачи с зависимостями — строго последовательно; "
                 f"evidence: openspec/changes/<id>/tasks.md)"))
         elif not ev.get("review_approved"):
+            # MIN-4 ревью BUG-AF-RECHECK: причина «не покрыта» из warns
+            # парсера (нечитаемый/противоречивый вердикт, SELF_REVIEW) —
+            # в диагностике отказа, не молчаливый факт.
+            warn = ev.get("review_warning")
             out.append(Finding(
                 INVALID_GATE,
                 f"зависимость {d} закрыта без code-review approve (J10; "
-                f"evidence: code-reviews/<change-id>/review-*.md)"))
+                f"evidence: code-reviews/<change-id>/review-*.md)"
+                + (f"; диагностика: {warn}" if warn else "")))
     return out
 
 
@@ -2008,13 +2054,26 @@ def _task_lines(tasks_text: str) -> dict[str, dict]:
 
 def _dep_evidence(repo: Path, change_id: str, deps: tuple) -> dict:
     """Evidence по зависимостям: чекбокс (flow_check.closed_dev_tasks) + approve
-    (flow_check.approved_review_tasks) — J10-логика, без дублирования парсеров."""
+    (flow_check.approved_review_tasks) — J10-логика, без дублирования парсеров.
+
+    MIN-4 ревью BUG-AF-RECHECK: warns парсера вердиктов пробрасываются в
+    evidence каждой зависимости (review_warning) — ворота выводят их в
+    диагностику отказа, вместо молчаливого «не покрыта».
+    """
     tasks_file = repo / "openspec" / "changes" / change_id / "tasks.md"
     text = ""
     if tasks_file.is_file():
         text = tasks_file.read_text(encoding="utf-8", errors="replace")
     closed = set(flow_check.closed_dev_tasks(text))
-    approved = flow_check.approved_review_tasks(repo, change_id)
+    review_warns: list[str] = []
+    approved = flow_check.approved_review_tasks(repo, change_id, review_warns)
+
+    def _dep_warn(d: str) -> str | None:
+        for w in review_warns:
+            if f"задача {d}:" in w:
+                return w
+        return None
+
     ev = {}
     for d in deps:
         ev[d] = {
@@ -2022,6 +2081,7 @@ def _dep_evidence(repo: Path, change_id: str, deps: tuple) -> dict:
             "review_approved": any(
                 d in re.findall(r"\d+(?:\.\d+)*", name) for name in approved
             ),
+            "review_warning": _dep_warn(d),
         }
     return ev
 
