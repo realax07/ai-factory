@@ -179,11 +179,15 @@ def approved_review_tasks(repo: Path, change_id: str,
 
     # Актуальная итерация каждой задачи: max rev; файлы одной итерации
     # (одинаковый rev) собираются вместе — вердикт решает итерация целиком.
+    # Мета Reviewer-Delegation — свойство СОБЫТИЯ ревью (rev): копии-привязки
+    # review-<task>-NNN.md ссылаются на источник review-NNN.md, где мета.
     latest: dict[str, tuple[int, dict[str, tuple[str | None, bool]]]] = {}
+    meta_by_rev: dict[int, bool] = {}
     for rev, fname, tasks in entries:
         text = (cr_dir / fname).read_text(encoding="utf-8", errors="replace")
         verdict = parse_verdict(text)
         meta = bool(REVIEWER_META_RE.search(text))
+        meta_by_rev[rev] = meta_by_rev.get(rev, False) or meta
         for task_id in tasks:
             cur = latest.get(task_id)
             if cur is None or rev > cur[0]:
@@ -209,17 +213,18 @@ def approved_review_tasks(repo: Path, change_id: str,
             continue
         if "return" in verdicts:
             continue  # легитимный возврат: покрытия нет до нового approve
-        # Все вердикты итерации — approve: мета Reviewer-Delegation достаточна
-        # хотя бы у одного файла этой итерации (копии-привязки ссылаются на
-        # источник, мета живет в первичном review-файле).
-        if not any(meta for _, meta in files.values()):
+        # Все вердикты итерации — approve: у СОБЫТИЯ ревью (rev) есть
+        # Reviewer-Delegation хотя бы в одном файле (копии-привязки ссылаются
+        # на источник, мета живет в первичном review-файле события).
+        if not meta_by_rev.get(rev, False):
             _warn(
                 f"{change_id}: задача {task_id}: approve последней итерации "
                 f"(rev {rev:03d}: {names}) без Reviewer-Delegation — задача "
                 f"НЕ покрыта (защита SELF_REVIEW, J10)")
             continue
         covered[task_id] = next(
-            fname for fname, (_, meta) in sorted(files.items()) if meta)
+            (fname for fname, (_, meta) in sorted(files.items()) if meta),
+            sorted(files)[0])
     return covered
 
 
@@ -629,10 +634,15 @@ def check(repo: Path) -> int:
                 )
 
     # --- bugs/: append-only структура ---
+    # Имя репорта: BUG-NNN или BUG-<КОМПЛЕКС>-NNN (BUG-AF-RECHECK-001 —
+    # комплект внешнего ревью; сегменты — A-Z, завершающий сегмент — номер).
     bugs = tm / "bugs"
     if bugs.is_dir():
-        for bf in sorted(bugs.glob("*.md")):
-            if not re.match(r"^BUG-\d{3}", bf.stem):
+        BUG_NAME_RE = re.compile(r"^BUG-(?:\d{3}|[A-Z]+(?:-[A-Z]+)*-\d{3})$")
+        # Правило имен — только для репортов BUG-*.md; PLAN.md (план Флоу 2)
+        # и служебные файлы каталога не репорты.
+        for bf in sorted(bugs.glob("BUG-*.md")):
+            if not BUG_NAME_RE.match(bf.stem):
                 errors += errs(f"{bf.relative_to(repo)}: баг-репорт не BUG-NNN")
 
     if errors == 0:

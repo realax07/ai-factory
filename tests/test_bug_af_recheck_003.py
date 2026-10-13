@@ -149,6 +149,19 @@ class TestApprovedReviewTaskIterations:
         covered = flow_check.approved_review_tasks(repo, "ch")
         assert covered == {"1.1": "review-002.md"}
 
+    def test_meta_is_event_level_property(self, tmp_path):
+        """TC-AF-RECHECK-003-10б: мета Reviewer-Delegation — свойство события
+        ревью (rev): задача 3.1 привязана копией review-3.1-004.md без меты к
+        событию 004, источник которого (review-004.md) мету несет — задача
+        покрыта."""
+        repo = make_cr(tmp_path, "ch", {
+            "review-004.md": review("approve"),
+            "review-3.1-004.md": review("approve", meta=False),
+        }, mapping={"review-004.md": ["4.1"]})
+        covered = flow_check.approved_review_tasks(repo, "ch")
+        assert covered["3.1"] == "review-3.1-004.md"
+        assert covered["4.1"] == "review-004.md"
+
     def test_check_prints_warning_not_silent(self, tmp_path, capsys):
         """TC-AF-RECHECK-003-09: сквозной check(): нечитаемая последняя
         итерация закрытой задачи → FLOW-WARNING в выводе + FLOW-ERROR о
