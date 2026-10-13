@@ -38,6 +38,105 @@ tests/
 7. **Детерминизм:** никаких `time.sleep`. Web — автожидания Playwright (`expect(...).to_be_visible()`), API — poll-цикл с таймаутом. Sleep «пока заработает» — отсроченный флак.
 8. **Прогон и фиксация результата.** Падение? Сначала проверь код теста против кейса. Тест верен → баг-репорт в `test-model/bugs/` (кейс, ожидание, факт, окружение). Править ассерт «чтобы был зеленый» — запрещено: это маскировка дефекта продукта.
 
+## Структура теста (AAA / Given-When-Then)
+
+Тело теста — три блока с пустой строкой между ними; комментарии `# Arrange / Act / Assert` (API) или GWT-шаги (web) обязательны для тестов длиннее 5 строк:
+
+```python
+def test_create_page_returns_201(base_url, http_session):
+    """TC-wiki-020 (FR-107): создание страницы от владельца"""
+    payload = {"title": "Собрание 12.10", "content": "повестка"}          # Arrange
+    resp = http_session.post(f"{base_url}/api/wiki/pages", json=payload)  # Act
+    assert resp.status_code == 201                       # Assert
+    assert resp.json()["title"] == payload["title"]
+```
+
+## Test data builders
+
+Данные создает фабрика-фикстура с teardown-удалением (см. `wiki_pages_created` в tests/web/test_p15_wiki_tree.py — эталон): функция `_create(**overrides)` с валидными значениями по умолчанию, тест переопределяет только релевантное поле. Builder без teardown — мусор в стенде и флаки соседей.
+
+## Контрактная проверка (openapi)
+
+Проект держит схему `contracts/openapi.json` (экспорт export_openapi.py). API-тесты проверяют СТРУКТУРУ ответа по схеме (обязательные поля, типы) — не только бизнес-ассерты:
+
+```python
+def test_wiki_page_schema(resp, openapi_schema):
+    """TC-wiki-021: ответ POST /api/wiki/pages соответствует контракту"""
+    schema = openapi_schema["components"]["schemas"]["WikiPage"]
+    for field in schema["required"]:
+        assert field in resp.json(), f"контракт: нет {field}"
+```
+
+## Property-based (опция, чистые функции)
+
+Для функций-инвариантов (`_strip_tags`, сериализация, валидаторы) — `hypothesis` вместо ручного перебора классов:
+
+```python
+from hypothesis import given, strategies as st
+
+@given(st.text())
+def test_strip_tags_never_keeps_angle_brackets(text):
+    assert "<" not in _strip_tags(text)
+```
+
+Не применять к stateful-эндпоинтам (там кейсы из approved-набора).
+
+## Page Objects (web-тесты)
+
+Локаторы живут в Page Object, тесты — о поведении. Без PO дублирование
+`get_by_role`/`locator` расползается по файлам (26 локаторов в одном
+тест-файле — реальный случай из tests/web до внедрения).
+
+```python
+# tests/web/pages/__init__.py — пустой (package)
+# tests/web/pages/wiki_page.py
+from playwright.sync_api import expect
+
+
+class WikiPage:
+    """Page Object /wiki: локаторы в одном месте, тесты — о поведении."""
+
+    def __init__(self, page):
+        self.page = page
+        self.tree = page.locator("ul.wiki-tree")
+        self.search_input = page.get_by_placeholder("Поиск")
+        self.create_first = page.get_by_role(
+            "button", name="Создать первую страницу")
+
+    def open(self, base_url):
+        self.page.goto(f"{base_url}/wiki")
+        expect(self.tree).to_be_visible()
+
+    def search(self, query):
+        self.search_input.fill(query)
+
+    def results(self):
+        return self.page.locator(".wiki-search-results .tree-link")
+
+    def toggle_node(self, title):
+        self.page.get_by_role("button", name=title).first.click()
+```
+
+Тест с PO (сравни: три строки поведения вместо десяти локаторов):
+
+```python
+def test_search_finds_page(logged_in_page, web_base_url, wiki_pages_created):
+    """TC-wiki-002 (FR-114): поиск по заголовку"""
+    wiki = WikiPage(logged_in_page)
+    wiki_pages_created("Сборка шкафа", "инструкция")     # Arrange
+    wiki.open(web_base_url)                              # Act
+    wiki.search("шкаф")
+    expect(wiki.results().first).to_contain_text("Сборка шкафа")  # Assert
+```
+
+Правила:
+- **Ассерты — в тестах**, не в PO (метод PO возвращает locator/состояние; единственное исключение — wait-обертки вроде `open()`).
+- PO принимает `page`, не знает о фикстурах/БД; данные — через builders.
+- Крупный экран дели на компонентные PO (`WikiTree`, `WikiToolbar`), вложенные в Page.
+- Локаторы в PO — по приоритету playwright-pro (get_by_role → … → CSS крайний случай).
+- PO — не догма: одноэкранный smoke без переиспользования можно писать напрямую.
+- Переиспользуемый PO для существующих страниц вынеси в `tests/web/pages/` и используй в новых тестах; массовая конвертация старых — отдельная задача, не попутная правка.
+
 ## Шаблон API-теста
 
 ```python
