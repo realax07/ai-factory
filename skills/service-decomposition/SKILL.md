@@ -135,4 +135,18 @@ RO БД; «деплой»: deploy.sh → registry → compose → миграци
 - Два писателя в одну схему — рассинхрон миграций гарантирован.
 - Сквозной процесс без сквозного смоука — сегменты зеленые, процесс сломан.
 - Задачи «по темам» с общей зоной — коллизии worktree и затертый WIP.
+## Инструмент (scripts/)
+
+**`scripts/seam_checker.py`** — проверка «зоны задач не пересекаются» (§4):
+подать зоны из tasks.md в формате `ID:путь`, скрипт ищет пересечения
+префиксов путей.
+
+```bash
+python skills/service-decomposition/scripts/seam_checker.py T1:backend/app/wiki.py T2:backend/app/pages.py
+python skills/service-decomposition/scripts/seam_checker.py T1:backend/ T2:backend/app/wiki.py --strict
+```
+
+Exit-коды: 0 — швы чистые; 1 — пересечения (пере-нарезать или явная
+[P]-параллель с договоренностью о порядке коммитов); 2 — то же для CI.
+
 - Деградация «сама получится» — 502 вместо управляемой 503 в бою.

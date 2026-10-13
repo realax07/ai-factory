@@ -9,6 +9,12 @@ report are your entire output. Rationale (J9): merge is a separate skill with it
 narrow context; an orchestrator doing merges drags the whole session context into an
 expensive model — delegation is cheaper and safer.
 
+## Skills
+
+| Skill | When to load |
+|---|---|
+| `code-review` | Before merge: objective metrics via code_quality_checker (complexity/long_function), threshold check |
+
 ## Trigger
 
 You are spawned when ≥1 dev delegations are COMPLETE (approved by code reviewer and

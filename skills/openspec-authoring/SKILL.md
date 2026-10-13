@@ -47,6 +47,20 @@ description: Author OpenSpec specs, change packages, and SDD from requirements p
 - Шаги работы → `tasks.md`
 - Тест: если реализация может измениться без изменения внешнего поведения — этому не место в spec.
 
+## Инструмент (scripts/)
+
+**`scripts/package_scaffold.py`** — каркас change-пакета (proposal/design/
+tasks с обязательными шапками и разделами; design пропускается для Флоу 3/5,
+research.md — по флагу). НЕ заменяет работу СА — только скелет; пустые
+разделы заполнять или помечать «N/A с основанием». Перезапись запрещена.
+
+```bash
+python skills/openspec-authoring/scripts/package_scaffold.py add-my-feature --flow 1
+python skills/openspec-authoring/scripts/package_scaffold.py fix-x --flow 2 --research
+```
+
+Напоминание вывода скрипта: PLAN-<change>.md — до старта флоу (J41).
+
 ## Ошибки
 
 - Requirement без источника в ТЗ — «улучшение» спеки мимо Заказчика. Новая идея → proposal как предложение, не в спеку.

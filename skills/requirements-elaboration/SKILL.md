@@ -44,6 +44,20 @@ description: Elicit and structure software requirements into a testable requirem
 **Плохо:** «Система должна быстро искать по страницам».
 **Хорошо:** «FR-3: Пользователь получает результаты поиска по подстроке заголовка за < 500 мс на corpus до 10 000 страниц».
 
+## Инструмент (scripts/)
+
+**`scripts/numbering_registry.py`** — реестр нумерации FR/NFR/US/TC/SC:
+занятые номера, max N по префиксу, пропуски, дубликаты. Использовать при
+продолжении нумерации (не выдумывать номера — брать max+1) и при ревью
+(дубликат = дефект нумерации).
+
+```bash
+python skills/requirements-elaboration/scripts/numbering_registry.py openspec/ docs/ba/
+python skills/requirements-elaboration/scripts/numbering_registry.py openspec/add-wiki/specs/ --prefix FR
+```
+
+Exit-коды: 0 — чисто; 2 — дубликаты (разобрать до выдачи ТЗ).
+
 ## Ошибки
 
 - Требование-фича «на вырост» без Must-приоритета — мусор в скоупе.

@@ -33,6 +33,20 @@ description: Review test cases against specs with severity-ranked findings and i
 
 Замечание адресовано кейсу, не автору. Форма «ожидаемый результат не содержит кода ошибки (спека: 404 при чужом ресурсе)» вместо «ты забыл код ошибки» — экономит цикл спора.
 
+## Инструменты (scripts/ + references/)
+
+**`scripts/severity_counter.py`** — счетчик blocker/major/minor/info в
+review-файле + проверка порогов вердикта (blocker ≥ 1 → BLOCK, major ≥ 3 →
+CONCERNS). Подсказка овердикта — финальное решение за ревьюером.
+
+```bash
+python skills/case-review/scripts/severity_counter.py code-reviews/<change>/review-002.md
+```
+
+**`references/severity-rubric.md`** — рубрика серьезностей (что такое
+blocker/major/minor/info в конвейере, дисциплина замечаний, «повтор после
+RETURN = эскалация»). Сверяться при разметке severity.
+
 ## Ошибки
 
 - Выборочная проверка «по диагонали» — пропущенный blocker дороже всего ревью.
