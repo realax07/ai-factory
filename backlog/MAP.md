@@ -63,3 +63,5 @@
 - [x] **J47** — Дизайн-контур: design/tokens.html — единственный источник токенов (снимок прод :root), design/README.md — дизайн-контракт, archive/ = as-is визуальное состояние; промпты ui_designer/design_validator обновлены (ekotov-wiki PR #167, фабрика PR #95). + скилл playwright-pro (дистиллят claude-skills playwright-pro: golden rules/локаторы/pitfalls/flaky-таксономия, PR #99) — 2026-10-13
 
 - [ ] **J48** — Инцидент-протокол Флоу 3: severity-матрица S1–S3 (найдено в claude-skills incident-commander), initial response 0–15 мин, post-mortem обязателен S1/S2; change-пакет после обдумывания. — 2026-10-13
+
+- [x] **BUG-001..004 (комплект BUG-AF-RECHECK)** — внешнее ревью фабрики (Заказчик 2026-10-13): (1) пути задачи не доходили до arch-gate; (2) bypass-подстрока в goal выдавала себя за решение Заказчика; (3) поздний return не отменял approve; (4) coverage_matrix не читал OpenSpec Scenario. Исправлено + 8 замечаний ревью итерации 1 (BLK-1: регресс имен репортов на проекте). 617 passed, flow_check фабрика+проект OK, pr_validate OK. Плагин переустановлен в ~/.hermes, coverage_matrix зеркалирована в проект (PR #171). — 2026-10-13
