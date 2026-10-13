@@ -15,6 +15,17 @@ from pathlib import Path
 CHANGE_ID = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)+$")  # kebab-case, >= 2 слов
 TC_REF = re.compile(r"TC-[a-zA-Z0-9]+(?:-[a-zA-Z0-9]+)*-\d{3}")
 
+# --- Единая грамматика BUG-id (MIN-3 ревью BUG-AF-RECHECK) ---
+# Имя репорта test-model/bugs/<id>.md И scope Флоу 2 в enforcer — ОДНА
+# регекс-строка. BUG- с опциональными сегментами-словами (A-Z0-9,
+# дефис-разделитель) и финальным NNN; опциональный суффикс-slug после NNN —
+# lowercase-слова/цифры/точка/дефис (исторические репорты проектов:
+# BUG-001-search-card-click.md, BUG-002-fast-explicit-null-priority-201.md).
+# enforcer (plugins/flow-enforcer/enforcer.py) импортирует эту строку
+# (fallback-копия там же синхронизируется тестом test_recheck2_fixes.py).
+BUG_ID_PATTERN = r"^BUG-(?:[A-Z0-9]+-)*\d{3}(?:-[a-z0-9][a-z0-9.-]*)?$"
+BUG_NAME_RE = re.compile(BUG_ID_PATTERN)
+
 # --- J10: обязательный code-review закрытых dev-задач ---
 # Формат review-файла: agents/code_reviewer_agent.md —
 #   код-reviews/<change-id>/review-<задача>-<NNN>.md, строка «## Вердикт: approve|return».
@@ -634,11 +645,13 @@ def check(repo: Path) -> int:
                 )
 
     # --- bugs/: append-only структура ---
-    # Имя репорта: BUG-NNN или BUG-<КОМПЛЕКС>-NNN (BUG-AF-RECHECK-001 —
-    # комплект внешнего ревью; сегменты — A-Z, завершающий сегмент — номер).
+    # Имя репорта: BUG-NNN, BUG-<КОМПЛЕКС>-NNN (BUG-AF-RECHECK-001 — комплект
+    # внешнего ревью) или с суффиксом-slug после NNN (исторические репорты
+    # проектов: BUG-001-search-card-click.md). Грамматика ЕДИНАЯ с scope Флоу 2
+    # в enforcer (MIN-3 ревью BUG-AF-RECHECK): константа BUG_ID_PATTERN ниже.
     bugs = tm / "bugs"
     if bugs.is_dir():
-        BUG_NAME_RE = re.compile(r"^BUG-(?:\d{3}|[A-Z]+(?:-[A-Z]+)*-\d{3})$")
+        BUG_NAME_RE = re.compile(BUG_ID_PATTERN)
         # Правило имен — только для репортов BUG-*.md; PLAN.md (план Флоу 2)
         # и служебные файлы каталога не репорты.
         for bf in sorted(bugs.glob("BUG-*.md")):

@@ -10,12 +10,16 @@
      scope — по флоу: Ф1 change-id; Ф2 BUG-<КОМПЛЕКС>-NNN (репорт
      test-model/bugs/; BUG-001 и BUG-AF-RECHECK-001 оба валидны);
      Ф3 incident-id (формат любой, обязателен); Ф4 chore-slug; Ф5 slug.
-     paths — относительные пути задачи через запятую; попадают в flowctl
-     prepare как --path (зоны/вороты видят РЕАЛЬНЫЕ пути задачи;
-     BUG-AF-RECHECK-001: отсутствие путей ≠ docs-only). kind — тип задачи:
-     docs (облегченный маршрут, пути не обязательны) | product (пути
-     обязательны). kind не указан → WARNING и трактовка как product:
-     без paths — block PATHS_MISSING (fail-closed, честный MISSING-класс).
+     paths — относительные пути задачи через запятую (ТОЛЬКО относительные,
+     без '..'-сегментов — иначе FLOW_MARKER_INVALID; MAJ-2 ревью
+     BUG-AF-RECHECK); попадают в flowctl prepare как --path (зоны/вороты
+     видят РЕАЛЬНЫЕ пути задачи; BUG-AF-RECHECK-001: отсутствие путей ≠
+     docs-only). kind — тип задачи: docs | product. kind=docs без путей
+     валиден ТОЛЬКО для docs_task/chore_task (MAJ-1 ревью BUG-AF-RECHECK:
+     для dev_task kind=docs без путей — отказ PATHS_MISSING, продуктовая
+     задача не может быть docs по определению). kind не указан → WARNING и
+     трактовка как product: без paths — block PATHS_MISSING (fail-closed,
+     честный MISSING-класс).
   2. Старый формат (обратная совместимость): 'flow: role=R repo=P change=C'
      без flow= — трактуется как Флоу 1 (env-fallback), с WARNING в лог.
   3. Одиночные маркеры: 'role: X', 'repo: P', 'change:/scope: C' в тех же
@@ -108,6 +112,11 @@ HEADER_PAIR_RE = re.compile(
     r"\b(flow|role|repo|scope|change|task|kind|paths)=([^\s]+)")
 EMPTY_VALUE_RE = re.compile(r"\b(?:scope|change|paths)=(?:\s|$)")
 MARKER_KINDS = ("docs", "product")
+# MAJ-1 ревью BUG-AF-RECHECK: kind=docs валиден ТОЛЬКО для этих действий —
+# документная/обслуживающая задача без путей; для dev_task (и любого другого
+# продуктового действия) kind=docs без paths → PATHS_MISSING (иначе
+# продуктовая dev-задача с kind=docs обходит arch-gate).
+DOCS_KIND_ACTIONS = ("docs_task", "chore_task")
 SINGLE_RE = {
     "role": re.compile(r"\brole:\s*([^\s,;]+)"),
     "repo": re.compile(r"\brepo:\s*([^\s,;]+)"),
@@ -120,11 +129,24 @@ SINGLE_RE = {
 }
 
 # Формат scope Флоу 2 (BUG-AF-RECHECK: синхронно с правилом имен репортов
-# test-model/bugs/ из 5c21489): BUG- с опциональными сегментами-словами
-# (A-Z0-9, дефис-разделитель) и финальным NNN — канонично
-# r'^BUG-(?:[A-Z0-9]+-)*\d{3}$' (покрывает BUG-001 и BUG-AF-RECHECK-001;
-# lowercase/кириллица/пробелы — отклонение, поэтому БЕЗ re.IGNORECASE).
-BUG_ID_RE = re.compile(r"^BUG-(?:[A-Z0-9]+-)*\d{3}$")
+# test-model/bugs/): единая грамматика — регекс-строка BUG_ID_PATTERN из
+# scripts/flow_check.py (MIN-3 ревью BUG-AF-RECHECK: один источник истины;
+# покрывает BUG-001, BUG-AF-RECHECK-001 и репорты с суффиксом-slug вида
+# BUG-001-search-card-click.md; lowercase/кириллица/пробелы — отклонение,
+# поэтому БЕЗ re.IGNORECASE). Фабрика недоступна → встроенная fallback-копия
+# (синхронизируется тестом tests/test_recheck2_fixes.py).
+def _bug_id_pattern() -> str:
+    try:
+        scripts_dir = str(factory_home() / "scripts")
+        if scripts_dir not in sys.path:
+            sys.path.insert(0, scripts_dir)
+        import flow_check
+        return flow_check.BUG_ID_PATTERN
+    except Exception:  # noqa: BLE001 — плагин не зависит от доступности фабрики
+        return r"^BUG-(?:[A-Z0-9]+-)*\d{3}(?:-[a-z0-9][a-z0-9.-]*)?$"
+
+
+BUG_ID_RE = re.compile(_bug_id_pattern())
 FLOW_IDS = (1, 2, 3, 4, 5)
 
 # Действие по роли: этапы STAGE_TABLE Флоу 1 (flow_transition.py).
@@ -317,7 +339,11 @@ def parse_markers(args: dict) -> dict | None:
                 m = rx.search(text)
                 if m:
                     found[key] = m.group(1).strip("<>")
-        if all(found.get(k) for k in ("role", "repo", "scope")):
+        # MIN-2 ревью BUG-AF-RECHECK: НЕ прерываем цикл, пока не собраны
+        # ВСЕ маркеры — kind/paths могут жить в другом тексте (context), чем
+        # role/repo/scope; ранний выход обрывал их поиск.
+        if all(found.get(k)
+               for k in ("role", "repo", "scope", "task", "kind", "paths")):
             break
     role, repo, scope = found["role"], found["repo"], found["scope"]
     if role and repo and scope:
@@ -341,12 +367,30 @@ def _validate_kind(kind: str | None) -> str | None:
     return kind
 
 
+def _validate_rel_path(p: str) -> str:
+    """MAJ-2 ревью BUG-AF-RECHECK: --path принимает ТОЛЬКО относительный путь
+    без подъема выше корня. Абсолютный путь или '..'-сегмент — очевидная
+    ошибка маркера (fail-closed на границе энфорсера, до ворот prepare)."""
+    norm = p.replace("\\", "/")
+    if norm.startswith("/") or (len(norm) >= 2 and norm[1] == ":"):
+        raise FlowMarkerError(
+            f"paths={p!r} — абсолютный путь запрещен: --path ожидает путь "
+            "ОТНОСИТЕЛЬНО корня репозитория (например backend/app/x.py)")
+    if ".." in norm.split("/"):
+        raise FlowMarkerError(
+            f"paths={p!r} — сегмент '..' запрещен (подъем выше корня "
+            "репозитория; укажи путь от корня, например backend/app/x.py)")
+    return p
+
+
 def _split_paths(raw: str | None) -> list[str]:
-    """paths=<путь1,путь2,...> → список относительных путей (без пустых)."""
+    """paths=<путь1,путь2,...> → список относительных путей (без пустых).
+    Каждый путь валидируется (_validate_rel_path): абсолютные и '..'-пути —
+    FlowMarkerError (MAJ-2 ревью BUG-AF-RECHECK)."""
     if not raw:
         return []
-    paths = [p.strip() for p in raw.split(",") if p.strip()]
-    return paths
+    return [_validate_rel_path(p) for p in
+            (s.strip() for s in raw.split(",")) if p]
 
 
 def _validate_flow(raw_flow: str) -> int:
@@ -416,10 +460,13 @@ def bypass_registry_path() -> Path:
 def find_bypass_decision(repo: str, scope: str, action: str) -> dict | None:
     """Действующая запись реестра решений для (repo, scope, action) или None.
 
-    Запись действует, если совпадают repo/scope/action И expires (UTC, ISO)
-    еще не наступил. Нет файла, битый JSON, битая запись, нет/битый срок,
+    Запись действует, если совпадают repo/scope/action И expires (UTC, ISO —
+    ОБЯЗАТЕЛЬНО с таймзоной) еще не наступил. Нет файла, битый JSON, битая
+    запись, нет/битый срок, expires БЕЗ таймзоны (naive — MAJ-3 ревью
+    BUG-AF-RECHECK: молчаливая трактовка naive как UTC — fail-open сдвиг),
     просрочено, другой scope/action — обхода НЕТ (ошибка проверки решения не
-    превращается в разрешение; BUG-AF-RECHECK-002).
+    превращается в разрешение; BUG-AF-RECHECK-002). НЕСКОЛЬКО одновременных
+    неистекших записей — отказ (неоднозначность, fail-closed; MAJ-3).
     """
     try:
         data = json.loads(bypass_registry_path().read_text(encoding="utf-8"))
@@ -428,6 +475,7 @@ def find_bypass_decision(repo: str, scope: str, action: str) -> dict | None:
     if not isinstance(data, list):
         return None
     now = datetime.now(timezone.utc)
+    live: list[dict] = []
     for entry in data:
         if not isinstance(entry, dict):
             continue
@@ -441,11 +489,13 @@ def find_bypass_decision(repo: str, scope: str, action: str) -> dict | None:
         except (TypeError, ValueError):
             continue  # нет/нечитаемый срок — запись не действует
         if expires.tzinfo is None:
-            expires = expires.replace(tzinfo=timezone.utc)
+            continue  # naive expires — НЕВАЛИДНАЯ запись (не «UTC по умолчанию»)
         if expires <= now:
             continue  # истекла
-        return entry
-    return None
+        live.append(entry)
+    if len(live) == 1:
+        return live[0]
+    return None  # ни одной действующей ИЛИ несколько (неоднозначность)
 
 
 def _append_log(path: Path, payload: dict) -> None:
@@ -691,6 +741,19 @@ def flow_enforce(tool_name: str, args: dict, task_id: str = "",
                     "или пройди flowctl prepare. Bypass — только 'flow: "
                     "bypass --by customer' ПРИ действующей записи в реестре "
                     "решений (~/.hermes/state/flow-bypass-decisions.json).")}
+            # MIN-1 ревью BUG-AF-RECHECK: bypass-ЗАЯВКА без маркеров в
+            # permissive-режиме — тоже аудит-факт: пишем в bypass-лог
+            # bypass_requested_unfulfilled (заявка не могла быть проверена
+            # против реестра — обход не состоялся).
+            if bypass_wanted:
+                _append_log(state_dir() / "flow-enforcer-bypass.log", {
+                    "task_id": task_id,
+                    "goal_head": (goal or "")[:200],
+                    "kind": "bypass_requested_unfulfilled",
+                    "note": "заявка bypass без маркеров конвейера "
+                            "(permissive-пропуск) — запись реестра решений "
+                            "не проверялась и не найдена",
+                })
             log_event({"event": "markers_missing_permissive",
                        "task_id": task_id})
             return None
@@ -722,9 +785,13 @@ def flow_enforce(tool_name: str, args: dict, task_id: str = "",
                                "решений (нет/просрочена/другой scope|action) "
                                "— обычная проверка ворот"})
 
-        # BUG-AF-RECHECK-001: отсутствие путей ≠ docs-only. kind=docs —
-        # облегченный маршрут (пути не обязательны); product / kind не указан
-        # (WARNING + трактовка как product) — без paths честный MISSING-отказ.
+        # BUG-AF-RECHECK-001: отсутствие путей ≠ docs-only. kind не указан →
+        # WARNING + трактовка как product (без paths честный MISSING-отказ).
+        # MAJ-1 ревью BUG-AF-RECHECK: kind=docs валиден ТОЛЬКО для
+        # документных/обслуживающих действий (docs_task/chore_task).
+        # Продуктовая dev-задача с kind=docs без paths обходит arch-gate →
+        # честный отказ PATHS_MISSING (dev-задача без путей не может быть
+        # docs по определению).
         kind = markers.get("kind")
         paths = markers.get("paths") or []
         if kind is None:
@@ -733,13 +800,18 @@ def flow_enforce(tool_name: str, args: dict, task_id: str = "",
                        "note": "kind не указан — задача трактуется как "
                                "product (fail-closed); для docs-задачи укажи "
                                "kind=docs в заголовке flow:"})
-        if kind != "docs" and not paths:
+        if not paths and (kind != "docs"
+                          or action not in DOCS_KIND_ACTIONS):
+            why_docs = ("действие не docs_task/chore_task"
+                        if kind == "docs" else
+                        "отсутствие путей ≠ docs-only (BUG-AF-RECHECK-001)")
             return {"action": "block", "message": (
-                "FLOW-ENFORCER [PATHS_MISSING]: продуктовая задача без путей "
-                "(BUG-AF-RECHECK-001: отсутствие путей ≠ docs-only). Добавь в "
-                "заголовок paths=<путь1,путь2,...> (относительные пути задачи "
-                "через запятую) или kind=docs для docs-задачи без продуктовых "
-                "путей.")}
+                "FLOW-ENFORCER [PATHS_MISSING]: задача без путей "
+                f"({why_docs}; MAJ-1 ревью BUG-AF-RECHECK: kind=docs валиден "
+                "только для docs_task/chore_task). Добавь в заголовок "
+                "paths=<путь1,путь2,...> (относительные пути задачи через "
+                "запятую) или kind=docs для docs-задачи (действие "
+                "docs_task/chore_task) без продуктовых путей.")}
 
         rc, out, duration = run_prepare(markers, flow, action)
         log_event({"event": "prepare_result", "task_id": task_id,

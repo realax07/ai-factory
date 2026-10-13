@@ -162,16 +162,18 @@ def plugin_env_from(_res):
     return Path(os.environ["FLOW_ENFORCER_STATE_DIR"])
 
 
-def test_kind_docs_without_paths_runs_prepare(monkeypatch):
-    """TC-AF-RECHECK-001-08: kind=docs без paths — облегченный маршрут:
-    prepare вызывается (без PATHS_MISSING), ALLOW при ok-воротах."""
+def test_kind_docs_dev_task_blocked_paths_missing(monkeypatch):
+    """TC-AF-RECHECK-001-08 (MAJ-1 ревью BUG-AF-RECHECK): kind=docs без paths
+    для dev_task — НЕ облегченный маршрут, а обход arch-gate: block
+    PATHS_MISSING, prepare НЕ вызывается (docs-only для docs_task/chore_task —
+    см. tests/test_recheck2_fixes.py)."""
     calls = install_fake_run(monkeypatch, rc=0, out="prepared: true\n")
     goal = ("flow: flow=1 role=dev repo=/tmp/proj scope=add-widget "
             "kind=docs\n")
     res = enforcer.flow_enforce("delegate_task", delegate_args(goal), "p3")
-    assert res is None
-    assert len(calls) == 1
-    assert "--path" not in calls[0]
+    assert res is not None and res["action"] == "block"
+    assert "PATHS_MISSING" in res["message"]
+    assert calls == []
 
 
 def test_paths_reach_prepare_via_hook(monkeypatch):
@@ -296,12 +298,38 @@ class TestHookTimesRealFlowctl:
 
     def test_kind_docs_no_paths_allowed_on_real_repo(self, tmp_path,
                                                      monkeypatch):
-        """TC-AF-RECHECK-001-13: kind=docs без paths — облегченный маршрут на
-        РЕАЛЬНОМ prepare (prepare без --path, как раньше для docs)."""
+        """TC-AF-RECHECK-001-13 (переписан, MAJ-1 ревью BUG-AF-RECHECK):
+        kind=docs без путей — блок для dev_task (обход arch-gate невозможен),
+        разрешен ТОЛЬКО для docs_task/chore_task."""
         repo = _make_repo(tmp_path)
         monkeypatch.setenv("FLOW_ENFORCER_MODE", "strict")
-        goal = (f"flow: flow=1 role=dev repo={repo} scope=add-widget "
-                "kind=docs\n"
-                "task: 1.1\nЗадача: описание задачи пакета.\n")
-        res = enforcer.flow_enforce("delegate_task", delegate_args(goal), "i4")
-        assert res is None, f"ожидался ALLOW, получен block: {res}"
+        # dev_task (Флоу 1, роль dev) + kind=docs без paths → отказ ДО prepare
+        goal_dev = (f"flow: flow=1 role=dev repo={repo} scope=add-widget "
+                    "kind=docs\n"
+                    "task: 1.1\nЗадача: описание задачи пакета.\n")
+        res = enforcer.flow_enforce("delegate_task", delegate_args(goal_dev),
+                                    "i4")
+        assert res is not None and res["action"] == "block", \
+            f"ожидался block PATHS_MISSING, получен ALLOW: {res}"
+        assert "PATHS_MISSING" in res["message"]
+        # chore_task (Флоу 4, роль dev) + kind=docs без paths → ALLOW
+        calls = install_fake_run(monkeypatch, rc=0, out="prepared: true\n")
+        goal_chore = ("flow: flow=4 role=dev repo=/tmp/proj scope=cleanup "
+                      "kind=docs\n")
+        res = enforcer.flow_enforce("delegate_task",
+                                    delegate_args(goal_chore), "i5")
+        assert res is None, f"ожидался ALLOW для chore_task, получен: {res}"
+        assert calls and "--path" not in calls[0]
+        # docs_task (MAJ-1: docs-only валиден) — gate через flow_enforce c
+        # action=docs_task (отображение роли→docs_task в фабрике пока не
+        # заведено; действие легитимно контрактом [docs]-PR, pr_validate).
+        orig = enforcer.action_for_role
+        monkeypatch.setattr(
+            enforcer, "action_for_role",
+            lambda role, flow: "docs_task" if (role, flow) == ("dev", 1)
+            else orig(role, flow))
+        calls.clear()
+        res = enforcer.flow_enforce("delegate_task",
+                                    delegate_args(goal_dev), "i6")
+        assert res is None, f"ожидался ALLOW для docs_task, получен: {res}"
+        assert calls and "--path" not in calls[0]

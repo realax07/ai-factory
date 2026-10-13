@@ -90,7 +90,14 @@ def check_change(repo: Path, change_id: str, marker: str = "") -> list[str]:
     from flow_check import approved_review_tasks  # единый парсер вердиктов (J10)
     pr_tasks = extract_pr_tasks(marker + " " + os.environ.get("GITHUB_HEAD_REF", ""))
     if pr_tasks:
-        covered = approved_review_tasks(repo, change_id)
+        # MIN-4 ревью BUG-AF-RECHECK: warns парсера (нечитаемый/противоречивый
+        # вердикт последней итерации) — в диагностику, не молчаливое
+        # «задача не покрыта».
+        review_warns: list[str] = []
+        covered = approved_review_tasks(repo, change_id, review_warns)
+        for w in review_warns:
+            print(f"pr_validate: FLOW-WARNING: code-reviews/{change_id}/: {w}",
+                  file=sys.stderr)
         # J10 требует review только для DEV-задач: ops/docs-задачи ([ops]/[docs])
         # и незакрытые задачи tasks.md исключаются (контракт flow_control:
         # ops_task/docs_task; упоминание незакрытой задачи в тексте PR —
