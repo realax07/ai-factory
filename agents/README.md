@@ -121,7 +121,7 @@
 |---|---|
 | Режим | auto-edit; зона `architecture/**` проекта + `test-model/reviews/<change>/review-NNN-architecture.md`; push НЕТ |
 | Запуск | Ревью change-пакетов СА (до передачи в разработку); ведение карты + ADR |
-| Скиллы | `architecture-diagram`, `codebase-inspection` |
+| Скиллы | `architecture-diagram`, `codebase-inspection`, `service-decomposition` (арбитр нарезки СА: зоны/швы/сквозные) |
 
 ### 11. DevOps-инженер — [devops_agent.md](devops_agent.md)
 
@@ -148,7 +148,7 @@
 |---|---|
 | Режим | auto-edit; зоны: `PLAN.md`, `backlog/`, README проекта, реестр сессий своего `project`; push проектного репо после приемки |
 | НЕ в зоне | диалог Заказчика (relay), `openspec/specs/**`, `contracts/**`, `AGENTS.md`, чужие `project`, git-исполнительство в продукте (J9) |
-| Скиллы | по задаче (ба/qa-скиллы не грузит — роли за сабагентами) |
+| Скиллы | `factory-flow` (выбор флоу, ворота), `handoff` (передача контекста); ба/qa-скиллы не грузит — роли за сабагентами |
 
 ### 14. Dev-lead — [dev_lead_agent.md](dev_lead_agent.md) (J9, 2026-09-27, дизайн)
 
@@ -159,7 +159,7 @@
 | Режим | auto-edit, в продуктовом репо/worktree; зоны: merge-коммиты, разрешение конфликтов на мерженных ветках, чекбоксы `tasks.md`, зачистка worktree |
 | Push | интеграционной ветки — да, ТОЛЬКО после зеленых ворот |
 | Запуск | все dev-делегации change-пакета получили approve → merge-план по зависимостям tasks.md |
-| Скиллы | `implementation` (контекст задач), `github` (PR/ветки) |
+| Скиллы | `implementation` (контекст задач), `github` (PR/ветки), `code-review` (объективные метрики code_quality_checker перед merge) |
 
 ### 15. Основная сессия = relay
 
