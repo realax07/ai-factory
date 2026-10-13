@@ -51,6 +51,31 @@ description: Review task-scoped code changes against specs and best practices be
 
 Структура: вердикт → таблица замечаний (blocker/major/minor) → проверенные Scenario → что НЕ проверено (честно). Замечание без рекомендации = неполное замечание.
 
+## Анализатор качества кода (J45+, vendor: code_quality_checker.py)
+
+Объективные метрики структуры — дополняют круги ревью числами, не мнением:
+
+```bash
+# по файлу/каталогу (python-проект)
+python skills/code-review/scripts/code_quality_checker.py <path> --language python
+
+# JSON-выдача для review-файла
+python skills/code-review/scripts/code_quality_checker.py <path> --language python --json
+```
+
+| Метрика | Порог |
+|---|---|
+| Long function | >50 строк |
+| Large file | >500 строк |
+| God class | >20 методов |
+| Too many params | >5 |
+| Deep nesting | >4 уровней |
+| High complexity | >10 ветвлений |
+
+- Находки long_function/high_complexity — легитимные замечания ревью (major, если файл из §6 долга карты).
+- HTTP-статус-коды (100–599) и docstring-строки исключены из magic_number (J45-tuning: FastAPI-проект).
+- Вендорный скрипт (MIT, из alirezarezvani/claude-skills, code-reviewer); тюнинг ai-factory помечен в коде. Апстрим-дифф: `_parse_pip` ищет requirements.txt только в корне — monorepo (backend/requirements.txt) не видит; для нас не критично, считаем известным ограничением.
+
 ## Ошибки
 
 - Ревью «по диагонали» больших диф-ов — лучше попросить оркестратора разбить задачу, чем пропустить blocker.
