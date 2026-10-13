@@ -1,7 +1,7 @@
 # План релиза: багфикс-комплект BUG-AF-RECHECK 001–004 (внешнее ревью)
 
 - **Флоу: 2**
-- **Scope:** BUG-AF-RECHECK-001..004 (репорт: test-model/bugs/BUG-AF-RECHECK-00N.md)
+- **Scope:** BUG-001..004-af-recheck (репорт: test-model/bugs/BUG-00N-af-recheck.md; комплект BUG-AF-RECHECK по исходному ревью)
 - **Дата:** 2026-10-13
 - **Автор:** ПМ (план), детализация — СА/dev по репортам
 

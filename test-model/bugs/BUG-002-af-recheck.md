@@ -5,6 +5,10 @@
 - Серьезность: major / приоритет P1
 - Компонент: J43/J43.1 flow-enforcer, авторизация исключений
 
+## Статус
+
+- 2026-10-13: open (в работе, PR #106, ветка pipeline/bug-af-recheck)
+
 ## Суть
 
 `has_bypass()` (enforcer.py:334) — поиск подстроки «flow: bypass --by customer»

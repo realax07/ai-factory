@@ -5,6 +5,10 @@
 - Серьезность: major / приоритет P1
 - Компоненты: flow_check.approved_review_tasks(), flow_transition.architecture_review_verdict()
 
+## Статус
+
+- 2026-10-13: open (в работе, PR #106, ветка pipeline/bug-af-recheck)
+
 ## Суть
 
 Обе функции считают действующим историческое approve:
