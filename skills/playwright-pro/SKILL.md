@@ -86,6 +86,19 @@ qa_automation; здесь — универсальные правила. Python-
 - Скриншот-диффы без стабильного окружения — flaky по отрисовке.
 - Скип без issue-ссылки — «забытый» тест навсегда.
 
+## Инструмент (scripts/)
+
+**`scripts/locator_audit.py`** — аудит локаторов web-тестов: сколько «сырых»
+локаторов в каждом файле, кто не использует Page Objects (кандидаты на
+конвертацию), где CSS/XPath вместо семантических локаторов (приоритет из
+этого скилла). Прогон после каждой web-задачи — рост числа сырых локаторов
+в файле = сигнал тянуть локаторы в PO, а не размножать.
+
+```bash
+python skills/playwright-pro/scripts/locator_audit.py tests/web
+python skills/playwright-pro/scripts/locator_audit.py tests/web --strict  # для CI-привычки
+```
+
 ## Связанные скиллы
 
 `test-case-design` (кейсы до автотестов), `test-automation` (процедура
