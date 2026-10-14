@@ -211,6 +211,54 @@ def check_docs(repo: Path, marker: str) -> list[str]:
     return errs
 
 
+def check_ui_tests_gate(repo: Path, change_id: str, pr_text: str = "") -> list[str]:
+    """J50 CI-ворота: UI-дельта (frontend/**, services/*/frontend/) в дифе PR
+    + макеты (design/** в change-пакете или проекте) ⇒ в дифе обязаны быть
+    изменения tests/web/*.py, ЛИБО явный маркер `[no-ui-tests]` с основанием
+    (≥10 символов после маркера до конца строки; иначе маркер неполный и
+    валидируется как отсутствие). Честный escape — по образцу [ops] (J26).
+
+    Диф-контекст — env-конвенция CI (flow.yml): PR_CHANGED_UI=1, если диф
+    трогает продуктовый фронтенд; PR_CHANGED_WEBTESTS=1, если tests/web/.
+    Без фронтенд-путей в дифе проверка молчит (бэкенд-PR не мешает)."""
+    if os.environ.get("PR_CHANGED_UI", "").strip() not in ("1", "true"):
+        return []  # (1) фронтенд-путей в дифе нет — проверка молчит
+    if os.environ.get("PR_CHANGED_WEBTESTS", "").strip() in ("1", "true"):
+        print(
+            f"pr_validate: J50 OK: UI-дельта покрыта изменениями tests/web/ ({change_id})",
+            file=sys.stderr,
+        )
+        return []  # (3) web-тесты в дифе — OK
+    m = NO_UI_TESTS_RE.search(pr_text)
+    if m and len(m.group(1).strip()) >= 10:
+        print(
+            f"pr_validate: J50 OK: [no-ui-tests] — основание: {m.group(1).strip()}",
+            file=sys.stderr,
+        )
+        return []  # (2) честный escape с основанием — OK
+    if not _has_design_artifacts(repo, change_id):
+        return []  # макетов нет — правило не применяется
+    if m:
+        return [
+            "J50: маркер [no-ui-tests] без основания — после маркера до конца "
+            "строки нужно ≥10 символов с обоснованием (почему UI-сценарий без web-тестов)"
+        ]
+    return [
+        "J50: UI-дельта без web-тестов: добавь tests/web кейсы или [no-ui-tests] + основание"
+    ]
+
+
+def _has_design_artifacts(repo: Path, change_id: str) -> bool:
+    """J50: макеты — design/** в change-пакете или в проекте (структура
+    ekotov-wiki: design/ в корне репозитория)."""
+    pkg = repo / "openspec" / "changes" / change_id
+    for root in (pkg, repo):
+        d = root / "design"
+        if d.is_dir() and any(p.is_file() for p in d.rglob("*")):
+            return True
+    return False
+
+
 def check_ops(repo: Path, marker: str) -> list[str]:
     """[ops]: эксплуатационные работы (деплой, переключение, инфраструктура).
     Артефакт — протокол приемки Заказчика, не review-файл (контракт ops_task).
@@ -247,6 +295,10 @@ FLOWS = {
 }
 
 MARKER_RE = re.compile(r"\[(BUG-\d+|[a-z0-9]+(?:-[a-z0-9]+)+|\bchore|\bdocs|\bops)\]")
+
+# J50: маркер-escape [no-ui-tests] — в начале строки или после пробела;
+# основание = хвост строки после маркера (валидность проверяет вызыватель).
+NO_UI_TESTS_RE = re.compile(r"(?m)(?:^|\s)\[no-ui-tests\][ \t]*(.*)$")
 
 # J10: извлечение номеров задач из текста PR (ветка/заголовок/тело).
 # Принимает формы: 1.1, 5.2, 2.1+2.2 (объединенная задача — обе).
@@ -305,7 +357,7 @@ def parse_id(text: str) -> tuple[str, str] | None:
     return None
 
 
-def fetch_pr_info() -> tuple[str, str] | None:
+def fetch_pr_info() -> str | None:
     """В CI (GitHub Action): событие pull_request — читает body/title из GITHUB_EVENT_PATH."""
     ev = os.environ.get("GITHUB_EVENT_PATH")
     if not ev or not Path(ev).is_file():
@@ -354,6 +406,15 @@ def main() -> int:
             return 1
 
     repo = Path(args.repo).resolve()
+
+    # J50 CI-ворота: UI-дельта (frontend/**) + макеты (design/**) в change-пакете
+    # ⇒ web-тесты обязательны, escape — [no-ui-tests] + основание в body.
+    gate_errs = check_ui_tests_gate(repo, ident, marker_text)
+    if gate_errs:
+        for e in gate_errs:
+            print(f"pr_validate: {e}")
+        return 1
+
     if flow_type == "change":
         missing = FLOWS[flow_type](repo, ident, marker_text)
     else:
