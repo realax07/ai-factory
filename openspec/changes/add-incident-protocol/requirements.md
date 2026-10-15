@@ -6,7 +6,7 @@
 
 ## Общее описание
 
-Инцидент-протокол для Флоу 3 (хотфикс прода): формализует реакцию на прод-инциденты — severity-классификация S1/S2/S3, initial response в окне 0–15 минут, обязательный post-mortem для S1/S2 с воротами архивации через flow_check. Закрывает дефект «протокол реагирования не формализован» (прецедент — инцидент 2026-10-05, J25, разобран ad hoc). Источник практик: engineering-team/skills incident-commander + incident-response (SRE: severity classification, initial response 0–15 min, post-incident review).
+Инцидент-протокол для Флоу 3 (хотфикс прода): формализует реакцию на прод-инциденты — severity-классификация S1/S2/S3, initial response в окне 0–15 минут, обязательный post-mortem для S1/S2 с воротами перехода архивации (flow_transition, check архивации Флоу 3; design D2). Закрывает дефект «протокол реагирования не формализован» (прецедент — инцидент 2026-10-05, J25, разобран ad hoc). Источник практик: engineering-team/skills incident-commander + incident-response (SRE: severity classification, initial response 0–15 min, post-incident review).
 
 Граница: протокол применяется ТОЛЬКО в Флоу 3 (хотфикс). Флоу 1 (полный), 2 (багфикс), 4 (обслуживание), 5 (экспресс) не меняются.
 
