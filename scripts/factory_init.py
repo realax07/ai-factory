@@ -188,6 +188,7 @@ FLOW_CONTROL_MKDIRS = [
 MKDIRS = [
     "openspec/specs",
     "openspec/changes/archive",
+    "tests",
     "test-model/checklists",
     "test-model/new",
     "test-model/reviews",
@@ -266,6 +267,49 @@ def main() -> int:
         print(f"  CONSTITUTION.md создан из шаблона (name={args.name})")
     else:
         print("  CONSTITUTION.md уже существует — не тронут")
+
+    # 3a. openspec/config.yaml — root-маркер CLI (без него validate не находит проект)
+    openspec_cfg = target / "openspec" / "config.yaml"
+    if not openspec_cfg.exists() or args.force:
+        openspec_cfg.write_text(
+            "schema: spec-driven\n\ncontext: |\n"
+            "  Language: ru\n"
+            "  All artifacts must be written in ru.\n"
+            "  Keep OpenSpec structural headings and SHALL/MUST keywords in English.\n",
+            encoding="utf-8",
+        )
+        print("  openspec/config.yaml создан (root-маркер openspec CLI)")
+    else:
+        print("  openspec/config.yaml уже существует — не тронут")
+
+    # 3b. tests/test_smoke.py + as-is база regression/_bootstrap (контракт 6:
+    # smoke — as-is база пустого проекта, TC-BOOTSTRAP-001)
+    smoke = target / "tests" / "test_smoke.py"
+    if not smoke.exists() or args.force:
+        smoke.write_text(
+            '"""TC-BOOTSTRAP-001: smoke пустого проекта.'
+            'Заменяется реальными тестами первого пакета."""\n\n\n'
+            "def test_smoke():\n"
+            '    assert True\n',
+            encoding="utf-8",
+        )
+        print("  tests/test_smoke.py создан (CI pytest на пустом проекте)")
+    else:
+        print("  tests/test_smoke.py уже существует — не тронут")
+    boot_dir = target / "test-model" / "regression" / "_bootstrap"
+    boot_dir.mkdir(parents=True, exist_ok=True)
+    boot_case = boot_dir / "smoke.md"
+    if not boot_case.exists() or args.force:
+        boot_case.write_text(
+            "# TC-BOOTSTRAP-001: smoke пустого проекта\n\n"
+            "- **Источник:** bootstrap фабрики (init)\n"
+            "- **Проверка:** проект инициализирован, CI pytest зелен\n"
+            "- **Приоритет:** Must\n",
+            encoding="utf-8",
+        )
+        print("  test-model/regression/_bootstrap/smoke.md создан (as-is база, контракт 6)")
+    else:
+        print("  regression/_bootstrap уже существует — не тронут")
 
     # 4. Проверка среды
     ok = True
