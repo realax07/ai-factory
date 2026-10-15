@@ -8,13 +8,19 @@ D2 — severity перепарсивается из action.incident_ref сам, 
 маркера в enforcer (FLOW_MARKER_INVALID), append-only хранилища
 test-model/incidents/ (NFR-2), изоляцию Флоу 1/2/4/5 (NFR-3).
 
-Трассировка: TC-J48-001…TC-J48-019 (спека-дельта incident-protocol: Severity-
+Трассировка: TC-J48-001…TC-J48-032 (спека-дельта incident-protocol: Severity-
 классификация, Initial response, Post-mortem и ворота архивации, Severity в
-маркере делегации; design.md D1–D4; review-001-architecture M-1/M-3/I-2).
+маркере делегации; design.md D1–D4; review-001-architecture M-1/M-3/I-2) и
+approved-кейсы test-model/approved/add-incident-protocol/ (TC-SEV-001…004,
+TC-IRS-001…004, TC-PMG-001…007, TC-DEC-001…004): TC-J48-023…032 добавлены
+этапом qa_automation (матрица соответствия — tests/README.md, секция J48),
+остальные замаплены на существующие TC-J48 без дублирования.
 """
 from __future__ import annotations
 
+import re
 import sys
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -449,3 +455,331 @@ class TestAppendOnlyAndIsolation:
             ctx = {"checked": set(), "evidence": set()}
             assert ft.check_archive_flow3(s, action, ctx, flow) == [], flow
             assert ft.check_post_mortem(s, action, ctx, flow) == [], flow
+
+
+# --------------- матрица соответствия approved-кейсам (Флоу 1, этап 3.3)
+# Кейсы test-model/approved/add-incident-protocol/ прогнаны против
+# синхронного API flow_transition (tmp_path + подложка файлов, образец —
+# тесты выше); ID approved-кейса — в docstring. Кейсы, уже покрытые
+# TC-J48-001…022, дублирования не создают (матрица — tests/README.md, J48).
+
+
+def timeline_entries(text: str) -> list:
+    """(TC-IRS): записи секции «## Таймлайн» → [(datetime, текст), …]
+    в порядке файла; timestamps формата YYYY-MM-DDTHH:MM[:SS] (Z опционален)."""
+    entries: list = []
+    in_tl = False
+    for line in text.splitlines():
+        if re.match(r"^#+\s*таймлайн", line, re.I):
+            in_tl = True
+            continue
+        if in_tl and re.match(r"^#+", line):
+            break
+        m = (re.search(r"(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2})?)Z?\s*[—-]\s*(.+)",
+                       line) if in_tl else None)
+        if m:
+            entries.append((datetime.fromisoformat(m.group(1)),
+                            m.group(2).strip()))
+    return entries
+
+
+def section_first_ts(text: str, section: str) -> datetime | None:
+    """Первый timestamp раздела `section` (по заголовку ##), либо None."""
+    entries: list = []
+    in_sec = False
+    for line in text.splitlines():
+        if re.match(rf"^#+\s*{re.escape(section)}", line, re.I):
+            in_sec = True
+            continue
+        if in_sec and re.match(r"^#+", line):
+            break
+        m = (re.search(r"(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2})?)Z?", line)
+             if in_sec else None)
+        if m:
+            entries.append(datetime.fromisoformat(m.group(1)))
+    return entries[0] if entries else None
+
+
+class TestApprovedCaseMatrix:
+    def test_sev001_s1_rollback_is_first_remedial_action(self, tmp_path):
+        """TC-J48-023 ← TC-SEV-001 (S1: немедленный откат первым действием):
+        deploy_rollback присутствует в STAGE_TABLE[3]; в таймлайне S1-инцидента
+        первая устраняющая запись — rollback, её timestamp < начала раздела
+        Root cause (разбор после стабилизации); ворота принимают полный
+        post-mortem (ALLOW по воротам)."""
+        repo, s = hotfix_snapshot(tmp_path)
+        write_post_mortem(repo, "S1-prod-down", """# 2026-10-15 — S1-prod-down
+
+## Таймлайн
+
+- 2026-10-15T10:00:00Z — инцидент начат (прод недоступен, все запросы 5xx)
+- 2026-10-15T10:12:00Z — выполнен rollback по RUNBOOK (deploy_rollback)
+- 2026-10-15T10:12:00Z — стабилизация подтверждена
+- 2026-10-15T10:13:00Z — Заказчик уведомлен
+
+## Root cause
+
+Разбор причин начат 2026-10-15T10:25:00Z — после стабилизации.
+
+## Action items
+
+- добавить ретрай в client
+""")
+        assert "deploy_rollback" in [st.action for st in ft.STAGE_TABLE[3]]
+        entries = timeline_entries((repo / "test-model" / "incidents" /
+                                    "2026-10-15-S1-prod-down.md").read_text(
+                                        encoding="utf-8"))
+        first_remedial = entries[1]
+        assert "rollback" in first_remedial[1].lower()
+        rc = section_first_ts((repo / "test-model" / "incidents" /
+                               "2026-10-15-S1-prod-down.md").read_text(
+                                   encoding="utf-8"), "root cause")
+        assert first_remedial[0] < rc
+        action = base.act(requested_action="archive_change", actor_role="sa",
+                          incident_ref="S1-prod-down")
+        assert ft.check_archive_flow3(s, action, {"checked": set(),
+                                                  "evidence": set()}, 3) == []
+
+    def test_sev002_s2_hotfix_pr_not_rollback(self, tmp_path):
+        """TC-J48-024 ← TC-SEV-002 (S2: хотфикс-PR вместо отката): severity S2
+        разобран; машина требует последующий PR-цикл (review + pr_validate);
+        в таймлайне S2 первая устраняющая запись — «создан PR», записей о
+        rollback нет; ворота принимают полный post-mortem."""
+        repo, s = hotfix_snapshot(tmp_path)
+        ctx = {"checked": set(), "evidence": set(), "extra_gates": []}
+        action = base.act(requested_action="emergency_stabilize",
+                          incident_ref="S2-cart-500")
+        assert ft.check_emergency_stabilize({}, action, ctx, 3) == []
+        assert ctx["incident_severity"] == "S2"
+        assert any("pr_validate" in g for g in ctx["extra_gates"])
+        write_post_mortem(repo, "S2-cart-500", """# 2026-10-15 — S2-cart-500
+
+## Таймлайн
+
+- 2026-10-15T12:00:00Z — инцидент начат (корзина: часть запросов 500)
+- 2026-10-15T12:05:00Z — создан PR 7 (ветка hotfix/cart-500)
+- 2026-10-15T12:14:00Z — PR смержен после review + pr_validate
+
+## Root cause
+
+Регрессия корзины.
+
+## Action items
+
+- рост покрытия тестами корзины
+""")
+        text = (repo / "test-model" / "incidents" /
+                "2026-10-15-S2-cart-500.md").read_text(encoding="utf-8")
+        entries = timeline_entries(text)
+        assert "PR" in entries[1][1]
+        assert not any("rollback" in e[1].lower() for e in entries)
+        act = base.act(requested_action="archive_change", actor_role="sa",
+                       incident_ref="S2-cart-500")
+        assert ft.check_archive_flow3(s, act, {"checked": set(),
+                                               "evidence": set()}, 3) == []
+
+    def test_sev004_s4_level_treated_unclassified_at_archive(self, tmp_path):
+        """TC-J48-025 ← TC-SEV-004 (S4: уровень вне матрицы невалиден):
+        incident_ref=S4-data-loss при архивации Флоу 3 трактуется как
+        неклассифицированный — Finding MISSING_INPUT «неклассифицирован»,
+        check_action DENY (негативный класс allowlist S1/S2/S3)."""
+        _, s = hotfix_snapshot(tmp_path)
+        assert ft.incident_severity("S4-data-loss") is None
+        action = base.act(requested_action="archive_change", actor_role="sa",
+                          incident_ref="S4-data-loss")
+        findings = ft.check_archive_flow3(s, action, {"checked": set(),
+                                                      "evidence": set()}, 3)
+        assert findings and findings[0].code == ft.MISSING_INPUT
+        assert not findings[0].unknown
+        assert any("неклассифицирован" in f.detail for f in findings)
+        d = ft.check_action(s, action)
+        assert d.status == "DENY"
+        assert base.has_code(d, ft.MISSING_INPUT)
+
+    def test_irs001_order_and_window_within_15m(self, tmp_path):
+        """TC-J48-026 ← TC-IRS-001 (порядок (1)→(2)→(3), окно соблюдено):
+        таймлайн S1-login-500 парсится: все 3 timestamps (стабилизация →
+        уведомление → фиксация incident_ref) присутствуют, монотонны,
+        last − start ≤ 15 мин; Root cause после стабилизации; ворота
+        принимают артефакт (нужен и machine-контекст: секции полные)."""
+        repo, s = hotfix_snapshot(tmp_path)
+        write_post_mortem(repo, "S1-login-500", """# 2026-10-15 — S1-login-500
+
+## Таймлайн
+
+- 2026-10-15T10:00:00Z — инцидент начат (login: 500 на все авторизации)
+- 2026-10-15T10:12:00Z — стабилизация (rollback)
+- 2026-10-15T10:13:00Z — уведомление Заказчика
+- 2026-10-15T10:14:00Z — фиксация incident_ref
+
+## Root cause
+
+Разбор начат 2026-10-15T10:30:00Z.
+
+## Action items
+
+- алерт на 5xx login
+""")
+        text = (repo / "test-model" / "incidents" /
+                "2026-10-15-S1-login-500.md").read_text(encoding="utf-8")
+        entries = timeline_entries(text)
+        stamps = [e[0] for e in entries]
+        assert len(stamps) >= 3
+        assert stamps == sorted(stamps)  # монотонны
+        assert stamps[-1] - stamps[0] <= timedelta(minutes=15)
+        rc = section_first_ts(text, "root cause")
+        assert stamps[1] < rc  # разбор после стабилизации
+        action = base.act(requested_action="archive_change", actor_role="sa",
+                          incident_ref="S1-login-500")
+        assert ft.check_archive_flow3(s, action, {"checked": set(),
+                                                  "evidence": set()}, 3) == []
+
+    def test_irs002_boundary_exactly_15m_not_exceeded(self, tmp_path):
+        """TC-J48-027 ← TC-IRS-002 (граница: ровно T+15:00): порог
+        включительный — 12:00:00→12:15:00 даёт длительность ровно 15 мин,
+        превышение НЕ фиксируется (not > 15 мин); ворота артефакт
+        (секции полные) не блокируют."""
+        repo, s = hotfix_snapshot(tmp_path)
+        write_post_mortem(repo, "S2-search-slow", """# 2026-10-15 — S2-search-slow
+
+## Таймлайн
+
+- 2026-10-15T12:00:00Z — начало initial response
+- 2026-10-15T12:15:00Z — окончание initial response (фиксация incident_ref)
+
+## Root cause
+
+Деградация поиска.
+
+## Action items
+
+- профилирование запросов
+""")
+        text = (repo / "test-model" / "incidents" /
+                "2026-10-15-S2-search-slow.md").read_text(encoding="utf-8")
+        stamps = [e[0] for e in timeline_entries(text)]
+        duration = stamps[-1] - stamps[0]
+        assert duration == timedelta(minutes=15)
+        assert not duration > timedelta(minutes=15)  # включительный порог
+        action = base.act(requested_action="archive_change", actor_role="sa",
+                          incident_ref="S2-search-slow")
+        assert ft.check_archive_flow3(s, action, {"checked": set(),
+                                                  "evidence": set()}, 3) == []
+
+    def test_irs003_boundary_15m01_exceeded_detectable(self, tmp_path):
+        """TC-J48-028 ← TC-IRS-003 (граница: T+15:01 и более): 12:00:00→12:16:00
+        — превышение (16 мин > 15 мин) выявляемо из артефакта парсингом
+        timestamps (проверяемость порога, не настенный контроль)."""
+        repo, _ = hotfix_snapshot(tmp_path)
+        write_post_mortem(repo, "S2-search-slow", """# 2026-10-15 — S2-search-slow
+
+## Таймлайн
+
+- 2026-10-15T12:00:00Z — начало initial response
+- 2026-10-15T12:16:00Z — окончание initial response (фиксация incident_ref)
+
+## Root cause
+
+Деградация поиска.
+
+## Action items
+
+- нарушение окна FR-2: отметить в ревью post-mortem
+""")
+        text = (repo / "test-model" / "incidents" /
+                "2026-10-15-S2-search-slow.md").read_text(encoding="utf-8")
+        stamps = [e[0] for e in timeline_entries(text)]
+        assert stamps[-1] - stamps[0] > timedelta(minutes=15)
+
+    def test_irs004_root_cause_before_stabilization_detectable(self, tmp_path):
+        """TC-J48-029 ← TC-IRS-004 (разбор до стабилизации): timestamp первой
+        записи Root cause (10:05) < timestamp стабилизации (10:20) — нарушение
+        порядка FR-2 выявляемо из таймлайна парсингом разделов."""
+        repo, _ = hotfix_snapshot(tmp_path)
+        write_post_mortem(repo, "S1-prod-down", """# 2026-10-15 — S1-prod-down
+
+## Таймлайн
+
+- 2026-10-15T10:00:00Z — инцидент начат (прод не стабилизирован)
+- 2026-10-15T10:20:00Z — стабилизация (rollback)
+
+## Root cause
+
+Разбор начат 2026-10-15T10:05:00Z — ДО стабилизации (нарушение FR-2).
+
+## Action items
+
+- нарушение порядка: разбор причин до стабилизации — отметить в ревью
+""")
+        text = (repo / "test-model" / "incidents" /
+                "2026-10-15-S1-prod-down.md").read_text(encoding="utf-8")
+        rc = section_first_ts(text, "root cause")
+        stamps = [e[0] for e in timeline_entries(text)]
+        stabilization = stamps[-1]
+        assert rc < stabilization  # нарушение порядка выявляемо из артефакта
+
+    def test_pmg005_partial_file_lists_missing_sections(self, tmp_path):
+        """TC-J48-030 ← TC-PMG-005 (граница полноты: не все 3 секции): файл
+        только с «## Root cause» — Finding INVALID_GATE с перечнем
+        недостающих секций («таймлайн, action items»), check_action DENY."""
+        repo, s = hotfix_snapshot(tmp_path)
+        write_post_mortem(repo, "S1-login-500",
+                          "# S1-login-500\n\n## Root cause\n\nрегрессия.\n")
+        action = base.act(requested_action="archive_change", actor_role="sa",
+                          incident_ref="S1-login-500")
+        findings = ft.check_archive_flow3(s, action, {"checked": set(),
+                                                      "evidence": set()}, 3)
+        assert findings and findings[0].code == ft.INVALID_GATE
+        assert not findings[0].unknown
+        assert "таймлайн" in findings[0].detail
+        assert "action items" in findings[0].detail
+        assert "root cause" not in findings[0].detail  # перечислены только недостающие
+        d = ft.check_action(s, action)
+        assert d.status == "DENY"
+        assert base.has_code(d, ft.INVALID_GATE)
+
+    def test_dec003_prefix_format_boundaries_unclassified(self, tmp_path):
+        """TC-J48-031 ← TC-DEC-003 (границы формата префикса): s1-prod-down
+        (нижний регистр), S1prod-down (без дефиса), hotfix-S1-prod-down
+        (префикс не в начале) — все НЕ матчатся ^S[123]-: incident_severity
+        None и emergency_stabilize → DENY MISSING_INPUT «неклассифицирован»
+        для каждого (регистр и позиция значимы, допуска нет)."""
+        _, s = hotfix_snapshot(tmp_path)
+        for ref in ("s1-prod-down", "S1prod-down", "hotfix-S1-prod-down"):
+            assert ft.incident_severity(ref) is None, ref
+            action = base.act(requested_action="emergency_stabilize",
+                              incident_ref=ref)
+            d = ft.check_action(s, action)
+            assert d.status == "DENY", ref
+            assert base.has_code(d, ft.MISSING_INPUT), ref
+            assert any("неклассифицирован" in x for x in d.details), ref
+
+    def test_dec004_gate_follows_marker_not_facts(self, tmp_path):
+        """TC-J48-032 ← TC-DEC-004 (severity маркера против факта FR-1):
+        заниженная маркировка (факт S1, маркер S3-footer-typos) машинным
+        DENY не карается (NFR-1: ворота детерминированы маркером; процессное
+        нарушение FR-4 — фиксация в ревью/action items, append-only): и этап,
+        и ворота для S3-маркера находок не возвращают, UNKNOWN нет."""
+        repo, s = hotfix_snapshot(tmp_path)
+        write_post_mortem(repo, "S3-footer-typos", """# 2026-10-15 — S3-footer-typos
+
+## Таймлайн
+
+- 2026-10-15T10:00:00Z — реакция начата
+
+## Root cause
+
+Фактически прод недоступен (S1) — маркер занижен; расхождение FR-4
+отмечено здесь (исправление маркировки — новая запись, append-only).
+
+## Action items
+
+- исправить маркировку инцидента (новая запись, append-only)
+""")
+        ctx = {"checked": set(), "evidence": set()}
+        action = base.act(requested_action="archive_change", actor_role="sa",
+                          incident_ref="S3-footer-typos")
+        assert ft.check_post_mortem(s, action, dict(ctx), 3) == []
+        assert ft.check_archive_flow3(s, action, dict(ctx), 3) == []
+        assert not any(f.unknown for f in
+                       ft.check_archive_flow3(s, action, dict(ctx), 3))
