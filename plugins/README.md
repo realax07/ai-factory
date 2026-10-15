@@ -37,6 +37,15 @@ python3 scripts/factory_init.py --target <repo> --name "<проект>"
   пишется в лог (аудит-след, не блокировка);
 - `strict` — делегация без маркеров блокируется с кодом `MARKERS_MISSING`.
 
+## Опциональные тумблеры (J43-хвосты, состояние: OFF по умолчанию)
+
+- **allowlist** — белый список repo×role; делегация вне списка блокируется
+  (планируется; актуален при ≥2 проектах — второй Hermes);
+- **sequence-gate** (`FLOW_ENFORCER_SEQUENCE=1`) — порядок этапов по
+  STAGE_TABLE: dev раньше ревью = блок `SEQUENCE_VIOLATION` с перечнем
+  незакрытых предшественников. Пока off: калибровка таблицы на реальных
+  цепочках (решение Заказчика 2026-10-14 — «пока оставим как есть»).
+
 Прочие env: `AI_FACTORY_HOME` (путь к фабрике, дефолт `~/ai-factory`),
 `FLOW_ENFORCER_REGISTRY` (--registry для flowctl), `FLOW_ENFORCER_FLOW`
 (дефолт 1), `FLOW_ENFORCER_STATE_DIR` (каталог логов, дефолт
