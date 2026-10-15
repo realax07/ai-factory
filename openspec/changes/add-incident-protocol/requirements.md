@@ -1,6 +1,6 @@
 # Requirements: add-incident-protocol
 
-> Статус: ЧЕРНОВИК (детализация БА) | Источник требований: backlog/J48-инцидент-протокол-Флоу-3-claude-skills-2026-10-13.md | Санкция Заказчика: «48 давай» (2026-10-14, диалог) | Автор: ba_agent (plan-write) | История: r1
+> Статус: СПЕЦИФИКАЦИЯ (СА: спека-дельта + design.md + tasks.md готовы, 2026-10-15) | Источник требований: backlog/J48-инцидент-протокол-Флоу-3-claude-skills-2026-10-13.md | Санкция Заказчика: «48 давай» (2026-10-14, диалог) | Автор: ba_agent (plan-write), sa_agent (create_change) | История: r1
 >
 > Нумерация: registry (numbering_registry.py, openspec/ + docs/ba/, --prefix FR) — идентификаторов FR не найдено, старт с FR-1 (конвенция: сквозная нумерация внутри пакета, как в remove-qa-checklist и add-deterministic-flow).
 
@@ -14,7 +14,7 @@
 
 - devops/dev-сабагенты: классификация severity, initial-response протокол, post-mortem.
 - ПМ: контроль ворот архивации Флоу 3.
-- Скрипты контроля: flow_check (ворота post-mortem), flow_transition (severity в маркере).
+- Скрипты контроля: flow_transition (severity в маркере, ворота post-mortem при архивации).
 - Заказчик: уведомление в initial response (что случилось, что делаем, ETA).
 
 ## Функциональные требования
@@ -67,20 +67,20 @@ Initial response инцидента S1/S2 MUST укладываться в 15 м
 
 ### FR-3: Post-mortem обязателен для S1/S2 — ворота архивации
 
-Для каждого инцидента S1/S2 MUST быть написан post-mortem, содержащий: таймлайн (включая timestamps initial response), root cause, action items (каждый — в change-пакет или бэклог), без обвинений. Post-mortem хранится в `test-model/incidents/`, режим append-only. Архивация Флоу 3-задачи с инцидентом S1/S2 MUST блокироваться flow_check при отсутствии post-mortem. Для S3 post-mortem не требуется.
+Для каждого инцидента S1/S2 MUST быть написан post-mortem, содержащий: таймлайн (включая timestamps initial response), root cause, action items (каждый — в change-пакет или бэклог), без обвинений. Post-mortem хранится в `test-model/incidents/`, режим append-only. Архивация Флоу 3-задачи с инцидентом S1/S2 MUST блокироваться воротами перехода (flow_transition, check архивации Флоу 3; design D2) при отсутствии post-mortem. Для S3 post-mortem не требуется.
 
 Почему: без ворот post-mortem пропадает (прецедент J25: ad hoc-разбор не оставил артефакта).
 
 #### Scenario: Архивация S1 без post-mortem блокируется
 
 - **GIVEN** Флоу 3-задача с incident_ref severity S1, post-mortem в test-model/incidents/ отсутствует
-- **WHEN** flow_check проверяет архивацию
-- **THEN** результат — нарушение (ненулевой exit), архивация не проходит
+- **WHEN** запрошен переход архивации (flow_transition, check архивации Флоу 3)
+- **THEN** результат — нарушение (DENY, ненулевой exit), архивация не проходит
 
 #### Scenario: Архивация S2 с post-mortem проходит
 
 - **GIVEN** Флоу 3-задача с incident_ref severity S2, post-mortem (таймлайн, root cause, action items) существует в test-model/incidents/
-- **WHEN** flow_check проверяет архивацию
+- **WHEN** запрошен переход архивации (flow_transition, check архивации Флоу 3)
 - **THEN** нарушение по воротам post-mortem отсутствует
 
 #### Scenario: Post-mortem append-only
@@ -98,18 +98,18 @@ Initial response инцидента S1/S2 MUST укладываться в 15 м
 #### Scenario: Маркер S1 распознается
 
 - **GIVEN** маркер делегации содержит incident_ref=S1-prod-down
-- **WHEN** flow_transition/flow_check разбирают маркер
+- **WHEN** flow_transition разбирает маркер
 - **THEN** severity S1 извлечен из префикса, задача требует post-mortem-ворота при архивации
 
 #### Scenario: Инцидент без severity в маркере
 
 - **GIVEN** Флоу 3-задача с incident_ref без S1-/S2-/S3-префикса
-- **WHEN** flow_check проверяет реакцию
+- **WHEN** flow_transition разбирает маркер
 - **THEN** классификация отсутствует — состояние трактуется как неклассифицированный инцидент (не разрешает архивацию по FR-3-семантике)
 
 ## Нефункциональные требования
 
-- **NFR-1:** Ворота flow_check детерминированы: проверка по файлам (наличие post-mortem в test-model/incidents/, разбор префикса incident_ref), без LLM; UNKNOWN не разрешает архивацию.
+- **NFR-1:** Ворота post-mortem детерминированы: проверка по файлам (наличие post-mortem в test-model/incidents/, разбор префикса incident_ref), без LLM; UNKNOWN не разрешает архивацию.
 - **NFR-2:** Append-only хранилища: существующие файлы в test-model/incidents/ не удаляются и не изменяются.
 - **NFR-3:** Прогон регресса фабрики (pytest tests/) зеленый после изменений; поведение flow_check/flow_transition для Флоу 1/2/4/5 не меняется.
 
