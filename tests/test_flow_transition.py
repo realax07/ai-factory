@@ -741,7 +741,7 @@ class TestFlow3:
         _, _, s = self._hotfix_repo(tmp_path)
         d = ft.check_action(
             s, act(requested_action="emergency_stabilize",
-                   incident_ref="incident-2026-10-01: 500 на /login"))
+                   incident_ref="S2-login-500"))
         assert d.status == "ALLOW"
         assert any("PR-цикл" in g for g in d.required_gates)
 
@@ -759,7 +759,7 @@ class TestFlow3:
         _, _, s = self._hotfix_repo(tmp_path)
         d = ft.check_action(
             s, act(requested_action="emergency_stabilize",
-                   incident_ref="incident-1"))
+                   incident_ref="S2-incident-1"))
         assert any("PR" in g for g in d.required_gates)
 
 

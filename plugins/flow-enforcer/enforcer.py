@@ -9,7 +9,9 @@
                [paths=<путь1,путь2,...>] [kind=docs|product]
      scope — по флоу: Ф1 change-id; Ф2 BUG-<КОМПЛЕКС>-NNN (репорт
      test-model/bugs/; BUG-001 и BUG-AF-RECHECK-001 оба валидны);
-     Ф3 incident-id (формат любой, обязателен); Ф4 chore-slug; Ф5 slug.
+     Ф3 S<1|2|3>-<краткий-ид> — incident-id с severity-префиксом
+     (J48/add-incident-protocol: severity-классификация обязательна до
+     реакции, FR-1/FR-4); Ф4 chore-slug; Ф5 slug.
      paths — относительные пути задачи через запятую (ТОЛЬКО относительные,
      без '..'-сегментов — иначе FLOW_MARKER_INVALID; MAJ-2 ревью
      BUG-AF-RECHECK); попадают в flowctl prepare как --path (зоны/вороты
@@ -50,7 +52,8 @@ match (что именно совпало).
 машинно). Номер флоу — из маркера (flow=); env FLOW_ENFORCER_FLOW — ТОЛЬКО
 fallback, когда в маркере нет flow= (с WARNING в лог). prepare вызывается с
 --flow <N> и --change <scope>; роль отображается в действие СВОЕГО флоу
-(ROLE_ACTIONS_FLOW: Ф2 dev→bug_fix, Ф3 →emergency_stabilize, Ф4 →chore_task,
+(ROLE_ACTIONS_FLOW: Ф2 dev→bug_fix, Ф3 — полная карта ролей этапов
+STAGE_TABLE[3] включая post_mortem/archive_change, Ф4 →chore_task,
 Ф5 →express_task/express_close).
 
 Post-filter «no-change scope» (J43.1): для Флоу 2/4/5 отказ prepare, в котором
@@ -147,6 +150,23 @@ def _bug_id_pattern() -> str:
 
 
 BUG_ID_RE = re.compile(_bug_id_pattern())
+
+# J48 (add-incident-protocol, D1/I-1): severity-allowlist Флоу 3 — единый
+# источник истины flow_transition.SEVERITY_PREFIXES (расширение одной правкой);
+# фабрика недоступна → встроенная fallback-копия (синхронизируется тестом).
+def _severity_prefixes() -> tuple:
+    try:
+        scripts_dir = str(factory_home() / "scripts")
+        if scripts_dir not in sys.path:
+            sys.path.insert(0, scripts_dir)
+        import flow_transition
+        return tuple(flow_transition.SEVERITY_PREFIXES)
+    except Exception:  # noqa: BLE001 — плагин не зависит от доступности фабрики
+        return ("S1", "S2", "S3")
+
+
+SEVERITY_PREFIX_RE = re.compile(
+    "^(?:" + "|".join(re.escape(p) for p in _severity_prefixes()) + ")-")
 FLOW_IDS = (1, 2, 3, 4, 5)
 
 # Действие по роли: этапы STAGE_TABLE Флоу 1 (flow_transition.py).
@@ -171,9 +191,24 @@ DEFAULT_ACTION = "dev_task"
 # J43.1: flow-aware отображение роли в действие (этапы STAGE_TABLE Флоу 2–5;
 # не переопределенные роли берутся из ROLE_ACTIONS — code_review/merge и др.
 # совпадают по флоу).
+# MAJ-1 ревью 4.1: Флоу 3 — ПОЛНАЯ карта ролей по STAGE_TABLE[3] (все 6
+# этапов воспроизводимы хотя бы одной ролью; тест TC-J48-020). Роль,
+# входящая в несколько этапов Флоу 3, маппится в КЛЮЧЕВОЙ этап своего
+# участия (single role→action): devops→post_mortem (не emergency_stabilize —
+# тот остается за dev; deploy_rollback — за pm), sa/dev_lead→archive_change
+# (merge_task остается за integrator), code_reviewer→accept_review (этапа
+# code_review во Флоу 3 нет), pm→deploy_rollback, integrator→merge_task.
 ROLE_ACTIONS_FLOW = {
     2: {"dev": "bug_fix"},
-    3: {"dev": "emergency_stabilize", "devops": "emergency_stabilize"},
+    3: {
+        "dev": "emergency_stabilize",
+        "devops": "post_mortem",
+        "code_reviewer": "accept_review",
+        "dev_lead": "archive_change",
+        "integrator": "merge_task",
+        "pm": "deploy_rollback",
+        "sa": "archive_change",
+    },
     4: {"dev": "chore_task"},
     5: {"dev": "express_task", "pm": "express_close"},
 }
@@ -232,6 +267,11 @@ SEQUENCE_PREREQS: dict[int, dict[str, frozenset]] = {
         "accept_review": frozenset({"emergency_stabilize"}),
         "merge_task": frozenset({"accept_review"}),
         "deploy_rollback": frozenset({"merge_task"}),
+        # J48 (D3): этапы post_mortem/archive_change — производные STAGE_TABLE[3]
+        # (flow_transition.py); архивация без пройденного post_mortem
+        # недостижима по порядку этапов.
+        "post_mortem": frozenset({"deploy_rollback"}),
+        "archive_change": frozenset({"post_mortem"}),
     },
     4: {
         "chore_task": frozenset(),
@@ -408,17 +448,28 @@ def _validate_flow(raw_flow: str) -> int:
 def validate_scope_for_flow(flow: int, scope: str) -> None:
     """Формат scope своего флоу (J43.1): Ф2 — BUG-<КОМПЛЕКС>-NNN (формат
     репорта test-model/bugs/, расширен 5c21489: BUG-001 и BUG-AF-RECHECK-001
-    оба валидны); Ф1 change-id / Ф3 incident-id / Ф4 chore-slug /
+    оба валидны); Ф3 S<1|2|3>-<краткий-ид> (J48: severity-классификация
+    инцидента обязательна до реакции, FR-1/FR-4; невалидный формат —
+    FLOW_MARKER_INVALID); Ф1 change-id / Ф4 chore-slug /
     Ф5 slug — непустая строка (пустой отсечен при разборе)."""
     if not scope:
         raise FlowMarkerError(
             "пустой scope — scope обязателен (Ф1 change-id, "
-            "Ф2 BUG-<КОМПЛЕКС>-NNN, Ф3 incident-id, Ф4 chore-slug, Ф5 slug)")
+            "Ф2 BUG-<КОМПЛЕКС>-NNN, Ф3 S<1|2|3>-<краткий-ид>, Ф4 chore-slug, "
+            "Ф5 slug)")
     if flow == 2 and not BUG_ID_RE.match(scope):
         raise FlowMarkerError(
             f"Флоу 2 требует scope формата BUG-<КОМПЛЕКС>-NNN "
             f"(BUG-001 или BUG-AF-RECHECK-001; A-Z0-9, дефис-разделитель), "
             f"получено {scope!r} (репорт test-model/bugs/<scope>.md)")
+    if flow == 3 and not SEVERITY_PREFIX_RE.match(scope):
+        # J48 (D1/FR-4): severity внутри incident_ref — маркер обязан нести
+        # классификацию; неклассифицированный инцидент не запускает реакцию
+        # (очевидная ошибка маркера → FLOW_MARKER_INVALID).
+        raise FlowMarkerError(
+            f"Флоу 3 требует scope формата S<1|2|3>-<краткий-ид> — "
+            f"severity-классификация инцидента обязательна до реакции "
+            f"(J48; FR-1/FR-4; получено {scope!r})")
 
 
 def resolve_flow(markers: dict) -> tuple[int, bool]:
@@ -549,7 +600,9 @@ def prepare_command(markers: dict, flow: int, action: str) -> list[str]:
     # — ворота зон/конфликтов/arch-review работают с РЕАЛЬНЫМИ путями задачи.
     for path in markers.get("paths") or ():
         argv += ["--path", path]
-    # Флоу 3: scope = incident-id — фиксируется как incident_ref (ТЗ 03 п.4).
+    # Флоу 3: scope = incident-id с severity-префиксом — фиксируется как
+    # incident_ref (ТЗ 03 п.4; J48 FR-4) БЕЗ искажений: маркер не переписывает
+    # код инцидента (severity живет внутри incident_ref, design D1).
     if flow == 3:
         argv += ["--incident-ref", markers["scope"]]
     # Флоу 5: условия экспресс-режима подтверждает сам выбор Флоу 5 ПМ;

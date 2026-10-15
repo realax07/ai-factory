@@ -52,12 +52,18 @@ BUG-NNN + существующая спека → dev_task (без БА/СА)
 ## Флоу 3 — хотфикс (авария)
 
 ```
-incident_ref → emergency_stabilize (dev/pm, минимальный цикл)
+incident_ref=S<1|2|3>-<id> (severity-классификация J48 — в маркере делегации;
+  без префикса enforcer → FLOW_MARKER_INVALID)
+  → emergency_stabilize (dev/devops; неклассифицированный incident_ref — DENY)
   → ПОСЛЕ стабилизации ОБЯЗАТЕЛЬНЫЙ PR-цикл: dev_task → code_review → merge_task
   └─ пока PR-цикл не закрыт: все post-emergency действия несут STALE_EVIDENCE
      (долг хотфикса) — «завершить» merge без последующего PR нельзя
   → deploy/rollback: только при существующих полномочиях (approval_ref)
      + EXTERNAL_ENFORCEMENT_UNKNOWN (локальный PASS ≠ защита main)
+  → post_mortem (dev/devops): test-model/incidents/<YYYY-MM-DD>-<incident_ref>.md,
+     секции Таймлайн/Root cause/Action items; append-only (J48, обязателен S1/S2)
+  → archive_change (sa/dev_lead/integrator): ворота post-mortem (D2) —
+     S1/S2 без post-mortem = DENY; S3 — протокол не применяется
 ```
 
 ## Флоу 4 — обслуживание фабрики/проекта

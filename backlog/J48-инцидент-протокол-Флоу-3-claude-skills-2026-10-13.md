@@ -1,7 +1,8 @@
 # J48 — инцидент-протокол Флоу 3 (найдено в microобзоре claude-skills, Заказчик 2026-10-13)
 
-**Флоу: 2→1** (сначала правила в бэклоге, усиление Флоу 3 — change-пакет, т.к.
-затрагивает спеку конвейера). Источник: engineering-team/skills/
+**Флоу работы: 1** (полный — change-пакет меняет спеку конвейера и STAGE_TABLE).
+Протокол касается **Флоу 3** (хотфикс) — не путать: цифра флоу работы и цифра
+флоу, который усиливаем, — разные вещи (источник путаницы 2026-10-14). Источник: engineering-team/skills/
 incident-commander + incident-response (obra-стиль, MIT) — «Battle-tested
 SRE/DevOps practices: severity classification, initial response 0–15 min,
 mitigation, post-incident review».
