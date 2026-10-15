@@ -3,7 +3,7 @@
 - **Задача tasks.md:** 4.1 (независимое code review: flow_transition + enforcer маркер)
 - **Ревьюируемая поставка:** ветка `pipeline/j48-incident-protocol`, диф `main...pipeline/j48-incident-protocol` (9 коммитов 2bb3266…80ba1d5)
 - **Спека:** openspec/changes/add-incident-protocol/ (requirements FR-1…FR-4/NFR-1…3, design D1–D4, review-001-architecture)
-- **Reviewer-Delegation: deleg_<id> — идентификатор платформенной делегации проставляет оркестратор при приемке (self-review защита flow_check J10)**
+- **Reviewer-Delegation: deleg_5e90c65d (проставлено ПМ при приемке; самостоятельная простановка сабагентом невозможна — J10)**
 - **Метод:** три круга по skills/code-review (спека → best practices → integration); adversarial-ось — обратная совместимость Флоу 3-маркера (по постановке 4.1)
 
 ## Вердикт: approve
