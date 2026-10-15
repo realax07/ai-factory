@@ -52,7 +52,8 @@ match (что именно совпало).
 машинно). Номер флоу — из маркера (flow=); env FLOW_ENFORCER_FLOW — ТОЛЬКО
 fallback, когда в маркере нет flow= (с WARNING в лог). prepare вызывается с
 --flow <N> и --change <scope>; роль отображается в действие СВОЕГО флоу
-(ROLE_ACTIONS_FLOW: Ф2 dev→bug_fix, Ф3 →emergency_stabilize, Ф4 →chore_task,
+(ROLE_ACTIONS_FLOW: Ф2 dev→bug_fix, Ф3 — полная карта ролей этапов
+STAGE_TABLE[3] включая post_mortem/archive_change, Ф4 →chore_task,
 Ф5 →express_task/express_close).
 
 Post-filter «no-change scope» (J43.1): для Флоу 2/4/5 отказ prepare, в котором
@@ -190,9 +191,24 @@ DEFAULT_ACTION = "dev_task"
 # J43.1: flow-aware отображение роли в действие (этапы STAGE_TABLE Флоу 2–5;
 # не переопределенные роли берутся из ROLE_ACTIONS — code_review/merge и др.
 # совпадают по флоу).
+# MAJ-1 ревью 4.1: Флоу 3 — ПОЛНАЯ карта ролей по STAGE_TABLE[3] (все 6
+# этапов воспроизводимы хотя бы одной ролью; тест TC-J48-020). Роль,
+# входящая в несколько этапов Флоу 3, маппится в КЛЮЧЕВОЙ этап своего
+# участия (single role→action): devops→post_mortem (не emergency_stabilize —
+# тот остается за dev; deploy_rollback — за pm), sa/dev_lead→archive_change
+# (merge_task остается за integrator), code_reviewer→accept_review (этапа
+# code_review во Флоу 3 нет), pm→deploy_rollback, integrator→merge_task.
 ROLE_ACTIONS_FLOW = {
     2: {"dev": "bug_fix"},
-    3: {"dev": "emergency_stabilize", "devops": "emergency_stabilize"},
+    3: {
+        "dev": "emergency_stabilize",
+        "devops": "post_mortem",
+        "code_reviewer": "accept_review",
+        "dev_lead": "archive_change",
+        "integrator": "merge_task",
+        "pm": "deploy_rollback",
+        "sa": "archive_change",
+    },
     4: {"dev": "chore_task"},
     5: {"dev": "express_task", "pm": "express_close"},
 }

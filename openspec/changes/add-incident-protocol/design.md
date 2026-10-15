@@ -97,8 +97,11 @@ merge_task → deploy_rollback. Новая конфигурация:
 - **Путь:** `test-model/incidents/` (не docs/incidents/ — решение из ограничений
   requirements.md: смежность с QA-контуром test-model).
 - **Именование:** `<YYYY-MM-DD>-<incident_ref>.md`, напр.
-  `2026-10-15-S1-prod-down.md` — correlation с воротами D2/D3 по подстроке
-  incident_ref в имени файла (детерминированный файловый матч, NFR-1).
+  `2026-10-15-S1-prod-down.md` — correlation с воротами D2/D3 по вхождению
+  incident_ref в имя файла ПО ГРАНИЦАМ (начало имени или «-» … «.» или
+  конец имени; MIN-2 ревью 4.1: сырая подстрока удовлетворялась чужим
+  файлом — ref `S1-prod` файлом `2026-10-15-S1-prod-down.md`;
+  детерминированный файловый матч, NFR-1).
 - **Обязательные секции** (проверка check_post_mortem по заголовкам):
   `## Таймлайн` (с timestamps initial response — проверяемость порога FR-2),
   `## Root cause`, `## Action items`.

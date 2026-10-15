@@ -229,6 +229,80 @@ class TestArchiveGate:
         assert findings and findings[0].code == ft.MISSING_INPUT
         assert not findings[0].unknown
 
+    def test_correlation_rejects_foreign_incident_file(self, tmp_path):
+        """TC-J48-021 (MIN-2 ревью 4.1; согласован с TC-PMG-006): корреляция
+        по имени файла — по ГРАНИЦАМ, не сырой подстрокой: ref S1-prod-down
+        НЕ удовлетворяется чужим файлом с надстрокой (S1-prod-down-2.md) и
+        наоборот (ref S1-prod vs 2026-10-15-S1-prod-down.md) → MISSING_INPUT."""
+        repo, s = hotfix_snapshot(tmp_path)
+        # чужой файл: ref является ПОДСТРОКОЙ имени, но не совпадает по
+        # границам (после ref идет «-2», не «.»/конец имени):
+        write_post_mortem(repo, "S1-prod-down-2")
+        action = base.act(requested_action="archive_change", actor_role="sa",
+                          incident_ref="S1-prod-down")
+        findings = ft.check_archive_flow3(s, action,
+                                          {"checked": set(),
+                                           "evidence": set()}, 3)
+        assert findings and findings[0].code == ft.MISSING_INPUT
+        # и обратный случай из ревью: короткий ref S1-prod против полного
+        # файла чужого инцидента S1-prod-down.md:
+        for p in (repo / "test-model" / "incidents").glob("*.md"):
+            p.unlink()
+        write_post_mortem(repo, "S1-prod-down")
+        short = base.act(requested_action="archive_change", actor_role="sa",
+                         incident_ref="S1-prod")
+        findings = ft.check_archive_flow3(s, short,
+                                          {"checked": set(),
+                                           "evidence": set()}, 3)
+        assert findings and findings[0].code == ft.MISSING_INPUT
+        # точный файл при этом по-прежнему находится (регресс TC-J48-006):
+        exact = base.act(requested_action="archive_change", actor_role="sa",
+                         incident_ref="S1-prod-down")
+        assert ft.check_archive_flow3(s, exact,
+                                      {"checked": set(),
+                                       "evidence": set()}, 3) == []
+
+    def test_sections_matched_by_headers_not_prose(self, tmp_path):
+        """TC-J48-022 (MIN-3 ревью 4.1; D4): секции проверяются по заголовкам
+        ## (регистронезависимо) — «root cause» в прозе без заголовка секцией
+        не считается → DENY INVALID_GATE."""
+        repo, s = hotfix_snapshot(tmp_path)
+        write_post_mortem(repo, "S2-login-degraded", """# Заголовок
+
+## Таймлайн
+
+- 2026-10-15T10:00Z — старт initial response
+
+корень проблемы (root cause) выяснен, action items запланированы — в прозе,
+без заголовков секций.
+""")
+        action = base.act(requested_action="archive_change", actor_role="sa",
+                          incident_ref="S2-login-degraded")
+        findings = ft.check_archive_flow3(s, action,
+                                          {"checked": set(),
+                                           "evidence": set()}, 3)
+        assert findings and findings[0].code == ft.INVALID_GATE
+        assert "root cause" in findings[0].detail
+        assert "action items" in findings[0].detail
+        # полный файл с заголовками (в т.ч. в другом регистре) проходит:
+        for p in (repo / "test-model" / "incidents").glob("*.md"):
+            p.unlink()
+        write_post_mortem(repo, "S2-login-degraded", """## ТАЙМЛАЙН
+
+- 2026-10-15T10:00Z — старт
+
+## Root Cause
+
+регрессия.
+
+## action items
+
+- ретрай
+""")
+        assert ft.check_archive_flow3(s, action,
+                                      {"checked": set(),
+                                       "evidence": set()}, 3) == []
+
     def test_new_stages_in_stage_table_flow3(self):
         """TC-J48-012 (D3): STAGE_TABLE[3] = … → deploy_rollback → post_mortem
         (dev/devops) → archive_change (sa/dev_lead/integrator); роли
@@ -267,6 +341,15 @@ class TestEnforcerSeverityMarker:
         assert prefixes == tuple(ft.SEVERITY_PREFIXES)
         for p in ft.SEVERITY_PREFIXES:
             assert enforcer.SEVERITY_PREFIX_RE.match(f"{p}-x")
+        # MIN-1 ревью 4.1: ft.SEVERITY_PREFIX_RE выведен из allowlist-тупла —
+        # каждый префикс allowlist матчится и извлекается (m.group(1));
+        # уровень вне allowlist (S4) — нет.
+        for p in ft.SEVERITY_PREFIXES:
+            m = ft.SEVERITY_PREFIX_RE.match(f"{p}-x")
+            assert m and m.group(1) == p, p
+        assert ft.SEVERITY_PREFIX_RE.match("S4-x") is None
+        # регресс I-1: incident_severity жив (захват группы не потерян)
+        assert ft.incident_severity("S2-login-degraded") == "S2"
 
     def test_incident_ref_passed_through_unchanged(self):
         """TC-J48-015 (tasks 1.3): scope=incident-id с severity-префиксом
@@ -290,6 +373,29 @@ class TestEnforcerSeverityMarker:
         for action, pre in prereqs.items():
             for p in pre:
                 assert order[p] < order[action], (action, p)
+
+    def test_role_actions_flow3_cover_stage_table(self):
+        """TC-J48-020 (MAJ-1 ревью 4.1): каждый этап STAGE_TABLE[3]
+        воспроизводим хотя бы одной ролью через enforcer.action_for_role —
+        post_mortem/archive_change не выпадают в фолбэк Флоу 1 (раньше
+        sa → create_change) и ни одна роль Флоу 3 не маппится в действие
+        вне своей STAGE_TABLE."""
+        stages = ft.STAGE_TABLE[3]
+        valid_actions = {s.action for s in stages}
+        covered = {}
+        for stage in stages:
+            roles = [r for r in stage.roles
+                     if enforcer.action_for_role(r, 3) == stage.action]
+            assert roles, f"этап {stage.action} не воспроизводим ни одной " \
+                          f"ролью {stage.roles}"
+            covered[stage.action] = roles
+        assert covered["post_mortem"] == ["devops"]
+        assert covered["archive_change"] == ["sa", "dev_lead"]
+        assert covered["emergency_stabilize"] == ["dev"]
+        # ни одна роль карты Флоу 3 не уводится в чужое действие:
+        for role in ("dev", "devops", "code_reviewer", "dev_lead",
+                     "integrator", "pm", "sa"):
+            assert enforcer.action_for_role(role, 3) in valid_actions, role
 
 
 # ------------------------------------------- NFR-2: append-only + NFR-3 репрессия

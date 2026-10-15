@@ -11,7 +11,7 @@
 - **Арбитр:** openspec/changes/add-incident-protocol/ (requirements.md FR-1…FR-4, NFR-1…3; specs/incident-protocol/spec.md — 10 сценариев; design.md D1–D4)
 - **Покрытие:** coverage_matrix.py прогнан ревьюером независимо — exit 0, 10/10 сценариев покрыты, 19 TC; лишних кейсов без источника нет (все TC трассированы к FR-N/Scenario/design D).
 
-## Вердикт: APPROVE
+## Вердикт: одобрить (APPROVE)
 
 19/19 кейсов проверены по шести осям (трассировка, техники, атомарность, данные, ожидаемые результаты, N/A-обоснования). Blocker и major не обнаружены; замечания — только minor (не препятствуют переносу в approved).
 

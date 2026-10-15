@@ -1640,11 +1640,18 @@ def check_emergency_stabilize(snapshot, action, ctx, flow):
 # I-1 ревью: severity-уровни — одним allowlist-множеством; новый уровень
 # (например S4) = одна правка + отдельный change-пакет (rules_change).
 SEVERITY_PREFIXES = ("S1", "S2", "S3")
-SEVERITY_PREFIX_RE = re.compile(r"^(S[123])-")
+# MIN-1 ревью 4.1: regex ВЫВОДИТСЯ из тупла (захват группы для
+# incident_severity: m.group(1) → "S1"/"S2"/…), не дублируется литералом.
+SEVERITY_PREFIX_RE = re.compile(
+    "^(" + "|".join(re.escape(p) for p in SEVERITY_PREFIXES) + ")-")
 # D4: хранилище post-mortem — append-only, именование
-# <YYYY-MM-DD>-<incident_ref>.md; корреляция ворот — по подстроке incident_ref
-# в имени файла (детерминированный файловый матч, NFR-1).
+# <YYYY-MM-DD>-<incident_ref>.md; корреляция ворот — по вхождению incident_ref
+# в имя файла ПО ГРАНИЦАМ (начало имени или «-» … «.» или конец; MIN-2 ревью
+# 4.1: сырая подстрока удовлетворялась чужим файлом, ref "S1-prod" — файлом
+# "2026-10-15-S1-prod-down.md"; детерминированный файловый матч, NFR-1).
 INCIDENTS_DIR = "test-model/incidents"
+# D4: секции проверяются по ЗАГОЛОВКАМ (## …), не по вхождению в текст
+# (MIN-3 ревью 4.1: «root cause» в прозе не считается секцией).
 POST_MORTEM_SECTIONS = ("таймлайн", "root cause", "action items")
 
 
@@ -1686,7 +1693,10 @@ def _post_mortem_findings(snapshot, action, ctx: dict) -> list:
     inc_dir = Path(repo) / INCIDENTS_DIR
     ctx["evidence"].add(str(inc_dir))
     ref = action.incident_ref
-    matches = [p for p in sorted(inc_dir.glob("*.md")) if ref in p.name] \
+    # MIN-2 ревью 4.1: матч по границам, не сырой подстрокой — чужой файл
+    # (ref "S1-prod" vs "2026-10-15-S1-prod-down.md") не засчитывается.
+    ref_re = re.compile(rf"(?:^|-){re.escape(ref)}(?:\.|$)")
+    matches = [p for p in sorted(inc_dir.glob("*.md")) if ref_re.search(p.name)] \
         if inc_dir.is_dir() else []
     if not matches:
         return [Finding(
@@ -1695,14 +1705,19 @@ def _post_mortem_findings(snapshot, action, ctx: dict) -> list:
             f"{INCIDENTS_DIR}/ — архивация Флоу 3 S1/S2 без post-mortem "
             f"блокируется (FR-3; design D2/D4; именование "
             f"<YYYY-MM-DD>-<incident_ref>.md)")]
-    text = matches[-1].read_text(encoding="utf-8", errors="replace").lower()
-    missing = [s for s in POST_MORTEM_SECTIONS if s not in text]
+    text = matches[-1].read_text(encoding="utf-8", errors="replace")
+    # MIN-3 ревью 4.1: секции — по заголовкам ## (D4), регистронезависимо;
+    # упоминание в прозе секцией не считается.
+    missing = [s for s in POST_MORTEM_SECTIONS if not any(
+        re.match(rf"^#+\s*{re.escape(s)}", line, re.IGNORECASE)
+        for line in text.splitlines())]
     if missing:
         return [Finding(
             INVALID_GATE,
-            f"post-mortem {matches[-1].name} без секций: {', '.join(missing)} "
-            f"— обязательны таймлайн (timestamps initial response), root "
-            f"cause, action items (FR-3; design D4)")]
+            f"post-mortem {matches[-1].name} без заголовков секций: "
+            f"{', '.join(missing)} "
+            f"— обязательны заголовки ## Таймлайн (timestamps initial "
+            f"response), ## Root cause, ## Action items (FR-3; design D4)")]
     return []
 
 
