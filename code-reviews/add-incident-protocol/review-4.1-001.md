@@ -35,3 +35,13 @@
 - Файл с несколькими post-mortem одного ref (поведение `matches[-1]` — по коду: лексикографически последний, для append-only коррекций приемлемо).
 - Промпты devops/dev и wiki-зеркало — вне среза (этапы ПМ 7 / Won't).
 - Ретроактивность J25 — открытое ОВ-1, не в этом дифе.
+
+## Дополнение независимого прогона (review-001, повторная валидация)
+
+Полный регресс перепроверен: `pytest tests/` — 651 passed; `git diff main... -- scripts/flow_check.py` пуст; тесты TC-J48-001…019 присутствуют (включая poisoned-ctx I-2, SEQUENCE_PREREQS-sync, изоляцию Флоу 1/2/4/5). Ломающее изменение bare-маркера подтверждено как осознанное: задокументировано в enforcer docstring, README-flow-control §52-61 («без префикса enforcer → FLOW_MARKER_INVALID»), README plugins; легаси-тесты test_flow_transition.py переведены на формат `S2-…` — миграционная запись в спеке не требуется сверх ОВ-1/Won't.
+
+| # | Файл:строка | Серьезность | Замечание | Рекомендация |
+|---|---|---|---|---|
+| 6 | scripts/flow_transition.py:1642–1643 | minor | «Одна правка» (I-1) не достигнута в самом flow_transition: `SEVERITY_PREFIXES` — tuple, но `SEVERITY_PREFIX_RE = re.compile(r"^(S[123])-")` захардкожен отдельно. Добавление S4 в tuple обновит regex enforcer'а (он выводит его из импортированного tuple, TC-J48-014), но НЕ regex flow_transition — расхождение слоев: маркер S4 пройдет enforcer, а ворота ответят «неклассифицирован». Синхронизирующий тест покрывает только сторону enforcer. | Вывести regex из tuple: `SEVERITY_PREFIX_RE = re.compile("^(?:" + "|".join(SEVERITY_PREFIXES) + r")-")` + расширить TC-J48-014 проверкой `ft.SEVERITY_PREFIX_RE.match(f"{p}-x")` для каждого префикса. |
+
+Дополнение не меняет вердикт: **approve** (blocker 0, major 1 — прежнее #1, minor 5).
