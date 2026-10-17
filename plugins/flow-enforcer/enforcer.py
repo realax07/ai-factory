@@ -284,9 +284,101 @@ SEQUENCE_PREREQS: dict[int, dict[str, frozenset]] = {
         "express_close": frozenset({"express_task"}),
     },
 }
-# finished_status, означающий, что этап СОСТОЛСЯ (зеркало
+# finished_status, означающий, что этап СОСТОЯЛСЯ (зеркало
 # flowctl.PHASE_COMPLETED_STATUSES; returned = завершен возвратом на доработку).
 COMPLETED_STATUSES = ("accepted", "returned")
+
+# --------------------------------------------- worktree-per-delegation (J51.1)
+# Две активные делегации одного repo обязаны работать в РАЗНЫХ worktree
+# (фактура J51: параллельные dev/QA в общем дереве — транзиентные фейлы
+# тестов на чужих git-операциях). Проверка по реестру сессий
+# (active_sessions.json): другая активная резервация того же repo без
+# выделенного worktree — либо несколько активных в одном worktree → block
+# WORKTREE_MISSING. СВОЙ scope-повтор не отличим в реестре (scope там не
+# хранится), но повторная делегация того же repo с имеющимся worktree
+# проходит (конфликт только «без worktree»/«общий worktree»).
+WORKTREE_MISSING = "WORKTREE_MISSING"
+# Активные статусы резервации (session_check): finished — сессия закрыта.
+WORKTREE_ACTIVE_STATUSES = ("reserved", "running", "needs_attention")
+
+
+def worktree_registry_path() -> Path:
+    registry = os.environ.get("FLOW_ENFORCER_REGISTRY")
+    if registry:
+        return Path(registry)
+    return state_dir() / "active_sessions.json"
+
+
+def _norm_repo_path(p: str) -> str:
+    try:
+        return str(Path(p).expanduser().resolve())
+    except OSError:
+        return str(p)
+
+
+def worktree_conflict(markers: dict) -> str | None:
+    """Текст нарушения worktree-per-delegation (J51.1) или None. Реестр
+    нечитаем → None + WARNING: проверка best-effort поверх ворот prepare
+    (fail-open ТОЛЬКО у этой вспомогательной проверки, сами ворота
+    fail-closed)."""
+    try:
+        data = json.loads(
+            worktree_registry_path().read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return None  # реестра еще нет — норма, без спама в логе
+    except (OSError, ValueError) as exc:
+        log_event({"event": "worktree_gate_unavailable", "level": "WARNING",
+                   "detail": str(exc)})
+        return None
+    if not isinstance(data, dict):
+        return None
+    repo = _norm_repo_path(markers["repo"])
+    others = [s for s in data.get("sessions", [])
+              if isinstance(s, dict)
+              and s.get("status") in WORKTREE_ACTIVE_STATUSES
+              and _norm_repo_path(str(s.get("repo") or "")) == repo]
+    if not others:
+        return None
+    without_wt = [s for s in others if not s.get("worktree")]
+    if without_wt:
+        ids = ", ".join(str(s.get("delegation_id", "?"))
+                        for s in without_wt)
+        return (f"активные делегации того же repo без выделенного worktree: "
+                f"{ids}; параллельная делегация обязана работать в СВОЕМ "
+                "worktree — flowctl prepare --create-worktree (J51.1)")
+    by_wt: dict[str, list[str]] = {}
+    for s in others:
+        by_wt.setdefault(str(s.get("worktree")), []).append(
+            str(s.get("delegation_id", "?")))
+    shared = {wt: ids for wt, ids in by_wt.items() if len(ids) > 1}
+    if shared:
+        detail = "; ".join(f"{', '.join(ids)} → {wt}"
+                           for wt, ids in sorted(shared.items()))
+        return (f"несколько активных делегаций в одном worktree: {detail}; "
+                "каждой параллельной делегации — отдельный worktree (J51.1)")
+    return None
+
+
+def worktree_gate(markers: dict, task_id: str) -> dict | None:
+    """Ворота worktree-per-delegation (J51.1, включены по умолчанию;
+    FLOW_ENFORCER_WORKTREE=0 — выключить): после prepare-ALLOW — нет ли
+    другой активной делегации того же repo без выделенного/различного
+    worktree. Нарушение → block WORKTREE_MISSING."""
+    flag = os.environ.get("FLOW_ENFORCER_WORKTREE", "1").strip().lower()
+    if flag in ("0", "false", "no"):
+        return None
+    conflict = worktree_conflict(markers)
+    if conflict:
+        log_event({"event": "worktree_missing", "level": "WARNING",
+                   "task_id": task_id, "repo": markers["repo"],
+                   "scope": markers["scope"]})
+        return {"action": "block", "message": (
+            f"FLOW-ENFORCER [{WORKTREE_MISSING}]: параллельные делегации "
+            f"одного repo без разных worktree: {conflict}. Создай делегации "
+            "через flowctl prepare --create-worktree (каждой — свое дерево; "
+            "деградация «без worktree» допустима только для одиночной "
+            "делегации).")}
+    return None
 
 SLOW_PREPARE_SECONDS = 10.0
 
@@ -883,6 +975,11 @@ def flow_enforce(tool_name: str, args: dict, task_id: str = "",
                            "prepare_rc": rc})
                 allowed = True
         if allowed:
+            # J51.1: worktree-per-delegation — вторая параллельная делегация
+            # того же repo без разных worktree не проходит (WORKTREE_MISSING).
+            wt_block = worktree_gate(markers, task_id)
+            if wt_block is not None:
+                return wt_block
             return sequence_gate(markers, flow, action, task_id)
         return {"action": "block", "message": (
             f"FLOW-ENFORCER: flowctl prepare отклонил делегацию "
