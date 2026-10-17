@@ -33,7 +33,7 @@ git clone <ai-factory> && cd ai-factory
 python3 scripts/factory_bootstrap.py            # окружение + state + крон вотчдога + приемочные тесты
 ```
 
-Bootstrap: проверяет окружение (python ≥ 3.10, git, npx для openspec), создает state-каталоги (`~/.hermes/state/`, реестр, `flow_mode.json` с **дефолтом shadow**), ставит крон вотчдога (session_watchdog */2 + delegate_watchdog */5), гоняет приемочные тесты (617). Секреты НЕ переносит — кладутся вручную в `~/.hermes/.env`. Режим enforcing включается явно (`flow_mode.py set enforcing`), после shadow-прогона. Подсказку по плагину flow-enforcer (J43) ставит factory_init (см. ниже).
+Bootstrap: проверяет окружение (python ≥ 3.10, git, npx для openspec), создает state-каталоги (`~/.hermes/state/`, реестр, `flow_mode.json` с **дефолтом shadow**), ставит крон вотчдога (session_watchdog */2 + delegate_watchdog */5), гоняет приемочные тесты (664). Секреты НЕ переносит — кладутся вручную в `~/.hermes/.env`. Режим enforcing включается явно (`flow_mode.py set enforcing`), после shadow-прогона. Подсказку по плагину flow-enforcer (J43) ставит factory_init (см. ниже).
 
 ### Настройка GitHub (вручную, один раз на репозиторий)
 
@@ -161,9 +161,9 @@ AI Factory отвечает на каждую: **каждая роль — из�
 
 Баг = расхождение **реализованного** с **спекой**, поэтому БА и СА не участвуют: `BUG-NNN` в `test-model/bugs/` → dev фикс → ревью → merge → regression: keep. Если ожидание не выводимо из существующих Requirements — это фича (Флоу 1); мини-дельта СА обязательна при затрагивании API/схемы. Прецеденты: BUG-001 (2026-09-19); внешний ре-ревью комплект BUG-AF-RECHECK-001..004 (2026-10-13) — обход arch-gate, bypass-подстрока, stale-approve, coverage_matrix.
 
-### Флоу 3: Hotfix на проде
+### Флоу 3: Хотфикс прода + инцидент-протокол (J48, реализован 2026-10-15)
 
-Откат деплоя (бэкап БД + код из снапшота по RUNBOOK) → уведомление Заказчика немедленно → фикс по Флоу 2 параллельно → полный PR-цикл после стабилизации. Контур описан, не обкатан (прод не падал).
+Severity до начала реакции: **S1** (прод недоступен/потеря данных) → откат по RUNBOOK первым действием, разбор после стабилизации; **S2** (деградация при доступном проде) → хотфикс-PR в приоритете; **S3** → обычный Флоу 2. Initial response в окне 0–15 минут; S1/S2 — обязательный post-mortem с уроками в MAP. Формализован change-пакетом `add-incident-protocol` (master-spec `openspec/specs/incident-protocol/spec.md`); живым инцидентом пока не обкатан.
 
 ### Флоу 4: Обслуживание
 
@@ -185,9 +185,9 @@ AI Factory отвечает на каждую: **каждая роль — из�
 | Ворота | Что ловит |
 |---|---|
 | [scripts/flow_check.py](scripts/flow_check.py) | Порядок артефактов: чеклист без спеки, кейсы без чеклиста, approved без ревью, автотесты без TC-трассировки, archive без слияния дельт; **I3**: API-эндпоинт вне спек; качество ТЗ (7 разделов, уникальность FR/NFR, запрет TBD, оценочные формулировки); **H1** «1 кейс = 1 файл». Exit 0/1/2. |
-| **Детерминированный Flow Control** ([docs/README-flow-control.md](docs/README-flow-control.md)) | Исполняемая state-машина: `flow_state` (снимок фактов) → `flow_transition` (ALLOW/DENY/UNKNOWN по графам Флоу 1–5, этапные ворота Заказчика) → `session_check` (атомарная резервация зон, границы записи: renames/symlink) → `gate_runner` (ворота с digest/STALE, provenance review, audit JSONL) → `flowctl` (оркестратор). Режимы shadow/enforcing (`flow_mode.py`); **enforcing включен 2026-10-02** — DENY/UNKNOWN блокируют действие. 617 тестов; ревью-циклы — внутренние + внешний ре-ревью комплект BUG-AF-RECHECK (2026-10-13). |
+| **Детерминированный Flow Control** ([docs/README-flow-control.md](docs/README-flow-control.md)) | Исполняемая state-машина: `flow_state` (снимок фактов) → `flow_transition` (ALLOW/DENY/UNKNOWN по графам Флоу 1–5, этапные ворота Заказчика) → `session_check` (атомарная резервация зон, границы записи: renames/symlink) → `gate_runner` (ворота с digest/STALE, provenance review, audit JSONL) → `flowctl` (оркестратор). Режимы shadow/enforcing (`flow_mode.py`); **enforcing включен 2026-10-02** — DENY/UNKNOWN блокируют действие. 664 тестов; ревью-циклы — внутренние + внешний ре-ревью комплект BUG-AF-RECHECK (2026-10-13). |
 | **Плагин flow-enforcer** ([plugins/flow-enforcer/](plugins/flow-enforcer/), J43/J43.1) | Делегация мимо ворот: каждый `delegate_task` валидируется pre_tool_call-хуком через `flowctl prepare --dry-run` ДО исполнения — план релиза (Ф1/Ф2/Ф4), зоны, BUG-репорт, порядок этапов (`flowctl phase` + sequence-gate). Bypass — только по записи в реестре решений Заказчика (заявка в goal без записи = обычные проверки, fail-closed); актуальная итерация ревью решает (поздний return отменяет старый approve). |
-| [scripts/pr_validate.py](scripts/pr_validate.py) | PR без маркера (BUG-NNN / change-id / [chore]/[docs]/[ops]) и без обязательных файлов; **J11**: Reviewer-Delegation сверяется с реестром — делегация обязана существовать, быть completed и иметь роль `code_reviewer` (self-review/чужая роль = ревью не засчитано); **J26**: PR с диффом `deploy/**`/`RUNBOOK.md` без маркера `[ops]` = FAIL (CI-ворота, `PR_CHANGED_DEPLOY`). |
+| [scripts/pr_validate.py](scripts/pr_validate.py) | PR без маркера (BUG-NNN / change-id / [chore]/[docs]/[ops]) и без обязательных файлов; **J11**: Reviewer-Delegation сверяется с реестром — делегация обязана существовать, быть completed и иметь роль `code_reviewer` (self-review/чужая роль = ревью не засчитано); **J26**: PR с диффом `deploy/**`/`RUNBOOK.md` без маркера `[ops]` = FAIL (CI-ворота, `PR_CHANGED_DEPLOY`); **J50**: PR с UI-дельтой (`frontend/**`, макеты `design/**`) без web-тестов в дифе = FAIL без маркера `[no-ui-tests]` с основанием ≥10 символов (env `PR_CHANGED_UI`/`PR_CHANGED_WEBTESTS`). |
 | [scripts/check_auth_timing.py](scripts/check_auth_timing.py) | AST-контроль auth: bcrypt, dummy-логины, secrets вместо `==`. |
 | [scripts/smoke_static.py](scripts/smoke_static.py) | Класс DEF-002: статик-ресурс, на который ссылается UI, но который не отдается (сверка ссылок с диском + прод-URL требует 200). |
 | `.github/workflows/flow.yml` | Оба валидатора на каждый push/PR — нарушение нельзя смержить. |
