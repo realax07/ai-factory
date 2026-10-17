@@ -18,7 +18,9 @@ Usage:
   .github/workflows/flow.yml,
   openspec/ (скелет specs/ + changes/archive/), test-model/ (checklists/new/reviews/approved/bugs),
   architecture/ (пустая, для map.md архитектора),
-  skills/ — 8 скиллов конвейера (factory-flow + 7 ролевых),
+  tests/ (smoke TC-BOOTSTRAP-001), openspec/config.yaml (root-маркер CLI),
+  skills/ — 12 скиллов конвейера (factory-flow, ролевые + J45: brainstorming,
+  service-decomposition, playwright-pro),
   ПЛЮС плагин flow-enforcer (J43): копия plugins/flow-enforcer/ в
   ~/.hermes/plugins/flow-enforcer/ (машина, не проект) и — если в
   ~/.hermes/config.yaml уже есть блок plugins.enabled — добавление строки
