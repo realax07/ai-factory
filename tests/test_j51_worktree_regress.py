@@ -28,6 +28,7 @@ J51.2 (flowctl regress --change C):
   TC-J51-006  энфорсер: ворота выключаются FLOW_ENFORCER_WORKTREE=0
   TC-J51-007  энфорсер: нечитаемый реестр → WARNING, не блок
   TC-J51-008  энфорсер: чужая активная делегация (другой repo) — не блок
+  TC-J51-009  энфорсер: Worktree-строка чужого формата — ворота не ломаются
   TC-J51-010  regress: маппинг дифф → домены (unit)
   TC-J51-011  regress: источник диффа — staged при недоступном/пустом base
   TC-J51-012  regress: PASS end-to-end, формат артефакта (commit/дата/сьюты/лог)
@@ -38,6 +39,8 @@ J51.2 (flowctl regress --change C):
   TC-J51-016  regress: дифф base...HEAD (коммиченная ветка) — источник в артефакте
   TC-J51-017  regress: пустой дифф → PASS без прогона, note в артефакте
   TC-J51-018  regress: не git-репозиторий → exit 2
+  TC-J51-019  regress: change с ../ → exit 2, ничего не записано (traversal)
+  TC-J51-020  regress: домен затронут, каталога тестов нет → WARN, exit 0
 """
 from __future__ import annotations
 
@@ -336,6 +339,20 @@ class TestEnforcerWorktreeGate:
             "delegate_task", {"goal": flow4_goal(repo)}, "t-j51-008")
         assert res is None
 
+    def test_foreign_format_worktree_string(self, tmp_path, plugin_env,
+                                            monkeypatch):
+        """TC-J51-009: Worktree-строка чужого формата в реестре (не путь)
+        не ломает ворота и не блокирует — трактуется как отдельное дерево
+        (негатив по парсингу worktree-поля)."""
+        repo = make_repo(tmp_path)
+        write_sessions(Path(os.environ["FLOW_ENFORCER_REGISTRY"]), [
+            session("deleg-aaa", repo, worktree="wt:odd-format:007"),
+        ])
+        install_fake_run(monkeypatch, 0, '{"decision": {"status": "ALLOW"}}')
+        res = enforcer.flow_enforce(
+            "delegate_task", {"goal": flow4_goal(repo)}, "t-j51-009")
+        assert res is None
+
 
 # ------------------------------------------------- J51.2: regress
 
@@ -438,13 +455,11 @@ class TestRegressCommand:
         data1 = json.loads(r1.stdout)
         assert data1["final"] is True
         art = repo / "test-model" / "regress" / "j51-demo" / "regress-final.md"
-        assert Path(data1["artifact"]) == art
+        assert data1["artifact"] == str(art)
         assert art.is_file()
-        assert not list(
-            (repo / "test-model" / "regress" / "j51-demo").glob(
-                "regress-*.md")) or all(
-            p.name == "regress-final.md" for p in
-            (repo / "test-model" / "regress" / "j51-demo").iterdir())
+        arts1 = [p.name for p in
+                 (repo / "test-model" / "regress" / "j51-demo").iterdir()]
+        assert arts1 == ["regress-final.md"]
         r2 = flowctl_cmd("regress", "--repo", str(repo),
                          "--change", "j51-demo", "--final", "--json")
         assert r2.returncode == 0
@@ -491,3 +506,58 @@ class TestRegressCommand:
         r = flowctl_cmd("regress", "--repo", str(bare),
                         "--change", "j51-demo")
         assert r.returncode == 2
+
+    def test_regress_rejects_traversal_change(self, tmp_path):
+        """TC-J51-019: change с ../ → exit 2 с FLOWCTL-ERROR, НИЧЕГО не
+        записано ни вне репозитория, ни внутри (path traversal,
+        review-001 #1)."""
+        repo = make_repo(tmp_path)
+        probe = tmp_path / "escaped" / "probe"  # куда старый код писал бы
+        bad_ids = [
+            "../../../escaped/probe",  # escape за пределы репозитория
+            "..",
+            "a/b",
+            "a..b",
+            "",
+        ]
+        for bad in bad_ids:
+            r = flowctl_cmd("regress", "--repo", str(repo),
+                            "--change", bad)
+            assert r.returncode == 2, bad
+            assert "FLOWCTL-ERROR" in r.stderr, bad
+        # вне репозитория не записано ничего
+        assert not probe.exists()
+        assert not (tmp_path / "escaped").exists()
+        # и внутри репозитория тоже (валидация — до mkdir)
+        assert not (repo / "test-model" / "regress").exists()
+        # легитимный id со всеми разрешенными знаками по-прежнему проходит
+        stage(repo, "scripts/x.py", "A = 1\n")
+        ok = flowctl_cmd("regress", "--repo", str(repo),
+                         "--change", "RC-1.2_x", "--json")
+        assert ok.returncode == 0, ok.stdout + ok.stderr
+        assert (repo / "test-model" / "regress" / "RC-1.2_x"
+                / "regress-1.md").is_file()
+
+    def test_regress_domain_without_tests_is_warn(self, tmp_path):
+        """TC-J51-020: дифф затронул frontend/**, но каталога tests/web нет
+        → вердикт WARN (не молчаливый PASS), exit 0, пометка «домен без
+        тестов» в артефакте (review-001 #2)."""
+        repo = tmp_path / "proj-fe"
+        repo.mkdir(parents=True)
+        subprocess.run(["git", "init", "-q", "-b", "main"],
+                       cwd=repo, check=True)
+        write(repo, "README.md", "# r\n")
+        commit_all(repo)
+        stage(repo, "frontend/app.js", "console.log(1);\n")
+        r = flowctl_cmd("regress", "--repo", str(repo),
+                        "--change", "j51-demo", "--json")
+        assert r.returncode == 0, r.stdout + r.stderr
+        data = json.loads(r.stdout)
+        assert data["domains"] == ["tests/web"]
+        assert data["suites"] == []
+        assert data["suites_skipped"] == ["tests/web"]
+        assert data["verdict"] == "WARN"
+        assert data["pytest_exit"] is None
+        text = Path(data["artifact"]).read_text(encoding="utf-8")
+        assert "verdict: WARN" in text
+        assert "домен(ы) без тестов: tests/web" in text

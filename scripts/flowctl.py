@@ -1372,6 +1372,15 @@ def cmd_regress(args) -> int:
         print(f"FLOWCTL-ERROR: не git-репозиторий: {repo}", file=sys.stderr)
         return 2
     change = args.change
+    # change-id протекает из маркеров/автоматизации (недоверенный вход) —
+    # строго в путь записи не идет: только [A-Za-z0-9. _-], без слэшей и '..'
+    # (path traversal, review-001 #1).
+    if (not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}", change)
+            or ".." in change):
+        print(f"FLOWCTL-ERROR: недопустимый change-id: {change!r} — "
+              "разрешены латиница/цифры/._- (до 64 символов, первый — "
+              "буквоцифра), без слэшей и '..'", file=sys.stderr)
+        return 2
     commit = _git_head(repo)
     files, diff_source = regress_diff_files(repo, args.base)
     domains = regress_domains(files)
@@ -1399,7 +1408,17 @@ def cmd_regress(args) -> int:
                 out_head = out_head.decode("utf-8", errors="replace")
             log_tail = "\n".join(out_head.strip().splitlines()[
                 -REGRESS_LOG_TAIL_LINES:]) or f"pytest timeout > {args.timeout}s"
-    verdict = "PASS" if pytest_rc in (None, 0) else "FAIL"
+    # Домен затронут диффом, но каталога тестов не существует — заметный
+    # WARN-исход, не молчаливый PASS (review-001 #2): exit 0, но вердикт
+    # WARN и пометка в артефакте, чтобы воротам не пришел фиктивно зеленый
+    # прогон.
+    domain_without_tests = bool(domains) and not suites
+    if pytest_rc not in (None, 0):
+        verdict = "FAIL"
+    elif domain_without_tests:
+        verdict = "WARN"
+    else:
+        verdict = "PASS"
 
     art_dir = repo / "test-model" / "regress" / change
     art_dir.mkdir(parents=True, exist_ok=True)
@@ -1432,7 +1451,11 @@ def cmd_regress(args) -> int:
     ]
     if timeout_hit:
         lines += [f"- note: pytest прерван по таймауту ({args.timeout}s)", ""]
-    if not suites and not timeout_hit:
+    if domain_without_tests:
+        lines += ["- note: WARN — домен(ы) без тестов: "
+                  f"{', '.join(skipped)} — затронуты диффом, но каталогов "
+                  "не существует; прогон не выполнялся", ""]
+    elif not suites and not timeout_hit:
         lines += ["- note: дифф не затронул существующие тестовые домены — "
                   "прогон не выполнялся", ""]
     lines += ["## Хвост лога (до 50 строк)", "",
@@ -1458,7 +1481,7 @@ def cmd_regress(args) -> int:
                    if args.final else
                    "; нумерованный regress-артефакт финальным не считается"),
     }, args.as_json)
-    return 0 if verdict == "PASS" else 1
+    return 0 if verdict in ("PASS", "WARN") else 1
 
 
 # --------------------------------------------------------------------- CLI
