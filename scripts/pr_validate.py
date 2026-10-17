@@ -21,6 +21,8 @@ import sys
 import urllib.request
 from pathlib import Path
 
+import session_check as _sc  # noqa: E402  (единая валидация change-id, J51)
+
 # --- Наборы обязательных артефактов по типам (контракты) ---
 
 def check_bug(repo: Path, num: str) -> list[str]:
@@ -277,9 +279,18 @@ def check_regress_final(repo: Path, change_id: str) -> list[str]:
       - verdict PASS (FAIL/WARN/нечитаемый — артефакт не засчитан);
       - свежесть ≤ 7 дней (поле date; не читается — mtime файла);
       - commit == HEAD ветки PR, ИЛИ commit — предок HEAD не старше последнего
-        касания измененных файлов (прогон «более свежий, чем изменения»).
+        касания измененных файлов (прогон «более свежий, чем изменения»);
+      - если в артефакте указан worktree — HEAD этого дерева обязан совпадать
+        с commit прогона (сверка «артефакт ↔ дерево», review-003 #4).
     Нарушения: REGRESS_FINAL_MISSING (нет артефакта / не-PASS) и
     REGRESS_FINAL_STALE (протух по времени / commit не совпадает)."""
+    # change-id идет в путь чтения (недоверенный вход из маркера PR) —
+    # единая грамматика с пишущим концом flowctl.cmd_regress (review-003 #3,
+    # review-001 #1): без валидации — traversal чтения + эхо в сообщение.
+    cid_problem = _sc.change_id_problem(change_id)
+    if cid_problem:
+        return [f"pr_validate: {cid_problem} (J51.3: ворота regress-final "
+                "не применимы)"]
     final = repo / "test-model" / "regress" / change_id / "regress-final.md"
     if not final.is_file():
         return [
@@ -336,6 +347,28 @@ def check_regress_final(repo: Path, change_id: str) -> list[str]:
             problems.append(
                 f"test-model/regress/{change_id}/regress-final.md: {reason} "
                 "(REGRESS_FINAL_STALE, J51.3)")
+        # Свежестная сверка «артефакт ↔ дерево» (review-003 #4): если в
+        # артефакте указан worktree прогона, его ТЕКУЩИЙ HEAD обязан
+        # совпадать с commit прогона — дерево, уехавшее вперед после
+        # прогона, инвалидирует артефакт.
+        art_commit = cm.group(1)
+        wm = re.search(r"(?m)^-\s*worktree:\s*(\S+)\s*$", text)
+        if wm:
+            wt = Path(wm.group(1))
+            wt_head = _git(wt, "rev-parse", "HEAD")
+            if not wt_head:
+                problems.append(
+                    f"test-model/regress/{change_id}/regress-final.md: "
+                    f"worktree {wm.group(1)} не читается как git-дерево — "
+                    "сверка «артефакт ↔ дерево» невозможна "
+                    "(REGRESS_FINAL_STALE, J51.3)")
+            elif not wt_head.startswith(art_commit):
+                problems.append(
+                    f"test-model/regress/{change_id}/regress-final.md: "
+                    f"HEAD worktree {wm.group(1)} ({wt_head[:12]}) не "
+                    f"совпадает с commit прогона {art_commit[:12]} — дерево "
+                    "уехало вперед после прогона, артефакт протух "
+                    "(REGRESS_FINAL_STALE, J51.3)")
     return problems
 
 
