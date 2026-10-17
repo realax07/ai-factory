@@ -130,26 +130,50 @@ class TestRegressRunnerPolicy:
         bad = rzp.narrow_zones("regress_runner", ["code-reviews/x/review-1.md"])
         assert bad["zones"] == [] and bad["violations"]
 
-    def test_policy_digest_matches_pinned_commit(self):
-        """TC-R3-003 (minor #2): digest воспроизводим — sha256 таблицы
-        «Зона записи» agents/README.md в запиненном коммите совпадает с
-        записанным, regress_runner есть в запиненной таблице."""
-        m = re.search(r"agents/README\.md@([0-9a-f]+):.*?sha256 ([0-9a-f]{64})",
-                      rzp.POLICY_TABLE_DIGEST)
-        assert m, f"не парсится: {rzp.POLICY_TABLE_DIGEST!r}"
-        rev, digest = m.group(1), m.group(2)
-        txt = subprocess.run(
-            ["git", "-C", str(FACTORY), "show", f"{rev}:agents/README.md"],
-            capture_output=True, text=True, check=True).stdout
+    @staticmethod
+    def _table_digest(txt: str) -> tuple[str, int, int]:
+        """Документированный алгоритм: таблица «Зона записи» (заголовок
+        «| Агент | Режим | …» до последней строки-ряда), join "\\n",
+        sha256 по UTF-8."""
         lines = txt.splitlines()
         start = next(i for i, l in enumerate(lines)
                      if l.startswith("| Агент | Режим | Зона записи"))
         end = start
         while end + 1 < len(lines) and lines[end + 1].startswith("|"):
             end += 1
-        table = "\n".join(lines[start:end + 1])
-        assert hashlib.sha256(table.encode("utf-8")).hexdigest() == digest
-        assert any("regress_runner" in l for l in lines[start:end + 1])
+        return hashlib.sha256(
+            "\n".join(lines[start:end + 1]).encode("utf-8")).hexdigest(), \
+            start, end
+
+    def test_policy_digest_matches_pinned_commit(self):
+        """TC-R3-003 (minor #2): digest воспроизводим. Если запиненный
+        коммит доступен (не shallow) — полная проверка с пином. В
+        shallow-клоне CI `git show` пина падает (128) — проверяем
+        самосогласованность: digest, задокументированным алгоритмом по
+        ТЕКУЩЕМУ agents/README.md, совпадает с POLICY_TABLE_DIGEST
+        (дайджест-в-коде обязан соответствовать текущему файлу)."""
+        m = re.search(r"agents/README\.md@([0-9a-f]+):.*?sha256 ([0-9a-f]{64})",
+                      rzp.POLICY_TABLE_DIGEST)
+        assert m, f"не парсится: {rzp.POLICY_TABLE_DIGEST!r}"
+        rev, digest = m.group(1), m.group(2)
+        pinned = subprocess.run(
+            ["git", "-C", str(FACTORY), "show", f"{rev}:agents/README.md"],
+            capture_output=True, text=True, check=False)
+        if pinned.returncode == 0:
+            # полный путь: таблица в запиненном коммите
+            calc, start, end = self._table_digest(pinned.stdout)
+            lines = pinned.stdout.splitlines()
+            assert calc == digest
+            assert any("regress_runner" in l for l in lines[start:end + 1])
+        else:
+            # shallow / коммит недоступен: самосогласованность кода и файла
+            assert pinned.returncode == 128, pinned.stderr
+            txt = (FACTORY / "agents" / "README.md").read_text(
+                encoding="utf-8")
+            calc, start, end = self._table_digest(txt)
+            assert calc == digest
+            lines = txt.splitlines()
+            assert any("regress_runner" in l for l in lines[start:end + 1])
 
 
 # ------------------------------------------------- minor #3: change-id
