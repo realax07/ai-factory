@@ -1373,13 +1373,12 @@ def cmd_regress(args) -> int:
         return 2
     change = args.change
     # change-id протекает из маркеров/автоматизации (недоверенный вход) —
-    # строго в путь записи не идет: только [A-Za-z0-9. _-], без слэшей и '..'
-    # (path traversal, review-001 #1).
-    if (not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}", change)
-            or ".." in change):
-        print(f"FLOWCTL-ERROR: недопустимый change-id: {change!r} — "
-              "разрешены латиница/цифры/._- (до 64 символов, первый — "
-              "буквоцифра), без слэшей и '..'", file=sys.stderr)
+    # строго в путь записи не идет: единая валидация change_id_problem
+    # (session_check; review-001 #1, review-003 #3 — та же функция на
+    # читающем конце ворот pr_validate.check_regress_final).
+    cid_problem = sc.change_id_problem(change)
+    if cid_problem:
+        print(f"FLOWCTL-ERROR: {cid_problem}", file=sys.stderr)
         return 2
     commit = _git_head(repo)
     files, diff_source = regress_diff_files(repo, args.base)
@@ -1433,6 +1432,10 @@ def cmd_regress(args) -> int:
         f"- change: {change}",
         f"- date: {gr.utcnow_iso()}",
         f"- commit: {commit}",
+        # J51 (review-003 #4): путь дерева прогона — ворота merge сверяют
+        # HEAD этого дерева с commit артефакта (если worktree указан,
+        # его текущий коммит обязан совпадать с проверяемым).
+        f"- worktree: {repo}",
         f"- verdict: {verdict}",
         f"- diff source: {diff_source}",
         f"- changed files: {len(files)}",
