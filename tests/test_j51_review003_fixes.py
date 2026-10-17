@@ -98,17 +98,18 @@ def write_final(repo: Path, *, verdict: str = "PASS",
 
 # ------------------------------------------------- major #1: MAP J51
 
-class TestMapJ51Open:
-    def test_j51_is_open_with_pilot_note(self):
-        """TC-R3-001 (major #1): J51 в MAP — [ ], критерий закрытия —
-        живой параллельный пилот, реализация помечена как замерженная."""
+class TestMapJ51Closed:
+    def test_j51_closed_after_pilot(self):
+        """TC-R3-001 (major #1, обновлен 2026-10-17): живой пилот выполнен
+        (два агента, два worktree, ноль гонок, regress-артефакты — см. раздел
+        «Итог живого пилота» в backlog/J51-*.md) → J51 в MAP закрыт [x]."""
         line = next(l for l in (FACTORY / "backlog" / "MAP.md")
                     .read_text(encoding="utf-8").splitlines()
                     if l.startswith("- [") and "**J51**" in l)
-        assert line.startswith("- [ ] **J51**")
-        assert "живой параллельный пилот" in line
-        assert "два агента" in line and "два worktree" in line
-        assert "после merge" in line
+        assert line.startswith("- [x] **J51**")
+        assert "живой пилот" in line
+        assert "ноль гонок" in line
+        assert "PR #125/#126" in line
 
 
 # ------------------------------------------------- minor #2: политика ролей
