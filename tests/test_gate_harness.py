@@ -27,16 +27,27 @@ Harness-имитация CI-среды:
   TC-J52-033  missing-артефакт: regress-final удален → REGRESS_FINAL_MISSING;
   TC-J52-034  J53-класс: factory_init без openspec CLI в чистом env —
               graceful-деградация (явный WARNING, без FileNotFoundError);
-  TC-J52-035  контроль имитации: env действительно чистый (нет GITHUB_*,
-              HOME пуст, ~/ai-factory нет, openspec не резолвится) —
-              страж от протечки комфортной среды в harness.
+  TC-J52-035  контроль имитации: env действительно чистый (нет GITHUB_*, HOME
+              пуст, ~/ai-factory нет, openspec не резолвится) — страж от
+              протечки комфортной среды в harness;
+  TC-J52-036  fresh-ось (BUG-023/024): мета-коммит code-reviews/** после
+              regress-final → PASS (на пре-фиксном pr_validate — ложный
+              STALE);
+  TC-J52-037  fresh-ось, позитивный контроль: продуктовый tests/** после
+              артефакта → STALE (правка после прогона = перегон).
 
-Регресс обязателен в CI: шаг «Gate harness» в job test-flow-control
-(.github/workflows/flow.yml) — конвейер сам обкатывает свои ворота в
-CI-условиях до merge.
+Эталонные коммиты датированы (GIT_AUTHOR/COMMITTER_DATE, NOW минус N
+минут, шаг ≥60с): без дат секундная гранулярность схлопывает fresh-сверку
+`ts > art_ts` и ось BUG-023/024 непроверяема (review-005 major #1).
+
+Регресс обязателен в CI: harness входит в `pytest tests/` шага Run tests
+job test-flow-control (.github/workflows/flow.yml) — конвейер сам
+обкатывает свои ворота в CI-условиях до merge (отдельный шаг не несет
+отдельного env-контекста — review-005 minor #2).
 """
 from __future__ import annotations
 
+from datetime import datetime, timedelta
 import os
 import shutil
 import subprocess
@@ -78,15 +89,26 @@ Python 3.
 Нет.
 """.format(change=CHANGE)
 
-REVIEW_META = ("Reviewer-Delegation: deleg_harnessreviewer0001\n")
+REVIEW_META = "Reviewer-Delegation: deleg_harnessreviewer0001\n"
+
+
+# Эталонные коммиты датированы (review-005 major #1): шаг ≥60с разносит
+# %ct коммитов — fresh-сверка ворот `ts > art_ts` на секундной гранулярности
+# схлопывалась в равенство, и свежестная ось (BUG-023/024) была непроверяема.
+def ts(minutes_ago: int) -> str:
+    """GIT_AUTHOR/COMMITTER_DATE: NOW минус N минут (ISO 8601)."""
+    return (datetime.now() - timedelta(minutes=minutes_ago)) \
+        .strftime("%Y-%m-%dT%H:%M:%S")
 
 
 # --------------------------------------------------------------- helpers
 
-def git(repo: Path, *args: str) -> str:
+def git(repo: Path, *args: str, date: str | None = None) -> str:
     env = {**os.environ,
            "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t",
            "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}
+    if date:
+        env["GIT_AUTHOR_DATE"] = env["GIT_COMMITTER_DATE"] = date
     r = subprocess.run(["git", "-C", str(repo), *args],
                        capture_output=True, text=True, check=True, env=env)
     return r.stdout.strip()
@@ -98,22 +120,26 @@ def write(repo: Path, rel: str, text: str) -> None:
     p.write_text(text, encoding="utf-8")
 
 
-def commit_all(repo: Path, msg: str) -> str:
+def commit_all(repo: Path, msg: str, date: str | None = None) -> str:
     git(repo, "add", "-A")
-    git(repo, "commit", "-q", "--allow-empty", "-m", msg)
+    git(repo, "commit", "-q", "--allow-empty", "-m", msg, date=date)
     return git(repo, "rev-parse", "HEAD")
 
 
 def make_origin(base: Path) -> tuple[Path, str]:
     """Эталонное origin-репо: main — база; ветка feature/add-widget —
-    change-пакет (h1) и regress-final с commit=h1 (h2). Как реальный PR:
-    прогон regress_runner удостоверяет h1, артефакт коммитится после
-    (мета-коммит h2), CI чекаутит ветку shallow."""
+    change-пакет (h1, NOW-8) и regress-final с commit=h1 (h2, NOW-6).
+    Коммиты датированы с шагом ≥60с (review-005 major #1): fresh-сверка
+    ворот `ts > art_ts` требует разнесенных таймстампов — при секундной
+    гранулярности все сравнения схлопываются в равенство и fresh-ось
+    (BUG-023/024) непроверяема. Как реальный PR: прогон regress_runner
+    удостоверяет h1, артефакт коммитится после (мета-коммит h2), CI
+    чекаутит ветку shallow."""
     origin = base / "origin"
     origin.mkdir(parents=True)
     git(origin, "init", "-q", "-b", "main")
     write(origin, "README.md", "# p\n")
-    commit_all(origin, "init")
+    commit_all(origin, "init", date=ts(10))
 
     git(origin, "checkout", "-q", "-b", f"feature/{CHANGE}")
     write(origin, "requirements.md", REQ_TEXT)
@@ -135,7 +161,7 @@ def make_origin(base: Path) -> tuple[Path, str]:
     write(origin, "tests/test_smoke.py",
           "def test_widget():\n"
           "    assert True  # TC-ADD-001 трассировка\n")
-    c_run = commit_all(origin, "change package")
+    c_run = commit_all(origin, "change package", date=ts(8))
 
     write(origin, f"test-model/regress/{CHANGE}/regress-final.md",
           f"# Regress {CHANGE} — regress-final.md\n\n"
@@ -143,7 +169,7 @@ def make_origin(base: Path) -> tuple[Path, str]:
           "- date: 2026-10-18T12:00:00+00:00\n"
           f"- commit: {c_run}\n"
           "- verdict: PASS\n")
-    commit_all(origin, "regress final")
+    commit_all(origin, "regress final", date=ts(6))
     return origin, c_run
 
 
@@ -285,6 +311,46 @@ class TestHarnessJ53Class:
         assert "Traceback" not in r.stderr
         assert "FileNotFoundError" not in r.stderr
         assert (repo / "docs" / "glossary.md").is_file()
+
+
+# ------------------------------------------- fresh-ось (BUG-023/024)
+
+class TestHarnessFreshAxis:
+    def test_meta_commit_after_artifact_passes(self, green, ci_home,
+                                               tmp_path):
+        """TC-J52-036: мета-коммит (code-reviews/**) ПОСЛЕ regress-final →
+        PASS (exit 0). Датированные коммиты делают fresh-сверку разрешимой:
+        мета исключена (BUG-023/024), продуктовых правок после прогона нет.
+        На пре-фиксных pr_validate (596d262~1: BUG-023, 12496ec~1: BUG-024)
+        тот же кейс дает ложный REGRESS_FINAL_STALE — регрессия исключений
+        мета-путей ловится (на старом make_origin без дат — 3/3 passed)."""
+        origin, _ = green
+        write(origin, f"code-reviews/{CHANGE}/review-002-1.1.md",
+              f"# Review-00002\n\n## Вердикт: approve\n\n{REVIEW_META}")
+        commit_all(origin, "meta: code review after regress", date=ts(2))
+        clone = shallow_clone_ci(origin, tmp_path / "ci-clone")
+        r = run_gate("pr_validate.py", str(clone), "--id", f"[{CHANGE}]",
+                     home=ci_home)
+        assert r.returncode == 0, r.stdout + r.stderr
+        assert "PR-VALIDATE OK" in r.stdout
+
+    def test_product_commit_after_artifact_stale(self, green, ci_home,
+                                                 tmp_path):
+        """TC-J52-037: продуктовый коммит (tests/**) ПОСЛЕ regress-final →
+        REGRESS_FINAL_STALE (exit 1) — позитивный контроль fresh-ветки
+        ворот: commit предок HEAD (ancestry проходит), но файл новее
+        прогона (ts > art_ts) — датированные коммиты делают сверку
+        осмысленной, правка после прогона = перегон."""
+        origin, _ = green
+        write(origin, "tests/test_widget_extra.py",
+              "def test_widget_extra():\n    assert True\n")
+        commit_all(origin, "tests: touch after regress", date=ts(2))
+        clone = shallow_clone_ci(origin, tmp_path / "ci-clone")
+        r = run_gate("pr_validate.py", str(clone), "--id", f"[{CHANGE}]",
+                     home=ci_home)
+        assert r.returncode == 1
+        assert "REGRESS_FINAL_STALE" in r.stdout
+        assert "старше последнего касания" in r.stdout
 
 
 # ------------------------------------------- контроль чистоты имитации
