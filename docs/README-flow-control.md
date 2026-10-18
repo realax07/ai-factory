@@ -144,6 +144,13 @@ expiration не истек. Непустая строка без записи ж
 сворачивает частичные — BUG-005). Артефакт
 `test-model/regress/<change>/regress-<N>.md` (append-only): verdict,
 commit, worktree, сьюты, хвост лога. `--final` пишет `regress-final.md`.
+Проектная карта доменов (`test-model/regress-domains.json`, J52-w1.3)
+делает домены кейс-каталогами и при активной карте НЕ сворачивает их:
+multi-domain прогон — один pytest-вызов, тот же профиль, что до дедупа
+BUG-005 — bare `from conftest import` в кейс-доменах роняет коллекцию
+(pytest exit 2 → FAIL), правило — хелперы через фикстуры (шов J51 #8).
+Домен, затронутый диффом без каталога тестов (в т.ч. частичный skip при
+активной карте) — WARN-вердикт, не молчаливый PASS.
 
 Ворота merge (pr_validate, change-PR): regress-final обязателен — PASS,
 commit-предок HEAD (в CI: full-history checkout + GitHub API compare —

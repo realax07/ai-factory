@@ -72,6 +72,8 @@ Usage:
         [--registry PATH] [--state PATH]
     flowctl.py reconcile [--repo PATH] [--delegation-id ID]
         [--registry PATH] [--state PATH] [--audit PATH] [--json]
+    flowctl.py release <correlation-id> [--reason R] [--registry PATH]
+        [--state PATH] [--audit PATH] [--json]
     flowctl.py regress --change C [--repo PATH] [--base REF] [--final]
         [--timeout SEC] [--json]
 
@@ -82,6 +84,7 @@ PASS); 1 — DENY/STALE_SNAPSHOT/returned (regress — FAIL); 2 — UNKNOWN/ош
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import subprocess
@@ -242,8 +245,16 @@ def _emit(payload: dict, as_json: bool) -> None:
 
 
 def registry_transition(registry_path: Path, delegation_id: str, to: str,
-                        reason: str, evidence: str) -> dict:
-    """Смена статуса reservation с evidence (жизненный цикл ТЗ 04)."""
+                        reason: str, evidence: str,
+                        expect_from: str | None = None) -> dict:
+    """Смена статуса reservation с evidence (жизненный цикл ТЗ 04).
+
+    expect_from (review-001 #1, гонка release×run): если задан,
+    фактический статус сверяется ПОД ЛОКОМ — после захвата лока, перед
+    transition. Пара «prev→to», прочитанная снаружи, не пройдет, если
+    между чтением и локом сессию перевел другой процесс (например,
+    `flowctl run` агента: reserved→running).
+    """
     lock = sc._acquire_lock(registry_path)
     try:
         data, err = sc.registry_load(registry_path)
@@ -258,6 +269,12 @@ def registry_transition(registry_path: Path, delegation_id: str, to: str,
         if session is None:
             return {"ok": False, "reason": sc.MISSING_INPUT,
                     "details": [f"reservation {delegation_id} не найден"]}
+        current = session.get("status")
+        if expect_from is not None and current != expect_from:
+            return {"ok": False, "reason": "status_changed",
+                    "details": [f"статус изменился под локом: ожидался "
+                                f"{expect_from!r}, фактический {current!r}"],
+                    "current_status": current}
         sc.transition(session, to, reason, evidence)
         sc.registry_write(registry_path, data)
         return {"ok": True, "session": session}
@@ -372,6 +389,63 @@ def _status_exit(status: str) -> int:
     return {ft.ALLOW: 0, ft.DENY: 1}.get(status, 2)
 
 
+# ------------------------------------------------- ветка (J52-w1.1: деривация)
+
+
+# Шов пилота J51 #1: ветки деривились обрезкой correlation-id до 8 символов
+# (j51-pilot-A/B коллизировали в одну ветку flow/j51-pilo). Правило J52:
+# ветка — из ПОЛНОГО correlation-id; если полный id в имя ветки не помещается
+# (длина) или небезопасен как компонент git-ref (чужие символы, "..", ".lock",
+# ведущий "-") — детерминированный суффикс-хэш sha1[:8] ОТ ПОЛНОГО id (не
+# обрезка: разные id с общим префиксом дают разные хэши).
+BRANCH_PREFIX = "flow"
+BRANCH_MAX_ID_LEN = 40         # uuid4().hex (=32) помещается целиком
+_BRANCH_SAFE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/+-]*$")
+
+
+def _branch_id_ok(cid: str) -> bool:
+    """Полный correlation-id годится как хвост имени git-ветки."""
+    if not cid or len(cid) > BRANCH_MAX_ID_LEN:
+        return False
+    if ".." in cid or "@{" in cid:
+        return False
+    if cid.endswith(".lock") or cid.endswith("/") or cid.endswith("."):
+        return False
+    # review-001 #2 (minor): _BRANCH_SAFE_RE пропускал формы, которые git
+    # отвергает как имя ветки: пустые компоненты («a//b»), компонент с
+    # ведущей точкой («a/.x») или с хвостом «.lock» («a.lock/b»). Для
+    # таких cid ветка всегда невалидна → prepare деградировал бы в
+    # WARN-работу в общем дереве вместо детерминированного хэш-фолбэка.
+    if "//" in cid:
+        return False
+    parts = cid.split("/")
+    if any(p.startswith(".") or p.endswith(".lock") for p in parts):
+        return False
+    if not _BRANCH_SAFE_RE.match(cid):
+        return False
+    # Финальный арбитр — сам git: не прошел check-ref-format → хэш-фолбэк.
+    # git недоступен — доверяем явным правилам выше (для символов,
+    # допускаемых _BRANCH_SAFE_RE, они покрывают правила git полностью).
+    try:
+        proc = subprocess.run(
+            ["git", "check-ref-format", "--branch", f"{BRANCH_PREFIX}/{cid}"],
+            capture_output=True, text=True,
+        )
+    except OSError:
+        return True
+    return proc.returncode == 0
+
+
+def branch_name_for(correlation: str) -> str:
+    """J52-w1.1: имя ветки делегации — полный correlation-id; длинный/небезопасный
+    id → flow/<sha1[:8]> от полного id. Детерминированно, без обрезки префикса."""
+    cid = (correlation or "").strip()
+    if _branch_id_ok(cid):
+        return f"{BRANCH_PREFIX}/{cid}"
+    digest = hashlib.sha1(cid.encode("utf-8")).hexdigest()[:8]
+    return f"{BRANCH_PREFIX}/{digest}"
+
+
 # ---------------------------------------------------------------- prepare
 
 
@@ -407,6 +481,10 @@ def cmd_prepare(args) -> int:
     zones = narrowed["zones"]
     policy_violations = narrowed["violations"]
     policy_version = narrowed["policy_version"]
+    # J52-w1.1: ветка делегации — полный correlation-id (или хэш-суффикс),
+    # не обрезка до 8 символов (шов пилота J51 #1: коллизии префиксов).
+    derived_branch = args.branch or (
+        branch_name_for(correlation) if args.create_worktree else None)
     plan = {
         "role": args.role,
         "action": args.action,
@@ -418,7 +496,7 @@ def cmd_prepare(args) -> int:
         "zone_violations": policy_violations,
         "worktree": args.worktree
         or (f"<repo>-worktrees/{delegation_id}" if args.create_worktree else None),
-        "branch": args.branch,
+        "branch": derived_branch,
         "gates": decision.required_gates,
         "human_gate": _approval_summary(args.approval_ref),
         "decision": decision.to_dict(),
@@ -465,7 +543,7 @@ def cmd_prepare(args) -> int:
         "scope": snapshot["scope"],
         "zones": sorted(zones),
         "owner_pm": args.owner_pm,
-        "worktree": args.worktree, "branch": args.branch,
+        "worktree": args.worktree, "branch": derived_branch,
     })
     existing = state["runs"].get(correlation)
     if existing is not None:
@@ -508,7 +586,7 @@ def cmd_prepare(args) -> int:
             "zones": zones,
             "policy_version": policy_version,
             "worktree": None,
-            "branch": args.branch,
+            "branch": derived_branch,
             "goal_path": None,
             "registry": str(registry_path),
             "owner_pm": args.owner_pm,
@@ -558,7 +636,7 @@ def cmd_prepare(args) -> int:
                   file=sys.stderr)
             return 2
     elif args.create_worktree:
-        branch = args.branch or f"flow/{correlation[:8]}"
+        branch = derived_branch or branch_name_for(correlation)
         proc = subprocess.run(
             ["bash", str(SCRIPTS / "session_worktree.sh"), "create",
              str(repo), delegation_id, branch, _git_head(repo)],
@@ -587,7 +665,7 @@ def cmd_prepare(args) -> int:
         "paths": zones,
         "policy_version": policy_version,
         "worktree": worktree,
-        "branch": args.branch,
+        "branch": derived_branch,
         "base_sha": _git_head(base_tree),
         "snapshot_digest": snapshot["snapshot_digest"],
     }, registry_path)
@@ -626,7 +704,7 @@ def cmd_prepare(args) -> int:
             "zones": zones,
             "policy_version": policy_version,
             "worktree": worktree,
-            "branch": args.branch,
+            "branch": derived_branch,
             "goal_path": None,
             "registry": str(registry_path),
             "owner_pm": args.owner_pm,
@@ -672,7 +750,7 @@ def cmd_prepare(args) -> int:
         "zone_violations": policy_violations,
         "worktree": worktree,
         "warnings": warnings,
-        "branch": args.branch,
+        "branch": derived_branch,
         "goal_path": str(goal_path),
         "registry": str(registry_path),
         "owner_pm": args.owner_pm,
@@ -1294,6 +1372,162 @@ def cmd_reconcile(args) -> int:
     return 0
 
 
+# ---------------------------------------------------------------- release
+# J52-w1.2 (шов пилота J51 #3): needs_attention/reserved-сессии держат зоны,
+# явного выхода у ПМ не было (reconcile зоны не освобождает — «разбор и
+# явное решение ПМ» без механики). release — это явное решение ПМ: сессия
+# переводится в статус "released" (зона освобождена), НИЧЕГО не удаляется
+# молча: запись в реестре и worktree сохраняются, решение с причиной
+# фиксируется в audit (append-only JSONL) и в записи цикла state.
+
+# RELEASE_SCHEMA (review-001 #5): версионирование release-события —
+# записывается в audit-событие release (release_schema), не мертвая
+# константа.
+RELEASE_SCHEMA = "flowctl-release/1"
+RELEASE_ELIGIBLE = ("reserved", "needs_attention")
+RELEASE_DEFAULT_REASON = "явное решение ПМ: сброс сессии без штатного выхода"
+
+
+def cmd_release(args) -> int:
+    cid = (args.correlation_id_opt or args.correlation_pos or "").strip()
+    if (args.correlation_id_opt and args.correlation_pos
+            and args.correlation_id_opt.strip() != cid):
+        print("FLOWCTL-ERROR: correlation-id задан дважды (позиционно и "
+              "--correlation-id) с разными значениями", file=sys.stderr)
+        return 2
+    if not cid:
+        print("FLOWCTL-ERROR: укажи correlation-id (позиционно или "
+              "--correlation-id)", file=sys.stderr)
+        return 2
+    reason = (args.reason or "").strip() or RELEASE_DEFAULT_REASON
+    registry_path = Path(args.registry) if args.registry else (
+        Path.home() / ".hermes" / "state" / "active_sessions.json")
+    state_path = Path(args.state) if args.state else default_state_path(
+        args.registry)
+    state = state_load(state_path)
+
+    record = state["runs"].get(cid)
+    if record is None:
+        _emit({
+            "schema_version": OUTPUT_SCHEMA, "command": "release",
+            "correlation_id": cid, "released": False,
+            "reason": sc.MISSING_INPUT,
+            "note": "нет записи цикла для этого correlation ID — release "
+                    "не выполняется, ничего не тронуто",
+        }, args.as_json)
+        return 2
+    delegation_id = record.get("delegation_id", "")
+
+    # Источник решения — факт реестра (контракт §13), не state.
+    data, err = sc.registry_load(registry_path)
+    if err:
+        _emit({
+            "schema_version": OUTPUT_SCHEMA, "command": "release",
+            "correlation_id": cid, "released": False,
+            "reason": sc.REGISTRY_ERROR, "details": [err],
+        }, args.as_json)
+        return 2
+    session = next(
+        (s for s in data.get("sessions", [])
+         if isinstance(s, dict) and s.get("delegation_id") == delegation_id),
+        None)
+    if session is None:
+        _emit({
+            "schema_version": OUTPUT_SCHEMA, "command": "release",
+            "correlation_id": cid, "released": False,
+            "reason": sc.MISSING_INPUT,
+            "note": f"reservation {delegation_id} не найдена в реестре — "
+                    "release не выполняется",
+        }, args.as_json)
+        return 2
+
+    prev = session.get("status")
+    if prev == "released":
+        # Идемпотентность: сброс уже выполнен и зафиксирован; повтор —
+        # no-op (audit не дублируется).
+        _emit({
+            "schema_version": OUTPUT_SCHEMA, "command": "release",
+            "correlation_id": cid, "released": True, "idempotent": True,
+            "delegation_id": delegation_id, "from_status": prev,
+            "note": "сессия уже released — повтор без действия",
+        }, args.as_json)
+        return 0
+    if prev not in RELEASE_ELIGIBLE:
+        _emit({
+            "schema_version": OUTPUT_SCHEMA, "command": "release",
+            "correlation_id": cid, "released": False, "refused": True,
+            "delegation_id": delegation_id, "from_status": prev,
+            "note": f"статус {prev!r} не подлежит release (разрешены: "
+                    f"{', '.join(RELEASE_ELIGIBLE)}) — сессия НЕ тронута; "
+                    "штатные пути: finish (running), разбор ПМ",
+        }, args.as_json)
+        return 1
+
+    tr = registry_transition(
+        registry_path, delegation_id, "released",
+        f"flowctl release: {reason}",
+        f"явное решение ПМ (correlation {cid}); работа/файлы сохранены",
+        expect_from=prev)
+    if not tr["ok"]:
+        if tr.get("reason") == "status_changed":
+            # review-001 #1 (гонка release×run): между чтением prev и
+            # захватом лока сессию перевел другой процесс (агент
+            # стартовал). Валидация под локом — refusing, реестр не
+            # тронут; решение за ПМ: повторить release по факту.
+            now = tr.get("current_status")
+            _emit({
+                "schema_version": OUTPUT_SCHEMA, "command": "release",
+                "correlation_id": cid, "released": False, "refused": True,
+                "delegation_id": delegation_id, "from_status": prev,
+                "status_now": now,
+                "note": f"статус изменился, повтори release (ожидался "
+                        f"{prev!r}, фактически {now!r}) — сессия НЕ тронута",
+            }, args.as_json)
+            return 1
+        _emit({
+            "schema_version": OUTPUT_SCHEMA, "command": "release",
+            "correlation_id": cid, "released": False,
+            "reason": tr.get("reason"), "details": tr.get("details", []),
+        }, args.as_json)
+        return 2
+
+    def _mutate(st: dict) -> None:
+        rec = st["runs"][cid]
+        rec["status"] = "released"
+        rec.setdefault("lifecycle", {}).setdefault("history", []).append({
+            "at": gr.utcnow_iso(), "from": prev, "to": "released",
+            "reason": reason,
+            "evidence": "flowctl release: явное решение ПМ"})
+        rec["release"] = {
+            "at": gr.utcnow_iso(), "from_status": prev, "reason": reason,
+            "worktree_preserved": bool(rec.get("worktree")),
+        }
+
+    state_write_locked(state_path, state, _mutate)
+    audit_written = False
+    if args.audit:
+        gr.append_audit_event(
+            args.audit, "release", cid, scope=record.get("scope") or {},
+            delegation_id=delegation_id, from_status=prev, reason=reason,
+            release_schema=RELEASE_SCHEMA,
+            worktree=record.get("worktree"),
+            note="ничего не удалено молча: запись реестра (released) и "
+                 "worktree сохранены; решение ПМ зафиксировано")
+        audit_written = True
+    _emit({
+        "schema_version": OUTPUT_SCHEMA, "command": "release",
+        "correlation_id": cid, "released": True,
+        "delegation_id": delegation_id, "from_status": prev,
+        "status": "released", "reason": reason,
+        "worktree_preserved": bool(record.get("worktree")),
+        "audit_written": audit_written,
+        "note": "сессия сброшена решением ПМ: зона освобождена (статус "
+                "released вне ZONE_HOLDING); запись реестра и worktree "
+                "сохранены, решение — в audit",
+    }, args.as_json)
+    return 0
+
+
 # ---------------------------------------------------------------- regress
 # J51.2: регресс своего куска — механически. Дифф (base...HEAD, иначе staged)
 # детерминированно маппится в затронутые тестовые домены, гоняются только они,
@@ -1310,6 +1544,51 @@ REGRESS_DOMAIN_RULES = (
     ("frontend/", "tests/web"),
     ("backend/", "tests/api"),
 )
+# J52-w1.3 (решение Заказчика 2026-10-18): гранулярность доменов regress =
+# структура тест-кейсов (approved-кейсы группируются по доменам; маппинг
+# диффа резонирует с кейс-структурой, не с техническими путями). Проект
+# задает карту доменов файлом test-model/regress-domains.json (контент у
+# проекта — как J53-глоссарий):
+#   {"rules": [{"prefix": "frontend/src/editor/", "domain": "tests/editor"},
+#              {"prefix": "services/billing/",  "domain": "tests/billing"}]}
+# Правила проекта применяются ДО дефолтных; файла нет (или он не читается /
+# без валидных правил) — дефолтное поведение. При активной карте домены
+# проекта НЕ сворачиваются в общий tests/ (кейс-структура проекта — его
+# ответственность; несуществующий каталог домена → заметный WARN regress,
+# не молчаливый PASS).
+REGRESS_DOMAIN_MAP_REL = "test-model/regress-domains.json"
+
+
+def load_domain_map(repo: Path) -> tuple[tuple[tuple[str, str], ...], str]:
+    """Проектная карта доменов (J52-w1.3). Возвращает (правила, источник):
+    карты нет → ((), "default ..."); правила проекта предшествуют дефолтным.
+    Битая карта — НЕ молчаливый дефолт: диагностика уходит в исход regress
+    и артефакт, решение о починке карты — за проектом/ПМ."""
+    path = repo / REGRESS_DOMAIN_MAP_REL
+    if not path.is_file():
+        return (), f"default (карта {REGRESS_DOMAIN_MAP_REL} не задана)"
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        return (), (f"error: карта {REGRESS_DOMAIN_MAP_REL} не прочитана "
+                    f"({exc}) — применен дефолт")
+    rules = data.get("rules") if isinstance(data, dict) else None
+    if not isinstance(rules, list):
+        return (), (f"error: карта {REGRESS_DOMAIN_MAP_REL}: ожидается "
+                    "{\"rules\": [...]} — применен дефолт")
+    parsed: list[tuple[str, str]] = []
+    for r in rules:
+        if not isinstance(r, dict):
+            continue
+        prefix, domain = r.get("prefix"), r.get("domain")
+        if (isinstance(prefix, str) and isinstance(domain, str)
+                and prefix and domain):
+            parsed.append((prefix.replace("\\", "/").lstrip("./"), domain))
+    if not parsed:
+        return (), (f"error: карта {REGRESS_DOMAIN_MAP_REL}: нет валидных "
+                    "правил (нужны prefix+domain) — применен дефолт")
+    return (tuple(parsed),
+            f"project map {REGRESS_DOMAIN_MAP_REL} ({len(parsed)} правил(а))")
 
 
 def regress_diff_files(repo: Path, base: str) -> tuple[list[str], str]:
@@ -1335,13 +1614,29 @@ def regress_diff_files(repo: Path, base: str) -> tuple[list[str], str]:
                 else "git diff --cached (staged)")
 
 
-def regress_domains(files: list[str]) -> list[str]:
+def regress_domains(files: list[str], rules=REGRESS_DOMAIN_RULES,
+                    collapse: bool = True) -> list[str]:
     """J51.2: детерминированный маппинг диффа → затронутые тестовые домены:
     frontend/** → tests/web, backend/** → tests/api, всё остальное (в т.ч.
     scripts/) → tests/. Порядок — по правилам, без дублей.
 
-    BUG-video-001 (дедуп доменов, ДО прогона): частичные домены
-    (tests/api, tests/web) лежат под общим каталогом tests/; прогон
+    J52-w1.3: правила можно передать (проектная карта доменов = структура
+    тест-кейсов; правила проекта предшествуют дефолтным). collapse=False
+    (активная проектная карта) отключает свертку частичных доменов в общий
+    tests/ — кейс-домены проекта это реальные каталоги; прогон только
+    затронутых кейс-доменов и есть цель карты.
+
+    J52 (review-001 #4, резидуальный риск BUG-005 при активной карте):
+    multi-domain прогон — ОДИН pytest-вызов (`pytest tests/editor
+    tests/billing`) — тот же профиль, что до дедупа: bare
+    `from conftest import ...` в кейс-доменах уронит коллекцию
+    (pytest exit 2 → verdict FAIL, ворота не пропустят). Карта
+    «безопасна» только при правиле «хелперы через фикстуры»
+    (шов J51 #8, скилл ekotov-factory-pipeline,
+    references/regress-final-gates.md).
+
+    BUG-video-001 (дедуп доменов, ДО прогона; дефолтное поведение): частичные
+    домены (tests/api, tests/web) лежат под общим каталогом tests/; прогон
     частичных ВМЕСТЕ с tests/ (или нескольких частичных в одном
     pytest-вызове) рождает коллизию conftest для bare-импортов —
     pytest exit 2 на коллекции. Если в маппинге присутствует общий домен
@@ -1354,7 +1649,7 @@ def regress_domains(files: list[str]) -> list[str]:
     other = False
     for rel in files:
         norm = rel.replace("\\", "/").lstrip("./")
-        for prefix, domain in REGRESS_DOMAIN_RULES:
+        for prefix, domain in rules:
             if norm.startswith(prefix):
                 if domain not in domains:
                     domains.append(domain)
@@ -1363,6 +1658,8 @@ def regress_domains(files: list[str]) -> list[str]:
             other = True
     if other and "tests" not in domains:
         domains.append("tests")
+    if not collapse:
+        return domains
     partial = [d for d in domains if d != "tests"]
     if "tests" in domains or len(partial) > 1:
         return ["tests"]
@@ -1396,7 +1693,13 @@ def cmd_regress(args) -> int:
         return 2
     commit = _git_head(repo)
     files, diff_source = regress_diff_files(repo, args.base)
-    domains = regress_domains(files)
+    # J52-w1.3: проектная карта доменов (структура тест-кейсов) приоритетна
+    # перед техническим дефолтом; ее отсутствие/битость — не молчаливый
+    # дефолт, источник/диагностика идут в исход и артефакт.
+    project_rules, domain_map_note = load_domain_map(repo)
+    domains = regress_domains(
+        files, project_rules + REGRESS_DOMAIN_RULES,
+        collapse=not bool(project_rules))
     suites = [d for d in domains if (repo / d).is_dir()]
     skipped = [d for d in domains if d not in suites]
 
@@ -1422,13 +1725,15 @@ def cmd_regress(args) -> int:
             log_tail = "\n".join(out_head.strip().splitlines()[
                 -REGRESS_LOG_TAIL_LINES:]) or f"pytest timeout > {args.timeout}s"
     # Домен затронут диффом, но каталога тестов не существует — заметный
-    # WARN-исход, не молчаливый PASS (review-001 #2): exit 0, но вердикт
+    # WARN-исход, не молчаливый PASS (review-001 #2/#3): exit 0, но вердикт
     # WARN и пометка в артефакте, чтобы воротам не пришел фиктивно зеленый
-    # прогон.
+    # прогон. Частичный skip (часть доменов прогнана, часть без каталога) —
+    # тоже WARN: затронутый диффом кейс-домен карты остался непокрыт.
     domain_without_tests = bool(domains) and not suites
+    partial_skip = bool(skipped) and not domain_without_tests
     if pytest_rc not in (None, 0):
         verdict = "FAIL"
-    elif domain_without_tests:
+    elif domain_without_tests or partial_skip:
         verdict = "WARN"
     else:
         verdict = "PASS"
@@ -1452,6 +1757,7 @@ def cmd_regress(args) -> int:
         f"- worktree: {repo}",
         f"- verdict: {verdict}",
         f"- diff source: {diff_source}",
+        f"- domain map: {domain_map_note}",
         f"- changed files: {len(files)}",
     ]
     lines += [f"  - {f}" for f in files[:50]]
@@ -1472,6 +1778,10 @@ def cmd_regress(args) -> int:
         lines += ["- note: WARN — домен(ы) без тестов: "
                   f"{', '.join(skipped)} — затронуты диффом, но каталогов "
                   "не существует; прогон не выполнялся", ""]
+    elif partial_skip:
+        lines += ["- note: WARN — частичный skip доменов (нет каталога): "
+                  f"{', '.join(skipped)} — затронуты диффом, но не покрыты "
+                  "прогоном", ""]
     elif not suites and not timeout_hit:
         lines += ["- note: дифф не затронул существующие тестовые домены — "
                   "прогон не выполнялся", ""]
@@ -1485,6 +1795,7 @@ def cmd_regress(args) -> int:
         "verdict": verdict,
         "final": bool(args.final),
         "diff_source": diff_source,
+        "domain_map": domain_map_note,
         "changed_files": len(files),
         "domains": domains,
         "suites": suites,
@@ -1638,6 +1949,23 @@ def main(argv: list[str] | None = None) -> int:
     p_rec.add_argument("--audit", default=None)
     p_rec.add_argument("--json", action="store_true", dest="as_json")
     p_rec.set_defaults(func=cmd_reconcile)
+
+    # J52-w1.2: явный сброс needs_attention/reserved-сессии решением ПМ
+    # (ничего не удаляется молча; решение — в audit).
+    p_rel = sub.add_parser(
+        "release",
+        help="явный сброс needs_attention/reserved-сессии решением ПМ")
+    p_rel.add_argument("correlation_pos", nargs="?", default=None,
+                       help="correlation-id (позиционно)")
+    p_rel.add_argument("--correlation-id", dest="correlation_id_opt",
+                       default=None)
+    p_rel.add_argument("--reason", default=None,
+                       help="причина/основание решения ПМ (в audit)")
+    p_rel.add_argument("--registry", default=None)
+    p_rel.add_argument("--state", default=None)
+    p_rel.add_argument("--audit", default=None)
+    p_rel.add_argument("--json", action="store_true", dest="as_json")
+    p_rel.set_defaults(func=cmd_release)
 
     # J51.2: регресс затронутых доменов своего куска (+ regress-final, J51.3).
     p_reg = sub.add_parser(
