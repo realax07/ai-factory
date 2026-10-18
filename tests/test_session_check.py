@@ -287,6 +287,37 @@ print("WIN" if r["allowed"] else "LOSE")
         assert sorted(outs) == ["LOSE", "WIN"], outs
         assert len(registry_sessions(reg)) == 1
 
+    def test_lock_with_empty_pid_file_is_not_stolen(self, tmp_path):
+        """BUG-022: пустой pid-файл лока — живой владелец в окне между
+        mkdir() и записью pid; прежний код трактовал pid_alive("") == False
+        как «мертвый владелец» и мгновенно снимал живой лок → двое внутри
+        критической секции (CI: ['WIN','WIN']). Теперь пустой pid ждет
+        как живой (TC-SCH-002)."""
+        reg = make_registry(tmp_path)
+        lock = reg.parent / (reg.name + ".lock")
+        lock.mkdir()
+        (lock / "pid").write_text("", encoding="utf-8")
+        with pytest.raises(TimeoutError):
+            sc._acquire_lock(reg, timeout=0.4)
+        assert lock.is_dir()  # лок живого владельца не снят
+
+    def test_lock_of_dead_owner_is_stolen_live_is_not(self, tmp_path):
+        """BUG-022: восстановление семантики лока — мертвый владелец
+        (pid не существует) снимается и лок захватывается; живой владелец
+        (pid существует) держит лок до таймаута (TC-SCH-002)."""
+        reg = make_registry(tmp_path)
+        lock = reg.parent / (reg.name + ".lock")
+        # Живой владелец: pid текущего тестового процесса.
+        lock.mkdir()
+        (lock / "pid").write_text(str(os.getpid()), encoding="utf-8")
+        with pytest.raises(TimeoutError):
+            sc._acquire_lock(reg, timeout=0.4)
+        # Мертвый владелец: pid заведомо не существует (> pid_max 2^22).
+        (lock / "pid").write_text("999999999", encoding="utf-8")
+        got = sc._acquire_lock(reg, timeout=2.0)
+        assert got == lock
+        sc._release_lock(got)
+
     def test_broken_registry_is_error_not_silent(self, tmp_path):
         reg = make_registry(tmp_path, "{not json")
         r = sc.reserve(req(repo=str(tmp_path), delegation_id="d1"), reg)
