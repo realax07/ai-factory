@@ -280,6 +280,9 @@ def check_regress_final(repo: Path, change_id: str) -> list[str]:
       - свежесть ≤ 7 дней (поле date; не читается — mtime файла);
       - commit == HEAD ветки PR, ИЛИ commit — предок HEAD не старше последнего
         касания измененных файлов (прогон «более свежий, чем изменения»);
+        сам артефакт regress-final.md и test-model/regress/<change-id>/**
+        того же change из «измененных файлов» исключены (BUG-023: артефакт
+        коммитится после прогона и всегда новее удостоверяемого кода);
       - если в артефакте указан worktree — HEAD этого дерева обязан совпадать
         с commit прогона (сверка «артефакт ↔ дерево», review-003 #4).
     Нарушения: REGRESS_FINAL_MISSING (нет артефакта / не-PASS) и
@@ -354,7 +357,7 @@ def check_regress_final(repo: Path, change_id: str) -> list[str]:
             "не читается — артефакт не от flowctl regress "
             "(REGRESS_FINAL_STALE, J51.3)")
     else:
-        reason = _regress_commit_problem(repo, cm.group(1))
+        reason = _regress_commit_problem(repo, cm.group(1), change_id)
         if reason:
             # BUG-022: неверифицируемая ancestry в shallow-клоне — отдельный
             # явный тег UNKNOWN_ANCESTRY (не ложный REGRESS_FINAL_STALE).
@@ -463,9 +466,17 @@ def _github_compare_ancestor(head: str, commit: str) -> bool | None:
     return None
 
 
-def _regress_commit_problem(repo: Path, commit: str) -> str | None:
+def _regress_commit_problem(repo: Path, commit: str,
+                            change_id: str = "") -> str | None:
     """J51.3: commit артефакта == HEAD ветки PR, ИЛИ предок HEAD не старше
     последнего касания измененных файлов. Возвращает текст проблемы или None.
+
+    BUG-023: сам артефакт regress-final.md и весь test-model/regress/<cid>/
+    того же change исключаются из «измененных файлов»: артефакт коммитится
+    ПОСЛЕ прогона и потому всегда новее удостоверяемого кода — без
+    исключения свежестная сверка вечно дает REGRESS_FINAL_STALE
+    (ворота самоубийственны). Regress-артефакты ДРУГИХ change не
+    исключаются — они обычные измененные файлы.
 
     BUG-022: в shallow-клоне merge-base не может верифицировать предка
     (история неполна) → сначала тихий `git fetch --unshallow origin`;
@@ -523,6 +534,17 @@ def _regress_commit_problem(repo: Path, commit: str) -> str | None:
     if not files:
         return (f"commit {commit} не совпадает с HEAD ({head[:12]}), "
                 "измененные файлы PR не определимы")
+    # BUG-023: сам артефакт (и весь test-model/regress/<cid>/ того же
+    # change) всегда новее commit прогона — исключаем из свежестной
+    # сверки, иначе ворота вечно REGRESS_FINAL_STALE.
+    own_regress = f"test-model/regress/{change_id}/"
+    own_regress_files = {f for f in files if f.startswith(own_regress)}
+    files -= own_regress_files
+    if not files:
+        # После исключения собственных regress-артефактов измененных
+        # файлов нет — прогон удостоверяет весь дифф, ворота пропускают
+        # (это НЕ «не определимы» из BUG-022-ветки выше).
+        return None
     art_ts = _git(repo, "show", "-s", "--format=%ct", commit)
     if not art_ts or not art_ts.isdigit():
         return f"commit {commit} не найден в репозитории"
