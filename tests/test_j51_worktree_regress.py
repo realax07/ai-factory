@@ -41,6 +41,10 @@ J51.2 (flowctl regress --change C):
   TC-J51-018  regress: не git-репозиторий → exit 2
   TC-J51-019  regress: change с ../ → exit 2, ничего не записано (traversal)
   TC-J51-020  regress: домен затронут, каталога тестов нет → WARN, exit 0
+  TC-J51-021  regress: дедуп доменов (BUG-video-001) — частичные + общий
+              tests/ сворачиваются в один tests/ до прогона
+  TC-J51-022  regress e2e: дифф frontend+backend → один pytest-прогон
+              tests, без дублей/частичных доменов в аргументах
 """
 from __future__ import annotations
 
@@ -365,11 +369,35 @@ class TestRegressMapping:
         assert flowctl.regress_domains(["scripts/s.py"]) == ["tests"]
         assert flowctl.regress_domains(["docs/x.md", "src/widget.py"]) \
             == ["tests"]
-        # микс: порядок файлов, без дублей
+        # микс: дедуп (BUG-video-001) — частичные домены + общий tests/
+        # сворачиваются в ОДИН прогон tests/, без дублей аргументов pytest
         assert flowctl.regress_domains(
             ["backend/x.py", "scripts/s.py", "frontend/a.js"]) \
-            == ["tests/api", "tests/web", "tests"]
+            == ["tests"]
         assert flowctl.regress_domains([]) == []
+
+    def test_domain_dedup_bug_video_001(self):
+        """TC-J51-021: дедуп доменов (BUG-video-001) — коллизия conftest
+        для bare-импортов (pytest exit 2 на коллекции) при прогоне
+        частичных доменов вместе с tests/ или друг с другом; маппинг
+        сворачивает такой дифф в один общий tests/ ДО прогона."""
+        # живой кейс бага: [tests/api, tests/web, tests] → один tests/
+        assert flowctl.regress_domains(
+            ["backend/x.py", "frontend/a.js", "scripts/s.py"]) == ["tests"]
+        # дифф frontend+backend → один прогон tests, без дублей аргументов
+        assert flowctl.regress_domains(
+            ["frontend/a.js", "backend/x.py"]) == ["tests"]
+        # частичный + общий → общий
+        assert flowctl.regress_domains(
+            ["frontend/a.js", "scripts/s.py"]) == ["tests"]
+        assert flowctl.regress_domains(
+            ["backend/x.py", "docs/d.md"]) == ["tests"]
+        # одиночный частичный домен сохраняется (дедупа не требуется)
+        assert flowctl.regress_domains(["frontend/a.js"]) == ["tests/web"]
+        assert flowctl.regress_domains(["backend/x.py"]) == ["tests/api"]
+        # порядок файлов не влияет на свертку
+        assert flowctl.regress_domains(
+            ["scripts/s.py", "frontend/a.js", "backend/x.py"]) == ["tests"]
 
     def test_diff_source_staged_fallback(self, tmp_path):
         """TC-J51-011: base...HEAD пуст/недоступен → staged-дифф."""
@@ -424,6 +452,25 @@ class TestRegressCommand:
         text = Path(data["artifact"]).read_text(encoding="utf-8")
         assert "verdict: FAIL" in text
         assert "FAILED" in text
+
+    def test_regress_dedup_single_run_bug_video_001(self, tmp_path):
+        """TC-J51-022: regress e2e — дифф frontend+backend сворачивается в
+        ОДИН pytest-прогон tests/ (дедуп ДО прогона, BUG-video-001): без
+        частичных доменов и дублей в аргументах pytest."""
+        repo = make_repo(tmp_path)
+        stage(repo, "frontend/a.js", "// f\n")
+        stage(repo, "backend/x.py", "B = 1\n")
+        r = flowctl_cmd("regress", "--repo", str(repo),
+                        "--change", "j51-dedup", "--json")
+        assert r.returncode == 0, r.stdout + r.stderr
+        data = json.loads(r.stdout)
+        assert data["verdict"] == "PASS"
+        assert data["domains"] == ["tests"]
+        assert data["suites"] == ["tests"]
+        assert data["pytest_exit"] == 0
+        text = Path(data["artifact"]).read_text(encoding="utf-8")
+        assert "suites: tests" in text
+        assert "1 passed" in text
 
     def test_regress_rerun_does_not_overwrite(self, tmp_path):
         """TC-J51-014: повторный regress — regress-2.md; regress-1.md не
@@ -481,8 +528,9 @@ class TestRegressCommand:
         assert r.returncode == 0, r.stdout + r.stderr
         data = json.loads(r.stdout)
         assert data["diff_source"] == "git diff main...HEAD"
-        # backend/api.py → tests/api; tests/api/test_api.py → tests/
-        assert data["suites"] == ["tests/api", "tests"]
+        # backend/api.py → tests/api; tests/api/test_api.py → tests/;
+        # дедуп (BUG-video-001): частичный + общий tests/ → один прогон tests/
+        assert data["suites"] == ["tests"]
         text = Path(data["artifact"]).read_text(encoding="utf-8")
         assert "diff source: git diff main...HEAD" in text
 

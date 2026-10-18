@@ -1338,7 +1338,18 @@ def regress_diff_files(repo: Path, base: str) -> tuple[list[str], str]:
 def regress_domains(files: list[str]) -> list[str]:
     """J51.2: детерминированный маппинг диффа → затронутые тестовые домены:
     frontend/** → tests/web, backend/** → tests/api, всё остальное (в т.ч.
-    scripts/) → tests/. Порядок — по правилам, без дублей."""
+    scripts/) → tests/. Порядок — по правилам, без дублей.
+
+    BUG-video-001 (дедуп доменов, ДО прогона): частичные домены
+    (tests/api, tests/web) лежат под общим каталогом tests/; прогон
+    частичных ВМЕСТЕ с tests/ (или нескольких частичных в одном
+    pytest-вызове) рождает коллизию conftest для bare-импортов —
+    pytest exit 2 на коллекции. Если в маппинге присутствует общий домен
+    tests/ или затронуто больше одного частичного — весь прогон
+    сворачивается в ОДИН общий домен tests/ (одиночный частичный домен
+    сохраняется как есть). Если каталога tests/ нет, свернувшийся прогон
+    дает заметный WARN исхода regress (domain_without_tests), не молчу.
+    """
     domains: list[str] = []
     other = False
     for rel in files:
@@ -1352,6 +1363,9 @@ def regress_domains(files: list[str]) -> list[str]:
             other = True
     if other and "tests" not in domains:
         domains.append("tests")
+    partial = [d for d in domains if d != "tests"]
+    if "tests" in domains or len(partial) > 1:
+        return ["tests"]
     return domains
 
 
