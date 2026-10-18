@@ -1,0 +1,4 @@
+{
+  "_comment": "Карта покрытия review → задачи (Флоу 4, chore): review-001.md (APPROVE, deleg_c895bf96) — задача J54-review (code review J54 целиком: эшелоны tier smoke/baseline/xdist/factory_init-скелеты/freeze-tooling/доки). Формат: файл → список task-id.",
+  "review-001.md": ["J54-review"]
+}
