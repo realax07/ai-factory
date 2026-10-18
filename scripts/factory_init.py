@@ -13,6 +13,8 @@ Usage:
   scripts/delegate_gate.py, scripts/delegate_watchdog.py, scripts/pm_bounds_check.py,
   scripts/stand_reaper.py, scripts/watchdog_daily_digest.py,
   scripts/pm_instruction_monitor.py, scripts/session_watchdog.py,
+  scripts/flow_state.py, flow_transition.py, session_check.py, gate_runner.py,
+  flowctl.py, flow_mode.py, role_zone_policy.py (ядро Flow Control),
   contracts/artifact_contract.md, contracts/flow_control_contract.md,
   templates/constitution.template.md, templates/task_delegation.md, templates/pm_launch.md,
   .github/workflows/flow.yml,
