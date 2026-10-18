@@ -39,6 +39,16 @@ test-model/regress-domains.json (контент у проекта — как J53
   TC-J52-014  битая карта → заметный дефолт (диагностика в payload/артефакте)
   TC-J52-015  regress e2e с картой: несколько кейс-доменов НЕ сворачиваются
               в общий tests/ (карта = кейс-структура проекта)
+  TC-J52-016  regress e2e: кейс-домен карты затронут диффом, но каталога
+              нет → WARN-исход (не молчаливый PASS), домен в suites skipped
+  TC-J52-017  release: гонка с «агент стартовал» — статус reserved→running
+              между чтением prev и захватом лока → отказ (exit 1, статус
+              сохранен); registry_transition: expect_from не совпал →
+              status_changed
+  TC-J52-018  branch_name_for: формы, отвергаемые git (a.lock/b, a//b,
+              a/.x) → хэш-фолбэк; финальный арбитр git check-ref-format
+  TC-J52-019  regress: частичный skip (часть кейс-доменов без каталога) →
+              WARN, не PASS (review-001 #3)
 """
 from __future__ import annotations
 
@@ -145,6 +155,24 @@ class TestBranchDerivation:
                 "flow/" + hashlib.sha1(bad.encode()).hexdigest()[:8])
         assert flowctl.branch_name_for("f" * 32) == "flow/" + "f" * 32
         assert flowctl.branch_name_for("chore.j52_w1") == "flow/chore.j52_w1"
+
+    def test_git_rejected_shapes_fall_back_to_hash(self):
+        """TC-J52-018 (review-001 #2): формы, которые git отвергает как имя
+        ветки, но пропускал старый гард — компонент с хвостом .lock
+        (a.lock/b), пустой компонент (a//b), ведущая точка (a/.x) — идут в
+        детерминированный хэш-фолбэк; финальный арбитр git
+        check-ref-format --branch подтверждает валидность результата."""
+        for bad in ("j52.a.lock/b", "j52//b", "j52/.x"):
+            assert flowctl._branch_id_ok(bad) is False
+            b = flowctl.branch_name_for(bad)
+            assert b == "flow/" + hashlib.sha1(bad.encode()).hexdigest()[:8]
+            chk = subprocess.run(
+                ["git", "check-ref-format", "--branch", b],
+                capture_output=True, text=True)
+            assert chk.returncode == 0, b
+        # Валидные id по-прежнему идут полным id (не хэшем).
+        assert flowctl.branch_name_for("chore/j52-w1") == "flow/chore/j52-w1"
+        assert flowctl._branch_id_ok("chore.j52_w1") is True
 
     def test_prepare_uses_full_id_branch(self, tmp_path):
         """TC-J52-004: prepare --create-worktree без --branch → ветка из
@@ -302,6 +330,75 @@ class TestRelease:
         assert r.returncode == 0, r.stdout + r.stderr
         assert registry_sessions(reg)[0]["status"] == "released"
 
+    def test_release_race_status_changed_under_lock(self, tmp_path,
+                                                    monkeypatch, capsys):
+        """TC-J52-017 (review-001 #1, major): гонка release×run — между
+        чтением prev и захватом лока сессию переводят reserved→running
+        («агент стартовал») → валидация ПОД ЛОКОМ отказывает: exit 1,
+        статус running сохранен, audit чист, ПМ повторяет release."""
+        import argparse
+        repo, reg, state, audit = self._prepared(tmp_path)
+        cid = "j52-rel-0001"
+        delegation_id = registry_sessions(reg)[0]["delegation_id"]
+
+        real_load = sc.registry_load
+        calls = {"n": 0}
+
+        def racing_load(path):
+            calls["n"] += 1
+            if calls["n"] == 2:
+                # 1-й вызов — чтение prev в cmd_release (без лока);
+                # 2-й — registry_transition под локом: между ними
+                # конкурентный процесс успел записать running.
+                data, _ = real_load(path)
+                for s in data.get("sessions", []):
+                    if s.get("delegation_id") == delegation_id:
+                        sc.transition(s, "running", "flowctl run",
+                                      "agent started")
+                sc.registry_write(path, data)
+            return real_load(path)
+
+        monkeypatch.setattr(sc, "registry_load", racing_load)
+
+        args = argparse.Namespace(
+            correlation_id_opt=None, correlation_pos=cid,
+            reason="ПМ: делегация отозвана", registry=str(reg),
+            state=str(state), audit=str(audit), as_json=True)
+        rc = flowctl.cmd_release(args)
+        assert rc == 1
+        data = json.loads(capsys.readouterr().out)
+        assert data["released"] is False and data["refused"] is True
+        assert data["from_status"] == "reserved"
+        assert data["status_now"] == "running"
+        assert "статус изменился" in data["note"]
+        assert "повтори release" in data["note"]
+
+        # Реестр НЕ перезаписан released-ом: конкурентный running сохранен.
+        assert registry_sessions(reg)[0]["status"] == "running"
+        # state и audit не тронуты.
+        assert state_runs(state)[cid]["status"] == "prepared"
+        assert not [e for e in audit_events(audit)
+                    if e["event"] == "release"]
+
+    def test_registry_transition_expect_from_mismatch(self, tmp_path):
+        """TC-J52-017 (unit): registry_transition с expect_from — не
+        совпало под локом → ok:False reason:status_changed, статус не
+        тронут; совпало → переход выполняется."""
+        repo, reg, state, audit = self._prepared(tmp_path)
+        delegation_id = registry_sessions(reg)[0]["delegation_id"]
+        tr = flowctl.registry_transition(
+            reg, delegation_id, "released", "test", "evidence",
+            expect_from="running")
+        assert tr["ok"] is False
+        assert tr["reason"] == "status_changed"
+        assert tr["current_status"] == "reserved"
+        assert registry_sessions(reg)[0]["status"] == "reserved"
+        tr = flowctl.registry_transition(
+            reg, delegation_id, "released", "test", "evidence",
+            expect_from="reserved")
+        assert tr["ok"] is True
+        assert registry_sessions(reg)[0]["status"] == "released"
+
 
 # --------------------------------- J52-w1.3: домены regress = тест-кейсы
 
@@ -406,8 +503,8 @@ class TestDomainMap:
         assert data["pytest_exit"] == 0
 
     def test_map_missing_domain_dir_warns(self, tmp_path):
-        """Кейс-домен карты затронут диффом, но каталога нет → WARN-исход
-        regress (не молчаливый PASS), домен в suites skipped."""
+        """TC-J52-016: кейс-домен карты затронут диффом, но каталога нет →
+        WARN-исход regress (не молчаливый PASS), домен в suites skipped."""
         repo = make_repo(tmp_path)
         write(repo, "test-model/regress-domains.json",
               json.dumps(PROJECT_MAP, ensure_ascii=False))
@@ -419,3 +516,26 @@ class TestDomainMap:
         assert data["verdict"] == "WARN"
         assert data["suites"] == []
         assert data["suites_skipped"] == ["tests/editor"]
+
+    def test_map_partial_skip_warns_not_pass(self, tmp_path):
+        """TC-J52-019 (review-001 #3): частичный skip — часть кейс-доменов
+        карты затронута диффом и прогнана, часть без каталога → verdict
+        WARN (не PASS), exit 0, затронутый диффом непокрытый домен заметен
+        в payload и артефакте."""
+        repo = make_repo(tmp_path)
+        write(repo, "test-model/regress-domains.json",
+              json.dumps(PROJECT_MAP, ensure_ascii=False))
+        stage(repo, "frontend/editor/toolbar.js", "// tb\n")
+        stage(repo, "tests/editor/test_toolbar.py",
+              "def test_toolbar():\n    assert True\n")
+        stage(repo, "services/billing/invoice.py", "Y = 1\n")  # tests/billing — каталога нет
+        r = flowctl_cmd("regress", "--repo", str(repo),
+                        "--change", "j52-partial", "--json")
+        assert r.returncode == 0, r.stdout + r.stderr
+        data = json.loads(r.stdout)
+        assert data["verdict"] == "WARN"
+        assert data["suites"] == ["tests/editor"]
+        assert data["suites_skipped"] == ["tests/billing"]
+        art = Path(data["artifact"]).read_text(encoding="utf-8")
+        assert "частичный skip" in art
+        assert "tests/billing" in art

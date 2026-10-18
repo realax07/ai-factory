@@ -245,8 +245,16 @@ def _emit(payload: dict, as_json: bool) -> None:
 
 
 def registry_transition(registry_path: Path, delegation_id: str, to: str,
-                        reason: str, evidence: str) -> dict:
-    """Смена статуса reservation с evidence (жизненный цикл ТЗ 04)."""
+                        reason: str, evidence: str,
+                        expect_from: str | None = None) -> dict:
+    """Смена статуса reservation с evidence (жизненный цикл ТЗ 04).
+
+    expect_from (review-001 #1, гонка release×run): если задан,
+    фактический статус сверяется ПОД ЛОКОМ — после захвата лока, перед
+    transition. Пара «prev→to», прочитанная снаружи, не пройдет, если
+    между чтением и локом сессию перевел другой процесс (например,
+    `flowctl run` агента: reserved→running).
+    """
     lock = sc._acquire_lock(registry_path)
     try:
         data, err = sc.registry_load(registry_path)
@@ -261,6 +269,12 @@ def registry_transition(registry_path: Path, delegation_id: str, to: str,
         if session is None:
             return {"ok": False, "reason": sc.MISSING_INPUT,
                     "details": [f"reservation {delegation_id} не найден"]}
+        current = session.get("status")
+        if expect_from is not None and current != expect_from:
+            return {"ok": False, "reason": "status_changed",
+                    "details": [f"статус изменился под локом: ожидался "
+                                f"{expect_from!r}, фактический {current!r}"],
+                    "current_status": current}
         sc.transition(session, to, reason, evidence)
         sc.registry_write(registry_path, data)
         return {"ok": True, "session": session}
@@ -397,7 +411,29 @@ def _branch_id_ok(cid: str) -> bool:
         return False
     if cid.endswith(".lock") or cid.endswith("/") or cid.endswith("."):
         return False
-    return bool(_BRANCH_SAFE_RE.match(cid))
+    # review-001 #2 (minor): _BRANCH_SAFE_RE пропускал формы, которые git
+    # отвергает как имя ветки: пустые компоненты («a//b»), компонент с
+    # ведущей точкой («a/.x») или с хвостом «.lock» («a.lock/b»). Для
+    # таких cid ветка всегда невалидна → prepare деградировал бы в
+    # WARN-работу в общем дереве вместо детерминированного хэш-фолбэка.
+    if "//" in cid:
+        return False
+    parts = cid.split("/")
+    if any(p.startswith(".") or p.endswith(".lock") for p in parts):
+        return False
+    if not _BRANCH_SAFE_RE.match(cid):
+        return False
+    # Финальный арбитр — сам git: не прошел check-ref-format → хэш-фолбэк.
+    # git недоступен — доверяем явным правилам выше (для символов,
+    # допускаемых _BRANCH_SAFE_RE, они покрывают правила git полностью).
+    try:
+        proc = subprocess.run(
+            ["git", "check-ref-format", "--branch", f"{BRANCH_PREFIX}/{cid}"],
+            capture_output=True, text=True,
+        )
+    except OSError:
+        return True
+    return proc.returncode == 0
 
 
 def branch_name_for(correlation: str) -> str:
@@ -1344,6 +1380,9 @@ def cmd_reconcile(args) -> int:
 # молча: запись в реестре и worktree сохраняются, решение с причиной
 # фиксируется в audit (append-only JSONL) и в записи цикла state.
 
+# RELEASE_SCHEMA (review-001 #5): версионирование release-события —
+# записывается в audit-событие release (release_schema), не мертвая
+# константа.
 RELEASE_SCHEMA = "flowctl-release/1"
 RELEASE_ELIGIBLE = ("reserved", "needs_attention")
 RELEASE_DEFAULT_REASON = "явное решение ПМ: сброс сессии без штатного выхода"
@@ -1427,8 +1466,24 @@ def cmd_release(args) -> int:
     tr = registry_transition(
         registry_path, delegation_id, "released",
         f"flowctl release: {reason}",
-        f"явное решение ПМ (correlation {cid}); работа/файлы сохранены")
+        f"явное решение ПМ (correlation {cid}); работа/файлы сохранены",
+        expect_from=prev)
     if not tr["ok"]:
+        if tr.get("reason") == "status_changed":
+            # review-001 #1 (гонка release×run): между чтением prev и
+            # захватом лока сессию перевел другой процесс (агент
+            # стартовал). Валидация под локом — refusing, реестр не
+            # тронут; решение за ПМ: повторить release по факту.
+            now = tr.get("current_status")
+            _emit({
+                "schema_version": OUTPUT_SCHEMA, "command": "release",
+                "correlation_id": cid, "released": False, "refused": True,
+                "delegation_id": delegation_id, "from_status": prev,
+                "status_now": now,
+                "note": f"статус изменился, повтори release (ожидался "
+                        f"{prev!r}, фактически {now!r}) — сессия НЕ тронута",
+            }, args.as_json)
+            return 1
         _emit({
             "schema_version": OUTPUT_SCHEMA, "command": "release",
             "correlation_id": cid, "released": False,
@@ -1454,6 +1509,7 @@ def cmd_release(args) -> int:
         gr.append_audit_event(
             args.audit, "release", cid, scope=record.get("scope") or {},
             delegation_id=delegation_id, from_status=prev, reason=reason,
+            release_schema=RELEASE_SCHEMA,
             worktree=record.get("worktree"),
             note="ничего не удалено молча: запись реестра (released) и "
                  "worktree сохранены; решение ПМ зафиксировано")
@@ -1570,6 +1626,15 @@ def regress_domains(files: list[str], rules=REGRESS_DOMAIN_RULES,
     tests/ — кейс-домены проекта это реальные каталоги; прогон только
     затронутых кейс-доменов и есть цель карты.
 
+    J52 (review-001 #4, резидуальный риск BUG-005 при активной карте):
+    multi-domain прогон — ОДИН pytest-вызов (`pytest tests/editor
+    tests/billing`) — тот же профиль, что до дедупа: bare
+    `from conftest import ...` в кейс-доменах уронит коллекцию
+    (pytest exit 2 → verdict FAIL, ворота не пропустят). Карта
+    «безопасна» только при правиле «хелперы через фикстуры»
+    (шов J51 #8, скилл ekotov-factory-pipeline,
+    references/regress-final-gates.md).
+
     BUG-video-001 (дедуп доменов, ДО прогона; дефолтное поведение): частичные
     домены (tests/api, tests/web) лежат под общим каталогом tests/; прогон
     частичных ВМЕСТЕ с tests/ (или нескольких частичных в одном
@@ -1660,13 +1725,15 @@ def cmd_regress(args) -> int:
             log_tail = "\n".join(out_head.strip().splitlines()[
                 -REGRESS_LOG_TAIL_LINES:]) or f"pytest timeout > {args.timeout}s"
     # Домен затронут диффом, но каталога тестов не существует — заметный
-    # WARN-исход, не молчаливый PASS (review-001 #2): exit 0, но вердикт
+    # WARN-исход, не молчаливый PASS (review-001 #2/#3): exit 0, но вердикт
     # WARN и пометка в артефакте, чтобы воротам не пришел фиктивно зеленый
-    # прогон.
+    # прогон. Частичный skip (часть доменов прогнана, часть без каталога) —
+    # тоже WARN: затронутый диффом кейс-домен карты остался непокрыт.
     domain_without_tests = bool(domains) and not suites
+    partial_skip = bool(skipped) and not domain_without_tests
     if pytest_rc not in (None, 0):
         verdict = "FAIL"
-    elif domain_without_tests:
+    elif domain_without_tests or partial_skip:
         verdict = "WARN"
     else:
         verdict = "PASS"
@@ -1711,6 +1778,10 @@ def cmd_regress(args) -> int:
         lines += ["- note: WARN — домен(ы) без тестов: "
                   f"{', '.join(skipped)} — затронуты диффом, но каталогов "
                   "не существует; прогон не выполнялся", ""]
+    elif partial_skip:
+        lines += ["- note: WARN — частичный skip доменов (нет каталога): "
+                  f"{', '.join(skipped)} — затронуты диффом, но не покрыты "
+                  "прогоном", ""]
     elif not suites and not timeout_hit:
         lines += ["- note: дифф не затронул существующие тестовые домены — "
                   "прогон не выполнялся", ""]
