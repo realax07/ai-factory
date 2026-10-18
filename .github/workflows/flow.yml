@@ -27,6 +27,16 @@ jobs:
       # её наличие как «PR-контекст есть» — тогда негативные тесты
       # (SKIPPED без PR-контекста, tests/test_gate_runner.py) получают
       # FAIL вместо SKIPPED. Локально переменной нет — тесты зеленые.
+      # J52-w3 (gate self-test harness): прогон включает tests/
+      # test_gate_harness.py — ворота конвейера обкатываются в CI-имитации
+      # (shallow-клон эталонного репо, env -i: чистый HOME/PATH, без
+      # openspec и GITHUB_*). Отдельный шаг «Gate harness» не нужен: он
+      # гонял бы те же тесты в том же env (env -u GITHUB_EVENT_PATH) —
+      # изоляции/ускорения не добавляет (review-005 minor #2). Покрыты
+      # ancestry-ось класса BUG-022/023/024 (shallow/unshallow) и fresh-ось
+      # (BUG-023/024: датированные эталонные коммиты; тесты
+      # test_meta_commit_after_artifact_passes / _stale), класс J53 —
+      # graceful-деградация без openspec (tests/test_gate_harness.py).
       - name: Run tests
         run: env -u GITHUB_EVENT_PATH python -m pytest tests/ -q
 
