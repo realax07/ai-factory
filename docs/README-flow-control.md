@@ -135,3 +135,22 @@ scope, SHA записи — предок HEAD или равен ему («SHA в
 expiration не истек. Непустая строка без записи журнала решением НЕ является.
 Журнал — НЕ защищенная подпись: «решение зафиксировано», не «личность
 подтверждена».
+
+## Regress (J51.2/J51.3, 2026-10-17)
+
+`flowctl regress --change <id> [--final] [--tier smoke]` — детерминированный
+регресс затронутых доменов: дифф (main...HEAD) → маппинг доменов
+(frontend → tests/web, backend → tests/api, иное → tests/; общий домен
+сворачивает частичные — BUG-005). Артефакт
+`test-model/regress/<change>/regress-<N>.md` (append-only): verdict,
+commit, worktree, сьюты, хвост лога. `--final` пишет `regress-final.md`.
+
+Ворота merge (pr_validate, change-PR): regress-final обязателен — PASS,
+commit-предок HEAD (в CI: full-history checkout + GitHub API compare —
+BUG-022), сам артефакт исключен из сверки свежести (BUG-023), worktree
+машины прогона нечитаем в CI → WARNING (инвариант несет commit-сверка).
+Исполнитель — роль regress_runner (узкий бриф: ветка/коммит/сьюты;
+различение бага от флака изолированным перепрогоном; FAIL → возврат dev).
+
+Планы: J54 — эшелоны (домен → cross-domain smoke → regress-final),
+baseline известных фейлов, freeze tooling.
