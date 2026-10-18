@@ -20,6 +20,8 @@ Usage:
   .github/workflows/flow.yml,
   openspec/ (скелет specs/ + changes/archive/), test-model/ (checklists/new/reviews/approved/bugs),
   architecture/ (пустая, для map.md архитектора),
+  docs/glossary.md — скелет глоссария проекта (J53): свободная форма,
+  без машинных ворот;
   tests/ (smoke TC-BOOTSTRAP-001), openspec/config.yaml (root-маркер CLI),
   skills/ — 12 скиллов конвейера (factory-flow, ролевые + J45: brainstorming,
   service-decomposition, playwright-pro),
@@ -202,6 +204,49 @@ MKDIRS = [
     "docs/ba",
 ]
 
+# J53 (2026-10-18): скелет глоссария проекта — свободная форма, БЕЗ
+# детерминированности (решение Заказчика: никаких flow_check-ворот,
+# машинных форматов и валидации). Термины и контент — только на проекте.
+GLOSSARY_REL = "docs/glossary.md"
+GLOSSARY_TEMPLATE = """# Глоссарий проекта
+
+**Правило ведения (свободная форма):** встретил новое рабочее название
+(сервис, том, таблица, элемент фронта, статус) — запиши одной строкой
+«термин — что это». Глоссарий читают новые агенты и Заказчик; оркестратор
+объясняет термины сабагентам своими словами. Формат записей — свободный:
+никаких машинных форматов и валидации, глоссарий — словарь понимания,
+а не ворота.
+
+## Сервисы
+
+## Процессы
+
+## Сущности данных
+
+## Элементы фронта
+
+## Статусы
+"""
+
+
+def install_glossary(target: Path, force: bool = False) -> str:
+    """J53: создать docs/glossary.md — скелет глоссария проекта.
+
+    Идемпотентно: существующий глоссарий НЕ перезаписывается (там уже
+    живут термины проекта) — без force. С force скелет пересоздается.
+    Возврат: "created" | "kept" | "recreated".
+    """
+    dst = target / GLOSSARY_REL
+    if dst.exists() and not force:
+        print(f"  {GLOSSARY_REL} уже существует — не тронут (термины проекта)")
+        return "kept"
+    existed = dst.exists()
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    dst.write_text(GLOSSARY_TEMPLATE, encoding="utf-8")
+    print(f"  {GLOSSARY_REL} {'пересоздан (--force)' if existed else 'создан'}"
+          " (скелет глоссария, свободная форма — без машинных ворот, J53)")
+    return "recreated" if existed else "created"
+
 
 def main() -> int:
     ap = argparse.ArgumentParser()
@@ -285,6 +330,9 @@ def main() -> int:
         print("  openspec/config.yaml создан (root-маркер openspec CLI)")
     else:
         print("  openspec/config.yaml уже существует — не тронут")
+
+    # 3a-2. docs/glossary.md — скелет глоссария проекта (J53, свободная форма)
+    install_glossary(target, force=args.force)
 
     # 3b. tests/test_smoke.py + as-is база regression/_bootstrap (контракт 6:
     # smoke — as-is база пустого проекта, TC-BOOTSTRAP-001)
