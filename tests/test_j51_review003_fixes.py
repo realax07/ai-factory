@@ -237,17 +237,22 @@ class TestWorktreeFreshness:
         assert "REGRESS_FINAL_STALE" in problems[0]
         assert "не совпадает с commit прогона" in problems[0]
 
-    def test_worktree_not_git_stales(self, tmp_path):
-        """TC-R3-008 (minor #4): путь в артефакте не git-дерево → STALE,
-        молчаливого пропуска нет."""
+    def test_worktree_not_git_warns_not_stales(self, tmp_path, capsys):
+        """TC-R3-008 (minor #4; контракт изменен BUG-022): путь в артефакте
+        не git-дерево → НЕблокирующий FLOW-WARNING в stderr и проблемы нет:
+        в CI-клоне worktree-путь машины прогона нечитаем, и ложный
+        REGRESS_FINAL_STALE недопустим (молчаливого пропуска тоже нет —
+        предупреждение в stderr)."""
         repo = make_repo(tmp_path)
         not_git = tmp_path / "plain"
         not_git.mkdir()
         write_final(repo, worktree=str(not_git))
         problems = pr_validate.check_regress_final(repo, CHANGE)
-        assert len(problems) == 1
-        assert "REGRESS_FINAL_STALE" in problems[0]
-        assert "не читается как git-дерево" in problems[0]
+        assert problems == []
+        err = capsys.readouterr().err
+        assert "FLOW-WARNING" in err
+        assert "не читается как git-дерево" in err
+        assert "BUG-022" in err
 
     def test_no_worktree_field_unchanged_behavior(self, tmp_path):
         """Артефакт без worktree-поля (старый формат) — прежняя семантика."""
