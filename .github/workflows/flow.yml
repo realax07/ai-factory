@@ -30,6 +30,16 @@ jobs:
       - name: Run tests
         run: env -u GITHUB_EVENT_PATH python -m pytest tests/ -q
 
+      # J52-w3: gate self-test harness — ворота конвейера обязаны работать в
+      # CI-имитации (shallow-клон эталонного репо, env -i: чистый HOME/PATH,
+      # без openspec и GITHUB_*). Регресс harness-тестов отдельным шагом:
+      # конвейер сам обкатывает свои ворота в CI-условиях до merge — класс
+      # BUG-022/023/024 («в комфортной среде автора PASS, в CI ложняк») и
+      # класс J53 (инструмент без openspec CLI крэшится вместо graceful-
+      # деградации) ловятся до вливания (tests/test_gate_harness.py).
+      - name: Gate harness (CI-имитация, J52-w3)
+        run: env -u GITHUB_EVENT_PATH python -m pytest tests/test_gate_harness.py -q
+
       # pm_bounds_check (J9/J10) НЕ в CI: требует реестра сессий
       # (~/.hermes/state/active_sessions.json), которого на раннере нет —
       # консервативная ветка дает ложный FAIL. Гейт локальный (приемка).

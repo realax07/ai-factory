@@ -164,6 +164,20 @@ baseline известных фейлов, freeze tooling (контракт ро�
 J52-w2: после regress-final tooling-пути `scripts/**`, `.github/**` не
 коммитятся до merge — мета-коммит после артефакта = перегон).
 
+Обкатка ворот в CI (J52-w3): ворота проверяются harness-имитацией
+CI-среды до merge — `tests/test_gate_harness.py` строит эталонное
+tmp-репо с артефактами change-пакета, делает shallow-клон (как
+actions/checkout fetch-depth 1) и гоняет `pr_validate`/`flow_check`/
+`factory_init` сабпроцессом в чистом env (env -i: минимальный PATH,
+чистый HOME без `~/ai-factory`/`~/.hermes`, без `GITHUB_*` и openspec).
+Эталонные кейсы: pass-репо (в т.ч. верификация предка через unshallow —
+ветка BUG-022), stale-артефакт → REGRESS_FINAL_STALE, missing-артефакт →
+REGRESS_FINAL_MISSING, graceful-деградация без openspec CLI (класс
+инцидента J53). Отдельный шаг «Gate harness» в job test-flow-control
+(`.github/workflows/flow.yml`) — регресс обязателен: конвейер сам
+обкатывает свои ворота в CI-условиях. Класс BUG-022/023/024 («в
+комфортной среде автора PASS, в CI ложняк») закрыт до merge.
+
 ## Ревью-мета и маппинг (J10, контракты в промпт code_reviewer — J52-w2)
 
 Review-файл `code-reviews/<change-id>/review-<задача>-<NNN>.md` —
