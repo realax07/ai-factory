@@ -285,6 +285,10 @@ def check_regress_final(repo: Path, change_id: str) -> list[str]:
  test-model/regress/<change-id>/**; BUG-024: весь
  test-model/regress/**, test-model/reviews/**, code-reviews/** —
  мета-коммит после прогона не инвалидирует его);
+      - tooling-пути (scripts/**, .github/**), тронутые после commit
+ прогона — REGRESS_FINAL_STALE с нотой «freeze tooling» (J54: среда
+ прогона изменилась, regress-final повторяется на замороженном
+ tooling);
       - если в артефакте указан worktree — HEAD этого дерева обязан совпадать
         с commit прогона (сверка «артефакт ↔ дерево», review-003 #4).
     Нарушения: REGRESS_FINAL_MISSING (нет артефакта / не-PASS) и
@@ -487,6 +491,11 @@ def _regress_commit_problem(repo: Path, commit: str,
     и тестовые файлы (services/**, backend/**, frontend/**, tests/**,
     openspec/**) — как прежде: правка после прогона = STALE.
 
+    J54: tooling-пути (scripts/**, .github/**) после прогона — тоже
+    STALE, но с нотой «freeze tooling: tooling изменился после прогона,
+    повтори regress-final» — измененный tooling инвалидирует среду
+    прогона целиком (харнесс/CI/статика), прогон не воспроизводим.
+
     BUG-022: в shallow-клоне merge-base не может верифицировать предка
     (история неполна) → сначала тихий `git fetch --unshallow origin`;
     если не помог и есть GITHUB_TOKEN+GITHUB_REPOSITORY — ancestry через
@@ -564,12 +573,27 @@ def _regress_commit_problem(repo: Path, commit: str,
     art_ts = _git(repo, "show", "-s", "--format=%ct", commit)
     if not art_ts or not art_ts.isdigit():
         return f"commit {commit} не найден в репозитории"
+    newer: list[str] = []
     for f in sorted(files):
         ts = _git(repo, "log", "-1", "--format=%ct", "--", f)
         if ts and ts.isdigit() and int(ts) > int(art_ts):
-            return (f"commit {commit} старше последнего касания измененного "
-                    f"файла {f}")
-    return None
+            newer.append(f)
+    if not newer:
+        return None
+    # J54: tooling-пути (scripts/**, .github/**), тронутые ПОСЛЕ commit
+    # regress-прогона, инвалидируют его особо — вся среда прогона
+    # (харнесс, CI-ворота, статика) могла измениться, результат не
+    # воспроизводим тем же прогоном. Отдельная нота «freeze tooling»:
+    # tooling замораживается на время финального прогона, прогон
+    # повторяется. Мета-исключения BUG-023/BUG-024 выше приоритетны —
+    # мета-файлы в newer не попадают.
+    tooling = [f for f in newer if f.startswith(("scripts/", ".github/"))]
+    if tooling:
+        return ("freeze tooling: tooling изменился после прогона, повтори "
+                f"regress-final ({tooling[0]})")
+    f = newer[0]
+    return (f"commit {commit} старше последнего касания измененного "
+            f"файла {f}")
 
 
 def check_ops(repo: Path, marker: str) -> list[str]:
