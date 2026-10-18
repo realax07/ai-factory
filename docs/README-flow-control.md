@@ -84,6 +84,45 @@ incident_ref=S<1|2|3>-<id> (severity-классификация J48 — в ма�
   └─ без них закрытие → DENY (урок R1.3)
 ```
 
+## Пять эшелонов регресса (J54, решение Заказчика 2026-10-18)
+
+Полный regress НЕ на каждый change: change = доменный regress своего куска +
+smoke; regress-final полный — пакетно, перед плановым деплоем (релизной
+партией). Цель — feedback за минуты на эшелонах 1–2 и предсказуемый
+regress-final (≤2 итераций на релиз).
+
+| Эшелон | Когда | Что гоняется | Время | Кто |
+|---|---|---|---|---|
+| 0. Инстант | каждая итерация кода dev | юнит-тесты своего модуля | секунды | dev |
+| 1. Доменный | закрытие задачи dev | `flowctl regress --change C` по кейс-доменам куска (карта `test-model/regress-domains.json`) | 1–5 мин | dev |
+| 2. Cross-domain smoke | перед code_review и перед merge | `flowctl regress --change C --tier smoke` — полный контур: роутинг/авторизация/health/представитель сервиса (манифест `test-model/smoke-cross/manifest.json`) | 2–3 мин | regress_runner / CI |
+| 3. Regress-final | пакетно перед плановым деплоем | `flowctl regress --change C --final` — все домены + NFR на каноническом контуре | 15–25 мин | regress_runner |
+| 4. Прод-приемка | после деплоя | живая приемка + смоук deploy.sh | минуты | Заказчик |
+
+Правила склейки:
+
+- **Baseline** известных фейлов main — `test-model/regress/baseline.json`
+  (список `{"test", "reason", "added"}`); читают эшелоны 1–2: тест из
+  baseline, упавший снова, — «baseline: ожидаемо-падающий (reason)» в
+  артефакте, вердикт не краснит. `--final` (эшелон 3) baseline ИГНОРИРУЕТ —
+  полный честный прогон, фон краснит наравне с остальными. Полуавто:
+  `--suggest-baseline` дописывает упавших в
+  `test-model/regress/baseline-suggestions.json` (с заполнителем reason) —
+  перенос в baseline вручную, решение ПМ после триажа.
+- **xdist** (`--xdist N`, `pytest -n auto`, pytest-xdist — включить в
+  тест-окружения проектов) ускоряет каждый эшелон; требование к тестам:
+  детерминированность при параллели — session-фикстуры и стенды не делятся
+  между воркерами (isolating fixtures, stand per worker), стендозависимые
+  тесты — serial-маркеры, serial-fallback — прогон без `--xdist`. Флаг
+  пишется предупреждением в артефакт; время прогона (duration) — в артефакте
+  каждого эшелона.
+- **Freeze tooling**: между эшелоном 3 и деплоем зеркала/скрипты не трогать
+  (любой tooling-коммит после regress-final = перегон).
+- **Установка**: factory_init ставит скелеты — `tests/smoke_cross/README.md`,
+  пустой манифест smoke-cross, пустой `regress-domains.json`,
+  `baseline.json = []`. Пустой smoke-контур — легитимное состояние нового
+  проекта: `--tier smoke` дает WARN и exit 0, не FAIL; контент — у проекта.
+
 ## Режимы
 
 - **shadow** — решения вычисляются и логируются, не блокируют (для прогонов на истории).

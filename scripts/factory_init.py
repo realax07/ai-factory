@@ -22,6 +22,9 @@ Usage:
   architecture/ (пустая, для map.md архитектора),
   docs/glossary.md — скелет глоссария проекта (J53): свободная форма,
   без машинных ворот;
+  J54: эшелонированный регресс — скелеты tests/smoke_cross/README.md,
+  test-model/smoke-cross/manifest.json (пустой), test-model/regress-domains.json
+  (пустой) и test-model/regress/baseline.json ([]) — контент у проекта;
   tests/ (smoke TC-BOOTSTRAP-001), openspec/config.yaml (root-маркер CLI),
   skills/ — 12 скиллов конвейера (factory-flow, ролевые + J45: brainstorming,
   service-decomposition, playwright-pro),
@@ -195,11 +198,14 @@ MKDIRS = [
     "openspec/specs",
     "openspec/changes/archive",
     "tests",
+    "tests/smoke_cross",
     "test-model/checklists",
     "test-model/new",
     "test-model/reviews",
     "test-model/approved",
     "test-model/bugs",
+    "test-model/regress",
+    "test-model/smoke-cross",
     "architecture",
     "docs/ba",
 ]
@@ -246,6 +252,47 @@ def install_glossary(target: Path, force: bool = False) -> str:
     print(f"  {GLOSSARY_REL} {'пересоздан (--force)' if existed else 'создан'}"
           " (скелет глоссария, свободная форма — без машинных ворот, J53)")
     return "recreated" if existed else "created"
+
+
+# J54 (2026-10-18): скелеты эшелонированного регресса. Контент — у проекта:
+# фабрика ставит только пустые заготовки; манифест smoke-контура пуст →
+# `flowctl regress --tier smoke` честно дает WARN (контур не настроен),
+# а не молчаливый прогон.
+SMOKE_CROSS_README_REL = "tests/smoke_cross/README.md"
+SMOKE_CROSS_README = """# tests/smoke_cross — cross-domain smoke (эшелон 2, J54)
+
+Смоук полного контура: роутинг/авторизация/health/представитель сервиса.
+Гоняется `flowctl regress --change C --tier smoke` ПЕРЕД code_review и
+перед merge (2–3 мин). Список сьютов проекта — манифест
+`test-model/smoke-cross/manifest.json` (`{"suites": ["tests/...", ...]}`);
+пустой манифест → WARN и exit 0. Требования к тестам: быстрые,
+стендонезависимые где возможно, детерминированные при `--xdist`
+(session-фикстуры не делятся между воркерами).
+"""
+SMOKE_CROSS_MANIFEST_REL = "test-model/smoke-cross/manifest.json"
+SMOKE_CROSS_MANIFEST = '{\n  "suites": []\n}\n'
+REGRESS_DOMAINS_REL = "test-model/regress-domains.json"
+REGRESS_DOMAINS_SKELETON = ('{\n  "rules": []\n}\n')
+REGRESS_BASELINE_REL = "test-model/regress/baseline.json"
+REGRESS_BASELINE_EMPTY = "[]\n"
+
+
+def install_regress_skeleton(target: Path, force: bool = False) -> None:
+    """J54: скелеты эшелонированного регресса (идемпотентно, без force
+    существующий контент проекта НЕ перезаписывается)."""
+    files = [
+        (SMOKE_CROSS_README_REL, SMOKE_CROSS_README),
+        (SMOKE_CROSS_MANIFEST_REL, SMOKE_CROSS_MANIFEST),
+        (REGRESS_DOMAINS_REL, REGRESS_DOMAINS_SKELETON),
+        (REGRESS_BASELINE_REL, REGRESS_BASELINE_EMPTY),
+    ]
+    for rel, text in files:
+        dst = target / rel
+        if dst.exists() and not force:
+            continue
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        dst.write_text(text, encoding="utf-8")
+        print(f"  {rel} создан (скелет эшелонированного регресса, J54)")
 
 
 def main() -> int:
@@ -333,6 +380,10 @@ def main() -> int:
 
     # 3a-2. docs/glossary.md — скелет глоссария проекта (J53, свободная форма)
     install_glossary(target, force=args.force)
+
+    # 3a-3. Скелеты эшелонированного регресса (J54): tests/smoke_cross/README,
+    # пустые манифест smoke и regress-domains.json, baseline.json = []
+    install_regress_skeleton(target, force=args.force)
 
     # 3b. tests/test_smoke.py + as-is база regression/_bootstrap (контракт 6:
     # smoke — as-is база пустого проекта, TC-BOOTSTRAP-001)
