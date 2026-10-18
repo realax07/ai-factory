@@ -20,6 +20,8 @@ Usage:
   .github/workflows/flow.yml,
   openspec/ (скелет specs/ + changes/archive/), test-model/ (checklists/new/reviews/approved/bugs),
   architecture/ (пустая, для map.md архитектора),
+  docs/glossary.md — скелет глоссария проекта (J53): свободная форма,
+  без машинных ворот;
   tests/ (smoke TC-BOOTSTRAP-001), openspec/config.yaml (root-маркер CLI),
   skills/ — 12 скиллов конвейера (factory-flow, ролевые + J45: brainstorming,
   service-decomposition, playwright-pro),
@@ -202,6 +204,49 @@ MKDIRS = [
     "docs/ba",
 ]
 
+# J53 (2026-10-18): скелет глоссария проекта — свободная форма, БЕЗ
+# детерминированности (решение Заказчика: никаких flow_check-ворот,
+# машинных форматов и валидации). Термины и контент — только на проекте.
+GLOSSARY_REL = "docs/glossary.md"
+GLOSSARY_TEMPLATE = """# Глоссарий проекта
+
+**Правило ведения (свободная форма):** встретил новое рабочее название
+(сервис, том, таблица, элемент фронта, статус) — запиши одной строкой
+«термин — что это». Глоссарий читают новые агенты и Заказчик; оркестратор
+объясняет термины сабагентам своими словами. Формат записей — свободный:
+никаких машинных форматов и валидации, глоссарий — словарь понимания,
+а не ворота.
+
+## Сервисы
+
+## Процессы
+
+## Сущности данных
+
+## Элементы фронта
+
+## Статусы
+"""
+
+
+def install_glossary(target: Path, force: bool = False) -> str:
+    """J53: создать docs/glossary.md — скелет глоссария проекта.
+
+    Идемпотентно: существующий глоссарий НЕ перезаписывается (там уже
+    живут термины проекта) — без force. С force скелет пересоздается.
+    Возврат: "created" | "kept" | "recreated".
+    """
+    dst = target / GLOSSARY_REL
+    if dst.exists() and not force:
+        print(f"  {GLOSSARY_REL} уже существует — не тронут (термины проекта)")
+        return "kept"
+    existed = dst.exists()
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    dst.write_text(GLOSSARY_TEMPLATE, encoding="utf-8")
+    print(f"  {GLOSSARY_REL} {'пересоздан (--force)' if existed else 'создан'}"
+          " (скелет глоссария, свободная форма — без машинных ворот, J53)")
+    return "recreated" if existed else "created"
+
 
 def main() -> int:
     ap = argparse.ArgumentParser()
@@ -286,6 +331,9 @@ def main() -> int:
     else:
         print("  openspec/config.yaml уже существует — не тронут")
 
+    # 3a-2. docs/glossary.md — скелет глоссария проекта (J53, свободная форма)
+    install_glossary(target, force=args.force)
+
     # 3b. tests/test_smoke.py + as-is база regression/_bootstrap (контракт 6:
     # smoke — as-is база пустого проекта, TC-BOOTSTRAP-001)
     smoke = target / "tests" / "test_smoke.py"
@@ -320,9 +368,14 @@ def main() -> int:
     for cmd in ("python3 --version", "git --version"):
         r = subprocess.run(cmd.split(), capture_output=True, text=True)
         print(f"  {cmd}: {r.stdout.strip() or r.stderr.strip()}")
-    r = subprocess.run(["openspec", "--version"], capture_output=True, text=True)
-    if r.returncode != 0:
-        print("  openspec CLI: НЕ найден (npm i -g @openspec/cli) — change-пакеты не валидируются")
+    # openspec CLI может отсутствовать (CI pytest ставит только pytest) —
+    # FileNotFoundError = тот же WARNING, что и ненулевой returncode (J53).
+    try:
+        r = subprocess.run(["openspec", "--version"], capture_output=True, text=True)
+    except FileNotFoundError:
+        r = None
+    if r is None or r.returncode != 0:
+        print("  openspec CLI: НЕ найден (npm i -g @fission-ai/openspec) — change-пакеты не валидируются")
         ok = False
     else:
         print(f"  openspec CLI: {r.stdout.strip()}")

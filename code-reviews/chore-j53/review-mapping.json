@@ -1,0 +1,4 @@
+{
+  "_comment": "Карта покрытия review → задачи (Флоу 4, chore): review-001.md (APPROVE, deleg_29394bd0) — задача J53-review (code review дифа скелета глоссария). Формат: файл → список task-id.",
+  "review-001.md": ["J53-review"]
+}
