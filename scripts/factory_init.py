@@ -368,9 +368,14 @@ def main() -> int:
     for cmd in ("python3 --version", "git --version"):
         r = subprocess.run(cmd.split(), capture_output=True, text=True)
         print(f"  {cmd}: {r.stdout.strip() or r.stderr.strip()}")
-    r = subprocess.run(["openspec", "--version"], capture_output=True, text=True)
-    if r.returncode != 0:
-        print("  openspec CLI: НЕ найден (npm i -g @openspec/cli) — change-пакеты не валидируются")
+    # openspec CLI может отсутствовать (CI pytest ставит только pytest) —
+    # FileNotFoundError = тот же WARNING, что и ненулевой returncode (J53).
+    try:
+        r = subprocess.run(["openspec", "--version"], capture_output=True, text=True)
+    except FileNotFoundError:
+        r = None
+    if r is None or r.returncode != 0:
+        print("  openspec CLI: НЕ найден (npm i -g @fission-ai/openspec) — change-пакеты не валидируются")
         ok = False
     else:
         print(f"  openspec CLI: {r.stdout.strip()}")
