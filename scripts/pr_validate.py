@@ -279,10 +279,12 @@ def check_regress_final(repo: Path, change_id: str) -> list[str]:
       - verdict PASS (FAIL/WARN/нечитаемый — артефакт не засчитан);
       - свежесть ≤ 7 дней (поле date; не читается — mtime файла);
       - commit == HEAD ветки PR, ИЛИ commit — предок HEAD не старше последнего
-        касания измененных файлов (прогон «более свежий, чем изменения»);
-        сам артефакт regress-final.md и test-model/regress/<change-id>/**
-        того же change из «измененных файлов» исключены (BUG-023: артефакт
-        коммитится после прогона и всегда новее удостоверяемого кода);
+ касания измененных файлов (прогон «более свежий, чем изменения»);
+ мета-файлы, не влияющие на поведение тестов, из «измененных файлов»
+ исключены (BUG-023: сам артефакт regress-final.md и
+ test-model/regress/<change-id>/**; BUG-024: весь
+ test-model/regress/**, test-model/reviews/**, code-reviews/** —
+ мета-коммит после прогона не инвалидирует его);
       - если в артефакте указан worktree — HEAD этого дерева обязан совпадать
         с commit прогона (сверка «артефакт ↔ дерево», review-003 #4).
     Нарушения: REGRESS_FINAL_MISSING (нет артефакта / не-PASS) и
@@ -475,8 +477,15 @@ def _regress_commit_problem(repo: Path, commit: str,
     того же change исключаются из «измененных файлов»: артефакт коммитится
     ПОСЛЕ прогона и потому всегда новее удостоверяемого кода — без
     исключения свежестная сверка вечно дает REGRESS_FINAL_STALE
-    (ворота самоубийственны). Regress-артефакты ДРУГИХ change не
-    исключаются — они обычные измененные файлы.
+    (ворота самоубийственны).
+
+    BUG-024: исключение расширено до мета-файлов, не влияющих на поведение
+    тестов: весь test-model/regress/** (артефакты и прогоны ЛЮБЫХ change),
+    test-model/reviews/** и code-reviews/** (мета Reviewer-Delegation).
+    Любой мета-коммит после regress-прогона не должен давать ложный
+    REGRESS_FINAL_STALE и обязательный лишний полный перегон. Продуктовые
+    и тестовые файлы (services/**, backend/**, frontend/**, tests/**,
+    openspec/**) — как прежде: правка после прогона = STALE.
 
     BUG-022: в shallow-клоне merge-base не может верифицировать предка
     (история неполна) → сначала тихий `git fetch --unshallow origin`;
@@ -534,14 +543,21 @@ def _regress_commit_problem(repo: Path, commit: str,
     if not files:
         return (f"commit {commit} не совпадает с HEAD ({head[:12]}), "
                 "измененные файлы PR не определимы")
-    # BUG-023: сам артефакт (и весь test-model/regress/<cid>/ того же
-    # change) всегда новее commit прогона — исключаем из свежестной
-    # сверки, иначе ворота вечно REGRESS_FINAL_STALE.
-    own_regress = f"test-model/regress/{change_id}/"
-    own_regress_files = {f for f in files if f.startswith(own_regress)}
-    files -= own_regress_files
+    # BUG-023/BUG-024: мета-файлы, не влияющие на поведение тестов, всегда
+    # новее commit прогона (коммитятся после него) — исключаем из свежестной
+    # сверки, иначе ворота вечно REGRESS_FINAL_STALE. BUG-023 — собственные
+    # regress-артефакты; BUG-024 — regress/прогон-артефакты ЛЮБЫХ change,
+    # ревью-мета (test-model/reviews/**) и мета Reviewer-Delegation
+    # (code-reviews/**).
+    meta_prefixes = (
+        "code-reviews/",
+        "test-model/regress/",
+        "test-model/reviews/",
+    )
+    meta_files = {f for f in files if f.startswith(meta_prefixes)}
+    files -= meta_files
     if not files:
-        # После исключения собственных regress-артефактов измененных
+        # После исключения мета-файлов измененных (продуктовых/тестовых)
         # файлов нет — прогон удостоверяет весь дифф, ворота пропускают
         # (это НЕ «не определимы» из BUG-022-ветки выше).
         return None

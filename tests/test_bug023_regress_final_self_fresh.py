@@ -10,12 +10,16 @@
 change исключаются из множества «измененных файлов» при свежестной
 сверке (_regress_commit_problem). Regress-артефакты других change и
 обычные файлы исключения не получают.
+(BUG-024 позже расширил исключение на весь test-model/regress/**,
+test-model/reviews/**, code-reviews/** — см.
+test_bug024_regress_meta_fresh.py.)
 
 Трассировка:
   TC-BUG-023-001  артефакт закоммичен после прогона (новее) → PASS
   TC-BUG-023-002  нумерованный regress-2.md того же change новее → PASS
   TC-BUG-023-003  чужой файл (src/**) новее прогона → STALE как прежде
-  TC-BUG-023-004  regress-артефакт ДРУГОГО change новее → STALE
+  TC-BUG-023-004  regress-артефакт ДРУГОГО change новее → PASS
+                  (расширение BUG-024: весь test-model/regress/**)
   TC-BUG-023-005  прямой вызов _regress_commit_problem: только
                   собственные regress-артефакты в диффе → None
 """
@@ -155,9 +159,11 @@ class TestRegressSelfExclusion:
         assert "старше последнего касания" in problems[0]
         assert "src/other.py" in problems[0]
 
-    def test_other_change_regress_artifact_still_counts(self, tmp_path):
-        """TC-BUG-023-004: regress-артефакт ДРУГОГО change (другой каталог)
-        не исключается — новее прогона → REGRESS_FINAL_STALE."""
+    def test_other_change_regress_artifact_now_passes(self, tmp_path):
+        """TC-BUG-023-004: regress-артефакт ДРУГОГО change (другой каталог).
+        BUG-023 исключал только свой change; BUG-024 расширил исключение на
+        весь test-model/regress/** — предыдущие прогоны любых change не
+        влияют на поведение тестов и не протухают ворота (PASS)."""
         repo = make_repo(tmp_path)
         git(repo, "checkout", "-q", "-b", "feature/x")
         c1 = commit_all(repo, "change widget", at="2026-10-11T10:00:00 +0000")
@@ -167,10 +173,7 @@ class TestRegressSelfExclusion:
         regress_artifact(repo, CHANGE, c1)
         commit_all(repo, "commit own artifact",
                    at="2026-10-13T10:00:00 +0000")
-        problems = pr_validate.check_regress_final(repo, CHANGE)
-        assert len(problems) == 1
-        assert "REGRESS_FINAL_STALE" in problems[0]
-        assert OTHER_CHANGE in problems[0]
+        assert pr_validate.check_regress_final(repo, CHANGE) == []
 
     def test_only_own_artifacts_in_diff_passes(self, tmp_path):
         """TC-BUG-023-005: прямой вызов _regress_commit_problem — в диффе
