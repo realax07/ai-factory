@@ -1,0 +1,4 @@
+{
+  "_comment": "Карта покрытия review → задачи (Флоу 4, chore): review-001.md (APPROVE, deleg_j42-review) — задача J42-review (code review push-политики L2+L4: CI-триггер pipeline/** + enforcer push_gate). Формат: файл → список task-id.",
+  "review-001.md": ["J42-review"]
+}

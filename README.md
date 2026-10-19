@@ -192,7 +192,7 @@ Severity до начала реакции: **S1** (прод недоступен
 | [scripts/pr_validate.py](scripts/pr_validate.py) | PR без маркера (BUG-NNN / change-id / [chore]/[docs]/[ops]) и без обязательных файлов; **J11**: Reviewer-Delegation сверяется с реестром — делегация обязана существовать, быть completed и иметь роль `code_reviewer` (self-review/чужая роль = ревью не засчитано); **J26**: PR с диффом `deploy/**`/`RUNBOOK.md` без маркера `[ops]` = FAIL (CI-ворота, `PR_CHANGED_DEPLOY`); **J50**: PR с UI-дельтой (`frontend/**`, макеты `design/**`) без web-тестов в дифе = FAIL без маркера `[no-ui-tests]` с основанием ≥10 символов (env `PR_CHANGED_UI`/`PR_CHANGED_WEBTESTS`); **J51.3**: change-PR требует свежий артефакт `regress-final.md` (PASS, commit-предок HEAD, сам артефакт исключен из сверки свежести — BUG-023; shallow-клон и нечитаемый worktree обрабатываются — BUG-022). |
 | [scripts/check_auth_timing.py](scripts/check_auth_timing.py) | AST-контроль auth: bcrypt, dummy-логины, secrets вместо `==`. |
 | [scripts/smoke_static.py](scripts/smoke_static.py) | Класс DEF-002: статик-ресурс, на который ссылается UI, но который не отдается (сверка ссылок с диском + прод-URL требует 200). |
-| `.github/workflows/flow.yml` | Оба валидатора на каждый push/PR — нарушение нельзя смержить. |
+| `.github/workflows/flow.yml` | Оба валидатора на каждый push/PR — нарушение нельзя смержить; push `pipeline/**` без открытого PR краснит job flow (J42: сабагентская ветка не прошла ворота — открой PR). |
 | Branch protection | Прямой push в main отклонен GitHub (проверено живым тестом GH013). |
 | [scripts/session_archive.py](scripts/session_archive.py) | Разбор транскриптов: traceback, module_not_found, exit codes, петли; вердикт clean/suspicious/degraded. |
 
