@@ -1,0 +1,4 @@
+{
+  "_comment": "Карта покрытия review → задачи (Флоу 4, chore): review-001.md (APPROVE) — задача J52-mirror-1-review (code review защиты проектных workflow в factory_init, ветка pipeline/j52-mirror-guard, 3184a47). Формат: файл → список task-id.",
+  "review-001.md": ["J52-mirror-1-review"]
+}
