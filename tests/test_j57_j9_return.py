@@ -103,7 +103,7 @@ def run_integrate(repo: Path, registry: Path, *extra: str):
 
 
 def test_integrate_happy_creates_branch_from_origin_main(tmp_path):
-    TC-J57-001: """Happy path: ветки пакета из реестра, integration/<cid> от origin/main."""
+    """TC-J57-001: Happy path: ветки пакета из реестра, integration/<cid> от origin/main."""
     repo = make_repo(tmp_path)
     # ветки пакета существуют в репо (делегации уже запушили локально)
     for b in ("flow/j57-a", "chore/j57-docs", "pipeline/j57-b"):
@@ -132,7 +132,7 @@ def test_integrate_happy_creates_branch_from_origin_main(tmp_path):
 
 
 def test_integrate_refuses_active_sessions(tmp_path):
-    TC-J57-002: """Активная сессия этого репо → REFUSE, ветка не создается."""
+    """TC-J57-002: Активная сессия этого репо → REFUSE, ветка не создается."""
     repo = make_repo(tmp_path)
     reg = write_registry(tmp_path, [
         make_session(repo, branch="flow/j57-a", status="running"),
@@ -147,7 +147,7 @@ def test_integrate_refuses_active_sessions(tmp_path):
 
 
 def test_integrate_active_session_of_other_repo_does_not_block(tmp_path):
-    TC-J57-003: """Активная сессия ДРУГОГО репо — не повод отказывать этому пакету."""
+    """TC-J57-003: Активная сессия ДРУГОГО репо — не повод отказывать этому пакету."""
     repo = make_repo(tmp_path)
     other = make_repo(tmp_path, name="other")
     reg = write_registry(tmp_path, [
@@ -162,7 +162,7 @@ def test_integrate_active_session_of_other_repo_does_not_block(tmp_path):
 
 
 def test_integrate_requires_cid_when_registry_ambiguous(tmp_path):
-    TC-J57-004: """Нет --cid и реестр не дает однозначного id → отказ входа (exit 2)."""
+    """TC-J57-004: Нет --cid и реестр не дает однозначного id → отказ входа (exit 2)."""
     repo = make_repo(tmp_path)
     reg = write_registry(tmp_path, [
         make_session(repo, branch="flow/j57-a", status="finished", cid=None,
@@ -179,7 +179,7 @@ def test_integrate_requires_cid_when_registry_ambiguous(tmp_path):
 
 
 def test_integrate_never_recreates_existing_branch(tmp_path):
-    TC-J57-005: """Существующая integration-ветка не пересоздается (idempotent, exit 1)."""
+    """TC-J57-005: Существующая integration-ветка не пересоздается (idempotent, exit 1)."""
     repo = make_repo(tmp_path)
     reg = write_registry(tmp_path, [
         make_session(repo, branch="flow/j57-a", status="finished")])
@@ -216,7 +216,7 @@ def plugin_env(tmp_path, monkeypatch):
 
 
 def test_push_gate_pm_denied_without_marker(tmp_path, monkeypatch):
-    TC-J57-006: """ПМ-push в продуктовый репо без маркера/merged → DENY с подсказкой."""
+    """TC-J57-006: ПМ-push в продуктовый репо без маркера/merged → DENY с подсказкой."""
     repo = make_repo(tmp_path)
     # новый коммит ПОВЕРХ origin/main без маркера — неинтегрированный HEAD
     (repo / "f.txt").write_text("pm-edit\n", encoding="utf-8")
@@ -233,7 +233,7 @@ def test_push_gate_pm_denied_without_marker(tmp_path, monkeypatch):
 
 
 def test_push_gate_pm_allowed_with_integrate_marker(tmp_path, monkeypatch):
-    TC-J57-007: """Маркер [integrate] в subject HEAD → пуш легален."""
+    """TC-J57-007: Маркер [integrate] в subject HEAD → пуш легален."""
     repo = make_repo(tmp_path)
     (repo / "f.txt").write_text("y\n", encoding="utf-8")
     git(repo, "add", "-A")
@@ -246,7 +246,7 @@ def test_push_gate_pm_allowed_with_integrate_marker(tmp_path, monkeypatch):
 
 
 def test_push_gate_pm_allowed_with_pipeline_marker(tmp_path, monkeypatch):
-    TC-J57-008: """Легаси-маркер [pipeline] тоже принимается (pm_bounds-канон)."""
+    """TC-J57-008: Легаси-маркер [pipeline] тоже принимается (pm_bounds-канон)."""
     repo = make_repo(tmp_path)
     git(repo, "-c", "user.email=t@t", "-c", "user.name=t",
         "commit", "-q", "--allow-empty", "-m", "[pipeline] изменение конвейера")
@@ -257,7 +257,7 @@ def test_push_gate_pm_allowed_with_pipeline_marker(tmp_path, monkeypatch):
 
 
 def test_push_gate_pm_allowed_when_head_already_merged(tmp_path, monkeypatch):
-    TC-J57-009: """HEAD уже влит в origin/main (merged PR) → пуш легален без маркера."""
+    """TC-J57-009: HEAD уже влит в origin/main (merged PR) → пуш легален без маркера."""
     repo = make_repo(tmp_path, subject="wip")
     # подвинули origin/main вперед так, что HEAD — его предок
     (repo / "f.txt").write_text("z\n", encoding="utf-8")
@@ -272,7 +272,7 @@ def test_push_gate_pm_allowed_when_head_already_merged(tmp_path, monkeypatch):
 
 
 def test_push_gate_factory_excluded(tmp_path, monkeypatch):
-    TC-J57-010: """Фабрика — не продуктовое репо: ПМ-push docs-заявок не ломается,
+    """TC-J57-010: Фабрика — не продуктовое репо: ПМ-push docs-заявок не ломается,
     даже если factory попал в env-список."""
     monkeypatch.setenv("FLOW_ENFORCER_PRODUCT_REPOS", f"{FACTORY},{tmp_path}")
     res = enforcer.push_gate({
@@ -281,7 +281,7 @@ def test_push_gate_factory_excluded(tmp_path, monkeypatch):
 
 
 def test_push_gate_delegated_push_unchanged(tmp_path, monkeypatch):
-    TC-J57-011: """Делегированный пуш в ALLOW-ветку — прежнее поведение (не PM-ветка)."""
+    """TC-J57-011: Делегированный пуш в ALLOW-ветку — прежнее поведение (не PM-ветка)."""
     repo = make_repo(tmp_path)
     monkeypatch.setenv("FLOW_ENFORCER_PRODUCT_REPOS", str(repo))
     branch = "pipeline/j57-delegated"
