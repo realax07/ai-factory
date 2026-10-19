@@ -225,6 +225,19 @@ test-flow-control (`.github/workflows/flow.yml`) — конвейер сам
 среде автора PASS, в CI ложняк») покрыты ancestry-ось (BUG-022) и
 fresh-ось (BUG-023/024).
 
+## Push-политика сабагентских веток (J42, решение Заказчика 2026-10-18)
+
+Сабагент пушит только свою ветку `pipeline/**` и открывает PR; main и чужие
+зоны — запрещены (ruleset + enforcer). Слои: L1 ruleset main bypass-never
+(есть); L2 — CI-триггер `push: branches: [main, "pipeline/**"]` в flow.yml,
+финальный шаг job `flow`: голый пуш `pipeline/**` без открытого PR — падающий
+шаг с `::error:: «сабагентская ветка ... не прошла ворота — открой PR»`
+(детерминированный сигнал ПМ до приемки); L4 — flow-enforcer перехватывает
+Bash `git push` в контексте активной делегации и разрешает только push в
+ветку из ALLOW-объекта (`session['branch']`), остальное — DENY
+`[PUSH_POLICY]`; вне делегации (ПМ) и при отсутствии branch в ALLOW —
+прежнее поведение.
+
 ## Ревью-мета и маппинг (J10, контракты в промпт code_reviewer — J52-w2)
 
 Review-файл `code-reviews/<change-id>/review-<задача>-<NNN>.md` —

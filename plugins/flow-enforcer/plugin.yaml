@@ -8,3 +8,6 @@ description: >-
   scope» для Флоу 2/4/5 и опциональную проверку последовательности этапов
   (FLOW_ENFORCER_SEQUENCE=1, память фазы flowctl phase). Bypass — только
   дословный маркер 'flow: bypass --by customer' (логируется в incident-файл).
+  J42 (L4): в контексте активной делегации перехватывает Bash git push —
+  разрешен только push в ветку из ALLOW-объекта (session['branch']);
+  вне делегации и без ALLOW-ветки — прежнее поведение.

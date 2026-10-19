@@ -92,6 +92,7 @@ Env:
   FLOW_ENFORCER_SEQUENCE   1 → проверка последовательности этапов (дефолт off)
   FLOW_BYPASS_REGISTRY     путь к реестру bypass-решений (дефолт
                            ~/.hermes/state/flow-bypass-decisions.json)
+  FLOW_ENFORCER_PUSH       0/false/no → выключить push-политику J42 (L4)
 """
 from __future__ import annotations
 
@@ -381,6 +382,202 @@ def worktree_gate(markers: dict, task_id: str) -> dict | None:
     return None
 
 SLOW_PREPARE_SECONDS = 10.0
+
+
+# --------------------------------------------- push-политика (J42, слой L4)
+# Сабагент в активной делегации пушит ТОЛЬКО ветку из ALLOW-объекта делегации
+# (prepare: session['branch']; допустимые формы — 'origin <branch>' /
+# 'HEAD:<branch>' / 'refs/heads/<branch>') и открывает PR; push main, чужой
+# ветки, тегов, удаление и массовые операции — DENY. Вне делегации (ПМ) —
+# не блокировать. Деградация: активная делегация есть, но branch в
+# ALLOW-объекте нет — прежнее поведение (пропуск + WARNING в лог).
+# Контекст делегации определяется по cwd команды Bash flow-aware (как J43.1):
+# делегация с выделенным worktree владеет только своим деревом (cwd в
+# worktree); делегация без worktree работает в дереве repo (cwd в repo) —
+# push ПМ из главного дерева repo при активной worktree-делегации НЕ
+# блокируется. cwd неизвестен → контекстом считаются все активные делегации
+# (консервативно: реестр — единственный источник факта делегации).
+PUSH_POLICY = "PUSH_POLICY"
+PUSH_TOOLS = ("bash",)
+PUSH_DISABLE_ENV = "FLOW_ENFORCER_PUSH"  # 0/false/no — выключить (best-effort)
+PUSH_DELEGATION_MSG = (
+    "Сабагент пушит только свою ветку pipeline/** и открывает PR; "
+    "main и чужие зоны запрещены (ruleset+enforcer). Допустимая форма: "
+    "git push origin <ALLOW-ветка> или git push origin HEAD:<ALLOW-ветка>.")
+
+# Опции push, принимающие отдельное значение (следующий токен — не refspec).
+PUSH_VALUE_OPTS = frozenset({
+    "-o", "--push-option", "--receive-pack", "--exec", "--repo",
+    "--recurse-submodules", "--server-option",
+})
+# Опции/формы, которые сами по себе нарушают политику: удаление refs,
+# массовые операции (все ветки/теги/зеркало).
+PUSH_DENY_OPTS = ("-d", "--delete", "--tags", "--all", "--mirror")
+
+
+def _shell_segments(command: str) -> list[str]:
+    """Сегменты составной команды (&&, ||, ;, |, перевод строки)."""
+    return [s for s in re.split(r"&&|\|\||;|\||\n", command or "") if s.strip()]
+
+
+def parse_git_push(segment: str) -> dict | None:
+    """Разбор сегмента команды как 'git [opts] push [opts] [remote] [refspec]'.
+    None — сегмент не git push. Иначе словарь:
+      {"repo": путь из `git -C`, "dst": ветка-назначение | None,
+       "reason": текст нарушения | None, "dry_run": bool}
+    dst нормализован (префикс refs/heads/ снят); reason имеет приоритет."""
+    tokens = segment.split()
+    if not tokens or tokens[0] != "git":
+        return None
+    i, repo = 1, None
+    while i < len(tokens) and tokens[i] != "push":
+        if tokens[i] == "-C" and i + 1 < len(tokens):
+            repo = tokens[i + 1]
+            i += 2
+        else:
+            i += 1
+    if i >= len(tokens) or tokens[i] != "push":
+        return None
+    i += 1
+    dry_run, positionals = False, []
+    while i < len(tokens):
+        token = tokens[i]
+        if token in PUSH_VALUE_OPTS:
+            i += 2  # опция и её значение
+            continue
+        if token in PUSH_DENY_OPTS:
+            return {"repo": repo, "dst": None, "dry_run": False,
+                    "reason": (f"опция {token} (удаление refs / массовая "
+                               "операция) запрещена политикой")}
+        if token in ("-n", "--dry-run"):
+            dry_run = True
+            i += 1
+            continue
+        if token.startswith("-"):
+            i += 1  # прочие флаги (-u, --force, ...) политике не равны
+            continue
+        positionals.append(token)
+        i += 1
+    if dry_run:
+        return {"repo": repo, "dst": None, "dry_run": True, "reason": None}
+    if not positionals:
+        return {"repo": repo, "dst": None, "dry_run": False,
+                "reason": ("нет явного refspec — укажи "
+                           "'git push origin <ветка>' явно")}
+    if len(positionals) == 1:
+        return {"repo": repo, "dst": None, "dry_run": False,
+                "reason": ("указан только remote без refspec — укажи "
+                           "'git push origin <ветка>' явно")}
+    if len(positionals) > 2:
+        return {"repo": repo, "dst": None, "dry_run": False,
+                "reason": "несколько refspec за один push — запрещено"}
+    refspec = positionals[1].lstrip("+")
+    if ":" in refspec:
+        src, dst = refspec.split(":", 1)
+        if src == "":
+            return {"repo": repo, "dst": None, "dry_run": False,
+                    "reason": f"удаление remote-ref {dst!r} запрещено"}
+    else:
+        dst = refspec
+    if dst.startswith("refs/tags/") or dst.startswith("tag "):
+        return {"repo": repo, "dst": None, "dry_run": False,
+                "reason": f"push тегов ({dst}) запрещен — только ветка из ALLOW"}
+    if dst == "HEAD":
+        return {"repo": repo, "dst": None, "dry_run": False,
+                "reason": "голый HEAD не проверяем — укажи HEAD:<ветка>"}
+    if dst.startswith("refs/heads/"):
+        dst = dst[len("refs/heads/"):]
+    return {"repo": repo, "dst": dst, "dry_run": False, "reason": None}
+
+
+def active_push_context(cwd: str | None) -> tuple[list[str], list[str]]:
+    """(ALLOW-ветки, delegation_id) активных делегаций в контексте cwd
+    (см. комментарий блока J42). Реестр нечитаем → ([], []) — вне делегации
+    (проверка best-effort, сами ворота prepare fail-closed)."""
+    try:
+        data = json.loads(
+            worktree_registry_path().read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return [], []
+    if not isinstance(data, dict):
+        return [], []
+
+    def _in_context(session: dict) -> bool:
+        if cwd is None:
+            return True
+        c = _norm_repo_path(cwd)
+        base = session.get("worktree") or session.get("repo")
+        if not base:
+            return False
+        b = _norm_repo_path(str(base))
+        return c == b or c.startswith(b.rstrip("/") + "/")
+
+    branches: list[str] = []
+    ids: list[str] = []
+    for s in data.get("sessions", []):
+        if not isinstance(s, dict):
+            continue
+        if s.get("status") not in WORKTREE_ACTIVE_STATUSES:
+            continue
+        if not _in_context(s):
+            continue
+        ids.append(str(s.get("delegation_id", "?")))
+        if s.get("branch"):
+            branches.append(str(s["branch"]))
+    return branches, ids
+
+
+def push_gate(args: dict, task_id: str = "") -> dict | None:
+    """Ворота push-политики J42 (L4) для Bash-вызовов git push в контексте
+    активной делегации: разрешен только push в ветку из ALLOW-объекта
+    (session['branch']). Вне делегации / FLOW_ENFORCER_PUSH=0 / нет
+    ALLOW-ветки — прежнее поведение (пропуск)."""
+    flag = os.environ.get(PUSH_DISABLE_ENV, "1").strip().lower()
+    if flag in ("0", "false", "no"):
+        return None
+    command = args.get("command") or args.get("cmd") or ""
+    if not isinstance(command, str) or "push" not in command:
+        return None
+    pushes = [p for p in (parse_git_push(seg)
+                          for seg in _shell_segments(command))
+              if p is not None]
+    if not pushes:
+        return None
+    cwd = None
+    for key in ("cwd", "workdir", "working_dir"):
+        v = args.get(key)
+        if isinstance(v, str) and v.strip():
+            cwd = v
+            break
+    for p in pushes:
+        if cwd is None and p["repo"]:
+            cwd = p["repo"]
+    branches, ids = active_push_context(cwd)
+    if not ids:
+        return None  # вне делегации (ПМ) — не блокировать
+    if not branches:
+        log_event({"event": "push_policy_no_allow", "level": "WARNING",
+                   "task_id": task_id, "delegations": ids,
+                   "note": "активная делегация без branch в ALLOW-объекте — "
+                           "push-политика J42 не применяется (деградация)"})
+        return None
+    allowed = ", ".join(sorted(set(branches)))
+    for p in pushes:
+        if p["reason"] is None and p["dst"] is not None and p["dst"] in branches:
+            continue  # эта команда пуша легальна
+        reason = p["reason"] or (
+            f"push в {p['dst']!r}" if p["dst"] is not None
+            else "refspec не проверяем")
+        log_event({"event": "push_denied", "level": "WARNING",
+                   "task_id": task_id, "reason": reason,
+                   "allowed": branches, "delegations": ids})
+        return {"action": "block", "message": (
+            f"FLOW-ENFORCER [{PUSH_POLICY}]: push-политика J42: разрешена "
+            f"только ветка {allowed} из ALLOW (делегация: {', '.join(ids)}); "
+            f"нарушение: {reason}. {PUSH_DELEGATION_MSG}")}
+    log_event({"event": "push_allowed", "task_id": task_id,
+               "allowed": branches, "delegations": ids})
+    return None
 
 
 class FlowMarkerError(ValueError):
@@ -856,7 +1053,12 @@ def flow_enforce(tool_name: str, args: dict, task_id: str = "",
     """pre_tool_call-хук: валидирует delegate_task против ворот конвейера."""
     try:
         if tool_name != TRIGGER_TOOL:
-            return None  # не делегация — без директивы
+            # J42 (L4): Bash-вызовы git push в контексте активной делегации —
+            # push-политика (разрешена только ветка из ALLOW-объекта);
+            # остальное — без директивы.
+            if isinstance(tool_name, str) and tool_name.lower() in PUSH_TOOLS:
+                return push_gate(args or {}, task_id)
+            return None  # не делегация и не Bash — без директивы
 
         args = args or {}
         goal = args.get("goal") if isinstance(args.get("goal"), str) else ""
