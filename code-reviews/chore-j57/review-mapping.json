@@ -1,0 +1,4 @@
+{
+  "_comment": "Карта покрытия review → задачи (Флоу 4, chore): review-001.md (APPROVE, j57-review) — задача J57-review (code review J57 целиком: flowctl integrate, push_gate PM_PUSH_POLICY, доки, тесты). Формат: файл → список task-id.",
+  "review-001.md": ["J57-review"]
+}
