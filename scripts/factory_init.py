@@ -16,8 +16,11 @@ Usage:
   scripts/flow_state.py, flow_transition.py, session_check.py, gate_runner.py,
   flowctl.py, flow_mode.py, role_zone_policy.py (ядро Flow Control),
   contracts/artifact_contract.md, contracts/flow_control_contract.md,
-  templates/constitution.template.md, templates/task_delegation.md, templates/pm_launch.md,
-  .github/workflows/flow.yml,
+  templates/constitution.template.md, templates/task_delegation.md,
+  templates/pm_launch.md,
+  .github/workflows/flow.yml (J52: только если у проекта еще нет —
+  существующий проектный workflow НЕ перезаписывается, с --force тоже
+  сохраняется с WARNING о ручной сверке с эталоном),
   openspec/ (скелет specs/ + changes/archive/), test-model/ (checklists/new/reviews/approved/bugs),
   architecture/ (пустая, для map.md архитектора),
   docs/glossary.md — скелет глоссария проекта (J53): свободная форма,
@@ -155,8 +158,38 @@ COPY_FILES = [
     "contracts/artifact_contract.md",
     "templates/constitution.template.md",
     "templates/task_delegation.md",
-    ".github/workflows/flow.yml",
 ]
+
+# J52 (инцидент ekotov-wiki): workflow — PROJECT-OWNED. Фабричный эталон
+# копируется только если файла у проекта еще нет; существующий проектный
+# workflow НЕ перезаписывается НИКОГДА (даже с --force): затертый flow.yml
+# с required-check проекта блокирует все PR проекта.
+PROJECT_WORKFLOW_REL = ".github/workflows/flow.yml"
+
+
+def install_project_workflow(target: Path, force: bool = False) -> str:
+    """J52: поставить .github/workflows/flow.yml, не трогая проектный.
+
+    Файла нет → копируется фабричный эталон. Файл есть → сохраняется
+    проектная версия; с --force печатается WARNING о ручной сверке с
+    эталоном (required-checks, триггеры). Перезаписи нет ни в каком
+    режиме. Возврат: "created" | "kept".
+    """
+    dst = target / PROJECT_WORKFLOW_REL
+    if dst.exists():
+        if force:
+            print(f"  FACTORY-INIT WARNING: {PROJECT_WORKFLOW_REL}: "
+                  "проектный workflow сохранен — сверьте с фабричным "
+                  "эталоном вручную (required-checks, триггеры)")
+        else:
+            print(f"  {PROJECT_WORKFLOW_REL} уже существует — "
+                  "не тронут (проектный workflow)")
+        return "kept"
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(FACTORY / PROJECT_WORKFLOW_REL, dst)
+    print(f"  {PROJECT_WORKFLOW_REL} создан (фабричный эталон)")
+    return "created"
+
 
 # Детерминированный Flow Control (change add-deterministic-flow, J28):
 # исполняемое ядро + контракт + скилл — устанавливается вместе с базой.
@@ -313,6 +346,10 @@ def main() -> int:
     for d in MKDIRS + FLOW_CONTROL_MKDIRS:
         (target / d).mkdir(parents=True, exist_ok=True)
     print(f"  каталоги: {len(MKDIRS) + len(FLOW_CONTROL_MKDIRS)} созданы/подтверждены")
+
+    # 2-workflow. J52: проектный .github/workflows/flow.yml не перезаписывается
+    # (эталон — только если файла не было); см. install_project_workflow
+    install_project_workflow(target, force=args.force)
 
     # 2. Файлы конвейера
     copied, skipped = 0, 0
