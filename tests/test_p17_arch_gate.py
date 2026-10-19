@@ -35,8 +35,7 @@ def _write_skip(repo, text=SKIP_TEXT):
 
 class TestP17SddGate:
     def test_missing_sdd_is_invalid_gate(self, tmp_path):
-        """sdd.md=MISSING → именованный INVALID_GATE, не тихий skip."""
-        repo = make_repo(tmp_path, with_sdd=False)
+        """"""TC-P17-01: sdd.md=MISSING → именованный INVALID_GATE, не тихий skip."""        repo = make_repo(tmp_path, with_sdd=False)
         reg = make_registry(tmp_path)
         d = _dev_decision(repo, reg)
         assert d.status == "DENY"
@@ -44,15 +43,13 @@ class TestP17SddGate:
         assert any("sdd.md отсутствует" in x for x in d.details), d.details
 
     def test_missing_sdd_lists_explicit_skip_path(self, tmp_path):
-        """DENY называет механизм явного skip (sdd-skip.md / approved_by)."""
-        repo = make_repo(tmp_path, with_sdd=False)
+        """"""TC-P17-02: DENY называет механизм явного skip (sdd-skip.md / approved_by)."""        repo = make_repo(tmp_path, with_sdd=False)
         reg = make_registry(tmp_path)
         d = _dev_decision(repo, reg)
         assert any("sdd-skip.md" in x and "approved_by" in x for x in d.details)
 
     def test_explicit_skip_passes_with_record(self, tmp_path):
-        """Явный skip: проход без sdd.md, но с записью «arch: sdd skipped by»."""
-        repo = make_repo(tmp_path, with_sdd=False)
+        """"""TC-P17-03: Явный skip: проход без sdd.md, но с записью «arch: sdd skipped by»."""        repo = make_repo(tmp_path, with_sdd=False)
         _write_skip(repo)
         reg = make_registry(tmp_path)
         d = _dev_decision(repo, reg)
@@ -61,8 +58,7 @@ class TestP17SddGate:
             d.required_gates)
 
     def test_skip_without_actor_is_invalid(self, tmp_path):
-        """sdd-skip.md без approved_by — не решение: INVALID_GATE, не проход."""
-        repo = make_repo(tmp_path, with_sdd=False)
+        """"""TC-P17-04: sdd-skip.md без approved_by — не решение: INVALID_GATE, не проход."""        repo = make_repo(tmp_path, with_sdd=False)
         _write_skip(repo, "# SDD skip\n\nбез автора\n")
         reg = make_registry(tmp_path)
         d = _dev_decision(repo, reg)
@@ -70,8 +66,7 @@ class TestP17SddGate:
         assert any("sdd.md отсутствует" in x for x in d.details)
 
     def test_sdd_ready_unchanged(self, tmp_path):
-        """sdd ready — прежнее поведение: ALLOW без skip-строки."""
-        repo = make_repo(tmp_path)
+        """"""TC-P17-05: sdd ready — прежнее поведение: ALLOW без skip-строки."""        repo = make_repo(tmp_path)
         reg = make_registry(tmp_path)
         d = _dev_decision(repo, reg)
         assert d.status == "ALLOW", d.details
