@@ -554,7 +554,9 @@ def push_gate(args: dict, task_id: str = "") -> dict | None:
             cwd = p["repo"]
     branches, ids = active_push_context(cwd)
     if not ids:
-        return None  # вне делегации (ПМ) — не блокировать
+        # Вне делегации — контекст ПМ (J57): в продуктовом репо push
+        # требует интеграции (маркер в HEAD или merged), фабрика исключена.
+        return pm_integration_gate(pushes, cwd, task_id)
     if not branches:
         log_event({"event": "push_policy_no_allow", "level": "WARNING",
                    "task_id": task_id, "delegations": ids,
@@ -578,6 +580,128 @@ def push_gate(args: dict, task_id: str = "") -> dict | None:
     log_event({"event": "push_allowed", "task_id": task_id,
                "allowed": branches, "delegations": ids})
     return None
+
+
+# --------------------------------------------------- J57: pm_bounds → push_gate
+# ПМ-push в продуктовый репо (вне делегации) требует интеграции: маркер
+# [integrate]/[pipeline] в subject HEAD (сборка, переданная dev-lead'у) ИЛИ
+# HEAD уже влит в origin/main (merged PR). Фабрика — КОНВЕЙЕРНОЕ репо: пуш
+# docs-заявок/бэклога ПМ туда не ломаем (правило только для продуктовых).
+PM_PUSH_POLICY = "PM_PUSH_POLICY"
+PRODUCT_REPOS_ENV = "FLOW_ENFORCER_PRODUCT_REPOS"
+INTEGRATE_MARKERS = ("[integrate]", "[pipeline]")
+CONVEYOR_PROJECT = "ai-factory"
+PM_PUSH_HANDOFF_MSG = (
+    "ПМ git продукта не трогает (J9) — передай сборку dev-lead'у "
+    "(flowctl integrate)")
+
+
+def product_repo_paths() -> list[str]:
+    """Продуктовые репо: env-список FLOW_ENFORCER_PRODUCT_REPOS (имена
+    проектов/пути через запятую) или — деривация из реестра сессий, как
+    pm_bounds_check.load_pm_projects (project != 'ai-factory' с существующим
+    ~/project/.git). Фабрика исключена всегда (конвейерное репо)."""
+    raw = os.environ.get(PRODUCT_REPOS_ENV, "").strip()
+    if raw:
+        out = []
+        for part in (x.strip() for x in raw.split(",") if x.strip()):
+            cand = Path(part).expanduser()
+            if not cand.is_absolute():
+                cand = Path.home() / part
+            out.append(str(cand))
+        return out
+    try:
+        data = json.loads(
+            worktree_registry_path().read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    repos: list[str] = []
+    for s in (data.get("sessions", []) if isinstance(data, dict) else []):
+        if not isinstance(s, dict):
+            continue
+        project = str(s.get("project") or "")
+        if not project or project == CONVEYOR_PROJECT:
+            continue
+        cand = Path.home() / project
+        if (cand.is_dir() and (cand / ".git").exists()
+                and str(cand) not in repos):
+            repos.append(str(cand))
+    return repos
+
+
+def _repo_is_product(repo_str: str | None) -> bool:
+    """repo (cwd/`git -C`) — продуктовый? Фабрика (factory_home) — нет."""
+    if not repo_str:
+        return False
+    r = _norm_repo_path(repo_str)
+    factory = _norm_repo_path(str(factory_home()))
+    if r == factory or r.startswith(factory.rstrip("/") + "/"):
+        return False
+    for cand in product_repo_paths():
+        c = _norm_repo_path(cand)
+        if r == c or r.startswith(c.rstrip("/") + "/"):
+            return True
+    return False
+
+
+def _head_integrated(repo: Path) -> tuple[bool, str]:
+    """(интегрирован, subject): True — маркер [integrate]/[pipeline] в
+    subject HEAD ИЛИ HEAD — предок origin/main, т.е. контент уже влит
+    (merged PR). Сверка ТОЛЬКО с remote-tracking origin/main: локальный
+    main — это сам HEAD при пуше main (проверка вырождалась бы в always-true).
+    git недоступен → (False, '') — fail-closed."""
+    try:
+        proc = subprocess.run(
+            ["git", "-C", str(repo), "show", "-s", "--format=%s", "HEAD"],
+            capture_output=True, text=True, timeout=10,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return False, ""
+    subject = proc.stdout.strip() if proc.returncode == 0 else ""
+    if any(m in subject for m in INTEGRATE_MARKERS):
+        return True, subject
+    try:
+        proc = subprocess.run(
+            ["git", "-C", str(repo), "merge-base", "--is-ancestor",
+             "HEAD", "origin/main"],
+            capture_output=True, timeout=10,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return False, subject
+    return (proc.returncode == 0, subject)
+
+
+def pm_integration_gate(pushes: list[dict], cwd: str | None,
+                        task_id: str = "") -> dict | None:
+    """J57 (pm_bounds_check → push_gate): ПМ-push (вне делегации) в
+    продуктовый репо без интеграции → DENY [PM_PUSH_POLICY] с подсказкой
+    «передай сборку dev-lead'у». Пуш в фабрику и продуктовые пушы с
+    маркером/merged — прежнее поведение (пропуск)."""
+    offenders: list[str] = []
+    for p in pushes:
+        if p.get("dry_run"):
+            continue
+        repo_str = p["repo"] or cwd
+        if not repo_str or not _repo_is_product(repo_str):
+            continue
+        integrated, subject = _head_integrated(Path(repo_str).expanduser())
+        if integrated:
+            log_event({"event": "pm_push_allowed", "task_id": task_id,
+                       "repo": repo_str, "head_subject": subject[:120],
+                       "note": "маркер интеграции в HEAD или merged в "
+                               "origin/main"})
+            continue
+        offenders.append(str(repo_str))
+    if not offenders:
+        return None
+    log_event({"event": "pm_push_denied", "level": "WARNING",
+               "task_id": task_id, "repos": offenders,
+               "policy": PM_PUSH_POLICY})
+    return {"action": "block", "message": (
+        f"FLOW-ENFORCER [{PM_PUSH_POLICY}]: ПМ-push в продуктовый репо "
+        f"({', '.join(sorted(set(offenders)))}) без интеграции: маркера "
+        f"[integrate]/[pipeline] в HEAD нет, HEAD не влит в origin/main. "
+        f"{PM_PUSH_HANDOFF_MSG}.")}
 
 
 class FlowMarkerError(ValueError):
