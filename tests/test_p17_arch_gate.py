@@ -80,17 +80,20 @@ class TestP17SddGate:
 
 class TestP17SddSkipFact:
     def test_fact_missing(self, tmp_path):
+        """TC-P17-06: факт sdd.approved_skip отсутствует — STATUS_MISSING, нормальный путь."""
         problems: list = []
         f = flow_state.sdd_skip_fact(tmp_path, problems)
         assert f.status == flow_state.STATUS_MISSING
 
     def test_fact_ready_with_actor(self, tmp_path):
+        """TC-P17-07: sdd-skip.md с approved_by — факт ready с автором."""
         (tmp_path / "sdd-skip.md").write_text(SKIP_TEXT, encoding="utf-8")
         f = flow_state.sdd_skip_fact(tmp_path, [])
         assert f.status == flow_state.STATUS_READY
         assert f.value == {"approved_by": "pm"}
 
     def test_fact_invalid_without_actor(self, tmp_path):
+        """TC-P17-08: sdd-skip.md без approved_by — STATUS_INVALID."""
         (tmp_path / "sdd-skip.md").write_text("решение без автора\n", encoding="utf-8")
         f = flow_state.sdd_skip_fact(tmp_path, [])
         assert f.status == flow_state.STATUS_INVALID
