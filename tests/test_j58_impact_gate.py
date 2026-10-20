@@ -20,6 +20,10 @@
   TC-J58-018       фабричный impact_rules.json валиден и содержит 4 правила
   TC-J58-019       factory_init ставит шаблон openspec/changes/_template/impact.md
   TC-J58-020       change-PR без пакета: карта не дублируется (пакет ловит check_change)
+  TC-J58-021       exists-guard: фабричный PR (contracts/ без openapi.json в
+                   HEAD, services/, frontend/, migrate_) — правила молчат
+  TC-J58-022       exists-guard: продуктовый репо (артефакты в HEAD) — DENY прежний
+  TC-J58-023       вне git (HEAD не определён) — guard не применяется, DENY прежний
 """
 from __future__ import annotations
 
@@ -311,3 +315,96 @@ def test_j58_no_package_no_map_error(rules_repo, no_env):
     impact-гейт карту не требует (не дублирует отказ)."""
     errs = pr_validate.check_impact_gate(rules_repo, "change", "absent-pkg")
     assert errs == []
+
+
+# --- TC-J58-021..023: exists-guard require (J58-fix, ревью-001 замечание 1) ---
+
+def _init_git_repo(tmp_path: Path, name: str,
+                   files: dict[str, str]) -> Path:
+    """Real git-репо с одним коммитом (HEAD-дерево для exists-guard)."""
+    repo = tmp_path / name
+    repo.mkdir(exist_ok=True)  # conftest J41 может уже создать proj/
+    (repo / "scripts").mkdir(parents=True, exist_ok=True)
+    (repo / "scripts" / "impact_rules.json").write_text(
+        (FACTORY / "scripts" / "impact_rules.json").read_text(encoding="utf-8"),
+        encoding="utf-8")
+
+    def git(*args: str) -> None:
+        subprocess.run(["git", "-C", str(repo), *args], check=True,
+                       capture_output=True, text=True)
+    for rel, content in files.items():
+        p = repo / rel
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(content, encoding="utf-8")
+    git("init", "-q")
+    git("config", "user.email", "t@t")
+    git("config", "user.name", "t")
+    git("add", ".")
+    git("commit", "-qm", "init")
+    return repo
+
+
+FACTORY_LIKE = {
+    "contracts/artifact_contract.md": "контракт фабрики\n",
+    "contracts/flow_control_contract.md": "контракт флоу\n",
+}
+
+PRODUCT_LIKE = {
+    **FACTORY_LIKE,
+    "contracts/openapi.json": "{}\n",
+    "services/weather/openapi.yaml": "openapi: 3.0\n",
+    "deploy/deploy.sh": "#!/bin/sh\n",
+    "deploy/RUNBOOK.md": "# RUNBOOK\n",
+    "backend/app/pages.py": "static_v = 1\n",
+}
+
+
+def test_j58_exists_guard_factory_pr_silent(tmp_path, no_env):
+    """Фабричный PR: артефактов (contracts/openapi.json, deploy/,
+    backend/app/pages.py) в HEAD нет — все 4 правила молчат, despite триггеры."""
+    repo = _init_git_repo(tmp_path, "factory", FACTORY_LIKE)
+    assert pr_validate.check_impact_rules(
+        repo, [F("M", "contracts/artifact_contract.md")]) == []          # IR-01
+    assert pr_validate.check_impact_rules(
+        repo, [F("A", "services/newsvc/app.py")]) == []                  # IR-02
+    assert pr_validate.check_impact_rules(
+        repo, [F("M", "frontend/static/app.css")]) == []                 # IR-03
+    assert pr_validate.check_impact_rules(
+        repo, [F("A", "ops/migrate_0001_init.py")]) == []                # IR-04
+
+
+def test_j58_exists_guard_product_repo_denies(tmp_path, no_env):
+    """Продуктовый репо: артефакты есть в HEAD — DENY прежний (не ослаблен)."""
+    repo = _init_git_repo(tmp_path, "product", PRODUCT_LIKE)
+    errs = pr_validate.check_impact_rules(
+        repo, [F("M", "services/weather/openapi.yaml")])
+    assert len(errs) == 1 and "IR-01" in errs[0]
+    errs = pr_validate.check_impact_rules(repo, [F("A", "services/catalog/app.py")])
+    assert len(errs) == 2 and all("IR-02" in e for e in errs)
+    errs = pr_validate.check_impact_rules(repo, [F("M", "frontend/static/app.css")])
+    assert len(errs) == 1 and "IR-03" in errs[0]
+    errs = pr_validate.check_impact_rules(
+        repo, [F("A", "backend/migrations/migrate_0042_x.py")])
+    assert len(errs) == 1 and "IR-04" in errs[0]
+
+
+def test_j58_exists_guard_product_positive_still_ok(tmp_path, no_env):
+    """Продуктовый позитив не сломан: требование покрыто диффом — молчит."""
+    repo = _init_git_repo(tmp_path, "product", PRODUCT_LIKE)
+    assert pr_validate.check_impact_rules(
+        repo, [F("M", "services/weather/openapi.yaml"),
+               F("M", "contracts/openapi.json")]) == []
+
+
+def test_j58_exists_guard_no_git_enforces(tmp_path, no_env):
+    """Вне git HEAD не определён — guard не применяется (консервативно):
+    требование работает как раньше, DENY не потерян."""
+    repo = tmp_path / "nogit"
+    repo.mkdir(exist_ok=True)
+    (repo / "scripts").mkdir()
+    (repo / "scripts" / "impact_rules.json").write_text(
+        (FACTORY / "scripts" / "impact_rules.json").read_text(encoding="utf-8"),
+        encoding="utf-8")
+    errs = pr_validate.check_impact_rules(repo, [F("M", "contracts/api.yaml")])
+    assert len(errs) == 1 and "IR-01" in errs[0]
+    assert pr_validate._head_files(repo) is None

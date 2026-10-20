@@ -695,6 +695,31 @@ def impact_map_problem(repo: Path, change_id: str) -> str | None:
     )
 
 
+def _head_files(repo: Path) -> list[str] | None:
+    """J58-fix (ревью-001 замечание 1): файлы HEAD-дерева — для exists-guard.
+
+    None — HEAD определить нельзя (не git-репо / нет коммитов / ошибка git):
+    exists-guard не применяется, требование работает как раньше
+    (консервативный DENY лучше молчаливого пропуска).
+    """
+    out = _git(repo, "ls-tree", "-r", "--name-only", "HEAD")
+    if out is None:
+        return None
+    return out.splitlines() if out else []
+
+
+def _require_paths_exist(paths: list[str], head_files: list[str]) -> bool:
+    """J58-fix: совпадает ли хотя бы один файл HEAD хотя бы с одним паттерном."""
+    for hf in head_files:
+        for pat in paths:
+            try:
+                if re.search(pat, hf):
+                    return True
+            except re.error:
+                continue
+    return False
+
+
 def check_impact_rules(repo: Path,
                        files: list[tuple[str | None, str]]) -> list[str]:
     """J58: механическая сверка диффа с правилами impact_rules.json.
@@ -704,8 +729,16 @@ def check_impact_rules(repo: Path,
     совпавшим: консервативный DENY с подсказкой лучше молчаливого пропуска)
     требует наличия в диффе хотя бы одного пути под каждым require[].path.
     Расхождение = DENY: id правила + что ожидалось + hint.
+
+    Exists-guard (J58-fix, ревью-001 замечание 1): требование применяется
+    только к репо, где целевой артефакт существует в HEAD (продуктовый
+    проект). Если артефакта в HEAD нет (фабрика: нет contracts/openapi.json,
+    deploy/, backend/app/pages.py) — требование молчит: нельзя DENY-ить репо
+    за отсутствие артефакта, которого в этом репо не существует. Вне git
+    (HEAD не определён) guard не применяется — прежнее поведение.
     """
     errs: list[str] = []
+    head_files = _head_files(repo)
     for rule in load_impact_rules(repo):
         whens = rule["when"] if isinstance(rule["when"], list) else [rule["when"]]
         triggered: list[str] = []
@@ -732,6 +765,11 @@ def check_impact_rules(repo: Path,
             if not isinstance(req, dict) or not req.get("path"):
                 continue
             paths = req["path"] if isinstance(req["path"], list) else [req["path"]]
+            # J58-fix exists-guard: артефакта нет в HEAD этого репо — требование
+            # молчит (фабричные PR с contracts/-диффом не DENY-ятся за
+            # contracts/openapi.json, которого в фабрике не существует).
+            if head_files is not None and not _require_paths_exist(paths, head_files):
+                continue
             found = False
             for _, p in files:
                 for pat in paths:

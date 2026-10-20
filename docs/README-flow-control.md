@@ -106,6 +106,9 @@ Impact-анализ — обязательный артефакт change-пак�
   диффе; IR-02 новый `services/<name>/` (статус A) → `deploy/deploy.sh` +
   `deploy/RUNBOOK.md`; IR-03 frontend static|templates → bump static_v в
   `backend/app/pages.py`; IR-04 `migrate_*.py` → `deploy/RUNBOOK.md`.
+  Exists-guard: требование активно только если целевой артефакт есть в
+  HEAD репо — в фабричном репо (нет contracts/openapi.json, deploy/,
+  backend/) правила молчат, в продуктовом поведение прежнее.
   Дифф-контекст: env `PR_CHANGED_FILES` (строки `STATUS\tpath`, конвенция
   CI) или fallback `git diff --name-status main...HEAD`.
 
