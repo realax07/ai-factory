@@ -84,6 +84,44 @@ incident_ref=S<1|2|3>-<id> (severity-классификация J48 — в ма�
   └─ без них закрытие → DENY (урок R1.3)
 ```
 
+## Impact-карта (J58, 2026-10-19)
+
+Impact-анализ — обязательный артефакт change-пакета, а не воспоминание после
+деплоя: три пропуска последних релизов (contracts/openapi.json не
+перегенерирован, static_v не забамплен, deploy.sh не знал новый сервис) —
+каждое минус цикл.
+
+- **Карта** — `openspec/changes/<id>/impact.md` (шаблон:
+  `openspec/changes/_template/impact.md`, ставит factory_init) ИЛИ секция
+  «## Impact» в design.md/proposal.md. Секции: затронутые сервисы /
+  контракты / статика (static_v?) / deploy-матрица + RUNBOOK / миграции /
+  тесты.
+- **Ворота** (pr_validate, J58): для [change-id]-PR карта обязательна
+  (impact.md или «## Impact»); расхождение диффа с правилами = DENY с
+  подсказкой (какое правило, что ожидалось). Для [chore]/[docs]/[ops]/
+  [BUG-NNN] — только механическая сверка, карту не душим.
+- **Механическая сверка** — правила `scripts/impact_rules.json`
+  (расширяемые: правка JSON, код ворот не меняется). Четыре стартовых:
+  IR-01 `services/*/openapi*`|`contracts/` → `contracts/openapi.json` в
+  диффе; IR-02 новый `services/<name>/` (статус A) → `deploy/deploy.sh` +
+  `deploy/RUNBOOK.md`; IR-03 frontend static|templates → bump static_v в
+  `backend/app/pages.py`; IR-04 `migrate_*.py` → `deploy/RUNBOOK.md`.
+  Дифф-контекст: env `PR_CHANGED_FILES` (строки `STATUS\tpath`, конвенция
+  CI) или fallback `git diff --name-status main...HEAD`.
+
+По флоу:
+
+- **Флоу 1** — СА пишет карту при create_change (до dev-задач);
+  reviewers (code_reviewer) сверяют карту с диффом PR; pr_validate —
+  механический гейт.
+- **Флоу 2** (багфикс) — карта в fix-отчете необязательна, но упоминание
+  затронутых зон делает фикс-отчет легче: BUG-PR проходит только
+  механическую сверку правил.
+- **Флоу 3** (хотфикс) — impact — обязательная секция post-mortem: что
+  карта поймала бы и почему не поймала.
+- **Флоу 4/5** (обслуживание/экспресс) — карта не требуется; действует
+  только механическая сверка правил (не душить chore).
+
 ## Пять эшелонов регресса (J54, решение Заказчика 2026-10-18)
 
 Полный regress НЕ на каждый change: change = доменный regress своего куска +

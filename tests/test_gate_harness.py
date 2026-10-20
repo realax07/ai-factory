@@ -146,6 +146,11 @@ def make_origin(base: Path) -> tuple[Path, str]:
     write(origin, f"openspec/changes/{CHANGE}/requirements.md", REQ_TEXT)
     write(origin, f"openspec/changes/{CHANGE}/proposal.md", "# proposal\n")
     write(origin, f"openspec/changes/{CHANGE}/design.md", "# design\n")
+    # J58: impact-карта — обязательный артефакт change-пакета (ворота
+    # pr_validate DENY-ят change-PR без нее); эталон «green»-репо обязан
+    # ей обладать, как proposal/tasks/reviews.
+    write(origin, f"openspec/changes/{CHANGE}/impact.md",
+          f"# Impact — {CHANGE}\n\n## Затронутые сервисы\n\n—\n")
     write(origin, f"openspec/changes/{CHANGE}/sdd.md", "# sdd\n")
     write(origin, f"openspec/changes/{CHANGE}/tasks.md",
           "# Tasks\n\n- [x] 1.1 сделано\n")
