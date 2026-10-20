@@ -84,4 +84,5 @@
 
 
 
-- [ ] **J58** — Impact-карта: обязательный артефакт СА + механическая сверка diff↔карта (правила openapi/services/frontend→static_v; DENY при расхождении; все флоу) — заявлено 2026-10-19, backlog/J58-impact-map-2026-10-19.md
+- [x] **J58** — Impact-карта: обязательный артефакт СА + механическая сверка diff↔карта (impact_rules.json + гейт pr_validate с exists-guard; factory_init шаблон; все флоу в доках; зеркала) — backlog/J58-impact-map-2026-10-19.md
+
