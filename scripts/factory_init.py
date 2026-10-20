@@ -25,6 +25,9 @@ Usage:
   J54: эшелонированный регресс — скелеты tests/smoke_cross/README.md,
   test-model/smoke-cross/manifest.json (пустой), test-model/regress-domains.json
   (пустой) и test-model/regress/baseline.json ([]) — контент у проекта;
+  J58: impact-контур — scripts/impact_rules.json (правила механической
+  сверки diff→требование) и openspec/changes/_template/impact.md
+  (шаблон impact-карты СА);
   tests/ (smoke TC-BOOTSTRAP-001), openspec/config.yaml (root-маркер CLI),
   skills/ — 12 скиллов конвейера (factory-flow, ролевые + J45: brainstorming,
   service-decomposition, playwright-pro),
@@ -150,6 +153,7 @@ COPY_FILES = [
     "scripts/watchdog_daily_digest.py",
     "scripts/pm_instruction_monitor.py",
     "scripts/session_watchdog.py",
+    "scripts/impact_rules.json",
     "templates/pm_launch.md",
     "agents/debug_agent.md",
     "contracts/artifact_contract.md",
@@ -276,6 +280,23 @@ REGRESS_DOMAINS_SKELETON = ('{\n  "rules": []\n}\n')
 REGRESS_BASELINE_REL = "test-model/regress/baseline.json"
 REGRESS_BASELINE_EMPTY = "[]\n"
 
+# J58 (2026-10-19): шаблон impact-карты СА (обязательный артефакт change-пакета).
+# Ставится как openspec/changes/_template/impact.md — заготовка, из которой СА
+# копирует карту в свой пакет (или оформляет секцией «## Impact» в design.md).
+IMPACT_TEMPLATE_REL = "openspec/changes/_template/impact.md"
+
+
+def install_impact_template(target: Path, force: bool = False) -> None:
+    """J58: impact.md-заготовка change-пакета (идемпотентно, без force
+    существующий файл проекта НЕ перезаписывается)."""
+    dst = target / IMPACT_TEMPLATE_REL
+    if dst.exists() and not force:
+        return
+    src = FACTORY / "templates" / "impact.template.md"
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(src, dst)
+    print(f"  {IMPACT_TEMPLATE_REL} создан (шаблон impact-карты СА, J58)")
+
 
 def install_regress_skeleton(target: Path, force: bool = False) -> None:
     """J54: скелеты эшелонированного регресса (идемпотентно, без force
@@ -384,6 +405,9 @@ def main() -> int:
     # 3a-3. Скелеты эшелонированного регресса (J54): tests/smoke_cross/README,
     # пустые манифест smoke и regress-domains.json, baseline.json = []
     install_regress_skeleton(target, force=args.force)
+
+    # 3a-4. Шаблон impact-карты СА (J58): openspec/changes/_template/impact.md
+    install_impact_template(target, force=args.force)
 
     # 3b. tests/test_smoke.py + as-is база regression/_bootstrap (контракт 6:
     # smoke — as-is база пустого проекта, TC-BOOTSTRAP-001)
