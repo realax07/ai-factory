@@ -1,0 +1,25 @@
+{
+  "task": "j58-review",
+  "flow": 4,
+  "role": "code_reviewer",
+  "repo": "/home/openclaw/ai-factory",
+  "branch": "chore/j58",
+  "head": "137f257",
+  "review_file": "code-reviews/chore-j58/review-001.md",
+  "verdict": "approve",
+  "findings": {
+    "major": 1,
+    "minor": 3
+  },
+  "top_finding": "IR-01 when ^contracts/ misfires on factory's own CI (flow.yml self-run): factory has contracts/*.md but no contracts/openapi.json — future factory PR touching contracts/ gets DENY for a nonexistent artifact (verified live); rules target the product project but apply to the factory repo too",
+  "verification": {
+    "target_suite": "29 TC-J58 within full suite",
+    "full_regress_serial": "877 passed in 142.77s",
+    "self_run_pr_validate": "PR-VALIDATE OK",
+    "bug_marker_no_map_mechanics_works": true,
+    "broken_json_fail_open": "WARN to stderr, gate skipped (documented, conscious; hole: PR breaking rules.json passes)",
+    "historical_cases": "IR-01/IR-02/IR-03 positives replicate weather #211 and video-1.1 file mixes and stay silent"
+  },
+  "not_pushed": true,
+  "commit_marker": "[chore]"
+}
