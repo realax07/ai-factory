@@ -24,6 +24,10 @@
                    HEAD, services/, frontend/, migrate_) — правила молчат
   TC-J58-022       exists-guard: продуктовый репо (артефакты в HEAD) — DENY прежний
   TC-J58-023       вне git (HEAD не определён) — guard не применяется, DENY прежний
+  TC-J58-024       new_dir (precision): A-файл внутри СУЩЕСТВУЮЩЕГО сервиса — молчит
+  TC-J58-025       new_dir: файл в НОВОМ сервисе (каталога нет в HEAD-before) — DENY
+  TC-J58-026       флаг new_dir отсутствует — прежнее поведение (любой A-файл)
+  TC-J58-027       HEAD-before пустое дерево — консервативный прежний DENY
 """
 from __future__ import annotations
 
@@ -408,3 +412,112 @@ def test_j58_exists_guard_no_git_enforces(tmp_path, no_env):
     errs = pr_validate.check_impact_rules(repo, [F("M", "contracts/api.yaml")])
     assert len(errs) == 1 and "IR-01" in errs[0]
     assert pr_validate._head_files(repo) is None
+
+
+# --- TC-J58-024..027: new_dir-точность IR-02 (precision-fix, дефект ekotov PR #231) ---
+
+def _git_repo_on_main(tmp_path: Path, name: str, files: dict[str, str],
+                      branch_files: dict[str, str] | None = None,
+                      rules_in_main: bool = True) -> Path:
+    """git-репо с веткой main (initial tree = files); branch_files —
+    дополнительный коммит в ветке pr поверх main (эмуляция PR-ветки:
+    merge-base(main, HEAD) = дерево HEAD-before). rules_in_main=False —
+    файл правил только на диске, main-коммит пуст (HEAD-before = [])."""
+    repo = tmp_path / name
+    repo.mkdir(exist_ok=True)
+    (repo / "scripts").mkdir(parents=True, exist_ok=True)
+    (repo / "scripts" / "impact_rules.json").write_text(
+        (FACTORY / "scripts" / "impact_rules.json").read_text(encoding="utf-8"),
+        encoding="utf-8")
+
+    def git(*args: str) -> None:
+        subprocess.run(["git", "-C", str(repo), *args], check=True,
+                       capture_output=True, text=True)
+
+    def add(rel: str) -> None:
+        git("add", rel)
+    git("init", "-q")
+    git("symbolic-ref", "HEAD", "refs/heads/main")
+    git("config", "user.email", "t@t")
+    git("config", "user.name", "t")
+    for rel, content in files.items():
+        p = repo / rel
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(content, encoding="utf-8")
+        add(rel)
+    if rules_in_main:
+        add("scripts/impact_rules.json")
+    if files or rules_in_main:
+        git("commit", "-qm", "init")
+    else:
+        git("commit", "-qm", "init", "--allow-empty")
+    if branch_files:
+        git("checkout", "-qb", "pr")
+        if not rules_in_main:
+            add("scripts/impact_rules.json")
+        for rel, content in branch_files.items():
+            p = repo / rel
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text(content, encoding="utf-8")
+            add(rel)
+        git("commit", "-qm", "pr")
+    return repo
+
+
+EXISTING_FRONT = {
+    **PRODUCT_LIKE,
+    "services/frontend/nginx/headers.conf": "add_header X-Frame-Options DENY;\n",
+}
+
+
+def test_j58_ir02_new_dir_existing_service_silent(tmp_path, no_env):
+    """TC-J58-024: A-файл внутри СУЩЕСТВУЮЩЕГО сервиса (services/frontend/
+    есть в дереве HEAD-before) — IR-02 молчит (дефект: «новый сервис» на
+    любой новый файл под services/)."""
+    repo = _git_repo_on_main(tmp_path, "front", EXISTING_FRONT)
+    assert pr_validate.check_impact_rules(
+        repo, [F("A", "services/frontend/nginx/games-headers.inc")]) == []
+
+
+def test_j58_ir02_new_dir_new_service_denies(tmp_path, no_env):
+    """TC-J58-025: файл в НОВОМ сервисе (services/catalog/ отсутствовал в
+    дереве HEAD-before merge-base с main) — DENY прежний, не ослаблен."""
+    repo = _git_repo_on_main(tmp_path, "newsvc", PRODUCT_LIKE,
+                             branch_files={"services/catalog/app.py": "app\n"})
+    errs = pr_validate.check_impact_rules(
+        repo, [F("A", "services/catalog/app.py")])
+    assert len(errs) == 2 and all("IR-02" in e for e in errs)
+
+
+def test_j58_ir02_no_new_dir_flag_previous_behavior(tmp_path, no_env):
+    """TC-J58-026: у правила НЕТ флага new_dir — прежнее поведение: любой
+    A-файл под services/ триггерит, даже внутри существующего сервиса."""
+    repo = _git_repo_on_main(tmp_path, "noflag", EXISTING_FRONT)
+    (repo / "scripts" / "impact_rules.json").write_text(json.dumps({
+        "version": 1,
+        "rules": [{
+            "id": "IR-90",
+            "title": "правило без new_dir",
+            "when": [{"path": "^services/[^/]+/", "status": "A"}],
+            "require": [{"path": "^deploy/RUNBOOK\\.md$",
+                         "label": "deploy/RUNBOOK.md",
+                         "hint": "опиши изменение в RUNBOOK"}],
+        }],
+    }, ensure_ascii=False), encoding="utf-8")
+    errs = pr_validate.check_impact_rules(
+        repo, [F("A", "services/frontend/extra.conf")])
+    assert len(errs) == 1 and "IR-90" in errs[0]
+
+
+def test_j58_ir02_empty_head_before_conservative(tmp_path, no_env):
+    """TC-J58-027: дерево HEAD-before ПУСТО (main без файлов) — любой каталог
+    сервиса в нём отсутствовал → консервативный прежний DENY (не молчание)."""
+    repo = _git_repo_on_main(tmp_path, "emptybase", {}, branch_files={
+        "deploy/deploy.sh": "#!/bin/sh\n",
+        "deploy/RUNBOOK.md": "# RUNBOOK\n",
+        "services/anysvc/app.py": "app\n",
+    }, rules_in_main=False)
+    assert pr_validate._head_before_files(repo) == []
+    errs = pr_validate.check_impact_rules(
+        repo, [F("A", "services/anysvc/app.py")])
+    assert len(errs) == 2 and all("IR-02" in e for e in errs)
