@@ -88,7 +88,7 @@ class TestBugArtifactContract:
         assert paths == [repo / "test-model" / "bugs" / "BUG-042.md"]
 
     def test_bug_report_paths_suffixed_name(self, tmp_path):
-        """Негатив-фикстура прежнего контракта flow_transition: файл
+        """TC-AUD-001: Негатив-фикстура прежнего контракта flow_transition: файл
         BUG-042-fix.md (без точного имени) — легальный артефакт."""
         repo = make_repo(tmp_path)
         write(repo, "test-model/bugs/BUG-042-fix.md", "# BUG-042\n")
@@ -102,7 +102,7 @@ class TestBugArtifactContract:
         assert flow_check.bug_report_paths(repo, "042")[0].name == "BUG-042.md"
 
     def test_pr_validate_check_bug_accepts_exact_name(self, tmp_path):
-        """Негатив-фикстура прежнего контракта pr_validate: glob
+        """TC-AUD-002: Негатив-фикстура прежнего контракта pr_validate: glob
         BUG-042-*.md НЕ матчит BUG-042.md → прежде был ложный FAIL PR."""
         repo = make_repo(tmp_path)
         write(repo, "test-model/bugs/BUG-042.md",
@@ -122,7 +122,7 @@ class TestBugArtifactContract:
         assert "BUG-042.md" in missing[0] and "BUG-042-*.md" in missing[0]
 
     def test_flow_transition_bug_fix_accepts_suffixed_report(self, tmp_path):
-        """Негатив-фикстура прежних ворот Флоу 2: только suffixed-репорт —
+        """TC-AUD-003: Негатив-фикстура прежних ворот Флоу 2: только suffixed-репорт —
         переход bug_fix прежде валился, теперь проходит."""
         repo = make_repo(tmp_path)
         write(repo, "test-model/bugs/BUG-042-regress.md", "# BUG-042\n")
@@ -134,7 +134,7 @@ class TestBugArtifactContract:
         assert bug_report_findings(findings) == []
 
     def test_flow_transition_bug_fix_missing_report_still_denies(self, tmp_path):
-        """Позитив-контроль: репорта нет вовсе — DENY остается (усиление
+        """TC-AUD-004: Позитив-контроль: репорта нет вовсе — DENY остается (усиление
         контракта не превратилось в молчаливый пропуск)."""
         repo = make_repo(tmp_path)
         snap = snapshot_for(repo, tmp_path)
@@ -145,7 +145,7 @@ class TestBugArtifactContract:
         assert details and any("BUG-042" in d for d in details)
 
     def test_one_artifact_two_gates_agree(self, tmp_path):
-        """Контракт Н5 end-to-end: один файл — одинаковый вердикт обоих ворот
+        """TC-AUD-005: Контракт Н5 end-to-end: один файл — одинаковый вердикт обоих ворот
         (прежде: flow_transition ALLOW / pr_validate FAIL или наоборот)."""
         for i, name in enumerate(("BUG-042.md", "BUG-042-notes.md")):
             root = tmp_path / f"g{i}"
@@ -184,7 +184,7 @@ class TestParseVerdictNumberedHeading:
 
 
 class TestClosedDevTasksMarkerOrder:
-    TASKS = """# Tasks
+    TASKS = """TC-AUD-006: # Tasks
 
 - [x] 5.1 сделано
 - [x] 5.2 [S] мелочь
@@ -196,7 +196,7 @@ class TestClosedDevTasksMarkerOrder:
 """
 
     def test_size_label_before_role_marker_excluded(self):
-        """Негатив-фикстура Н11: «[x] 5.3 [M] [ops]» — ops-задача за меткой
+        """TC-AUD-007: Негатив-фикстура Н11: «[x] 5.3 [M] [ops]» — ops-задача за меткой
         размера; прежде парсер не видел [ops] и требовал code-review."""
         closed = flow_check.closed_dev_tasks(self.TASKS)
         assert "5.3" not in closed
@@ -237,7 +237,7 @@ class TestRoleZonesN13:
         assert "integrator" not in rzp.EMPTY_POLICY_ROLES
 
     def test_pm_zone_covers_plan_files(self):
-        """J41: PLAN-<id>.md пишет ПМ — зона обязана покрывать (Н13)."""
+        """TC-AUD-008: J41: PLAN-<id>.md пишет ПМ — зона обязана покрывать (Н13)."""
         ok = rzp.narrow_zones("pm", ["PLAN-add-widget.md", "PLAN-BUG-042.md"])
         assert ok["zones"] == ["PLAN-add-widget.md", "PLAN-BUG-042.md"]
         assert ok["violations"] == []
