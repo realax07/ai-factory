@@ -126,7 +126,7 @@ def test_cm_file_override(tmp_path):
 
 
 def test_cm_default_factory_is_repo(tmp_path):
-    """Без --factory эталон = репо скрипта (scripts/.. текущей фабрики)."""
+    """TC-AUD-001: Без --factory эталон = репо скрипта (scripts/.. текущей фабрики)."""
     p = run_cli("--project", str(FACTORY), "--file", "impact_rules.json")
     assert p.returncode == 0
     data = json.loads(p.stdout)

@@ -260,7 +260,7 @@ def test_pf_snapshot_wrong_branch(tmp_path):
 
 
 def test_pf_snapshot_detached_head_warn(tmp_path):
-    """Н17: checkout сменился (detached) — ворота прочитают не то дерево."""
+    """TC-AUD-001: Н17: checkout сменился (detached) — ворота прочитают не то дерево."""
     repo = init_repo(tmp_path, PRODUCT)
     branch_commit(repo, {"backend/app/api.py": "x = 2\n"}, "next")
     git(repo, "checkout", "-q", "--detach")
@@ -290,7 +290,7 @@ def test_pf_cli_json_and_exit_codes(tmp_path):
 
 
 def test_pf_prbody_rules_inert_in_existing_gates(tmp_path):
-    """Н20/Н25-контракт: pr_body-правила не создают DENY в существующих
+    """TC-AUD-002: Н20/Н25-контракт: pr_body-правила не создают DENY в существующих
     воротах pr_validate.check_impact_rules (require без path пропускается)."""
     import pr_validate
     repo = init_repo(tmp_path, {**PRODUCT, "services/api/Dockerfile":
