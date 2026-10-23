@@ -55,7 +55,7 @@ python3 ~/ai-factory/scripts/factory_init.py \
     --name "My Project"
 ```
 
-Скрипт: создает структуру каталогов (openspec, test-model, architecture, docs/ba), копирует ворота и скрипты (flow_check, pr_validate, codegraph, smoke_static, session_archive, session_worktree, **delegate_gate**, **delegate_watchdog**, check_auth_timing, **pm_bounds_check**, **stand_reaper**, **watchdog_daily_digest**, **pm_instruction_monitor**, **session_watchdog**), CI-workflow, контракты, шаблоны (включая **pm_launch**), **12 скиллов конвейера**; создает `CONSTITUTION.md` из шаблона; создает `docs/glossary.md` (скелет глоссария проекта, свободная форма — без машинных ворот, J53); проверяет среду; прогоняет **post-init ворота** — `flow_check` на пустом проекте обязан вернуть OK. Идемпотентен: повторный запуск без `--force` ничего не перезапишет (включая глоссарий с уже накопленными терминами).
+Скрипт: создает структуру каталогов (openspec, test-model, architecture, docs/ba), копирует ворота и скрипты (flow_check, pr_validate, codegraph, smoke_static, session_archive, session_worktree, **delegate_gate**, **delegate_watchdog**, check_auth_timing, **pm_bounds_check**, **stand_reaper**, **session_watchdog**), CI-workflow, контракты, шаблоны (включая **pm_launch**), **12 скиллов конвейера**; создает `CONSTITUTION.md` из шаблона; создает `docs/glossary.md` (скелет глоссария проекта, свободная форма — без машинных ворот, J53); проверяет среду; прогоняет **post-init ворота** — `flow_check` на пустом проекте обязан вернуть OK. Идемпотентен: повторный запуск без `--force` ничего не перезапишет (включая глоссарий с уже накопленными терминами).
 
 **Плагин flow-enforcer (J43, с 2026-10-12):** factory_init также ставит pre_tool_call-энфорсер делегаций в `~/.hermes/plugins/flow-enforcer/` и добавляет его в `plugins.enabled` (аккуратная правка существующего блока; нет блока — печатает инструкцию; `--skip-plugin` отключает шаг). Плагин валидирует каждый `delegate_task` через `flowctl prepare --dry-run` до исполнения: заголовок `flow: flow=<1-5> role=<роль> repo=<путь> scope=<id>` (scope по флоу: change-id / BUG-<КОМПЛЕКС>-NNN (BUG-001, BUG-AF-RECHECK-001) / incident-id / chore-slug / slug; для продуктовых задач — paths=<файлы> (или kind=docs для docs_task/chore_task, dev_task без paths — PATHS_MISSING)), DENY с кодами ворот (план релиза, зоны, BUG-репорт…) ПМ видит на спавне. Режимы `FLOW_ENFORCER_MODE=permissive|strict`, bypass — строка `flow: bypass --by customer` только ЗАЯВКА: действует при записи в реестре решений Заказчика `~/.hermes/state/flow-bypass-decisions.json` (repo/scope/action/expires; без записи — обычные проверки, fail-closed). Порядок этапов: `flowctl phase` (память фазы) + sequence-gate (`FLOW_ENFORCER_SEQUENCE=1`). Подробности: [plugins/README.md](plugins/README.md), backlog J43/J43.1.
 
@@ -255,12 +255,11 @@ Severity до начала реакции: **S1** (прод недоступен
 | `scripts/flowctl.py phase` | Память фазы: последний завершенный этап scope (J43.1) |
 | `plugins/flow-enforcer/` | Плагин: pre_tool_call-энфорсер делегаций (J43/J43.1); source of truth, установка — factory_init / `hermes plugins install` |
 | `scripts/stand_reaper.py` | Гашение осиротевших тестовых стендов (J29) |
-| `scripts/watchdog_daily_digest.py` | Суточный дайджест вотчдогов |
 | `scripts/pr_validate.py` | PR-ворота |
 | `scripts/pm_bounds_check.py` | Границы записи ПМ: защищенные пути конвейера, role-промпты, `code-reviews/**` (J11), deploy-дерево — только `[ops]` (J26), env `PM_PROTECTED_EXCLUDE` |
 | `scripts/session_watchdog.py` | Вотчдог DM-роутинга: залипшие ключи, тайтл `main`, dropped-делегации, субагент-контаминация (§2.8). Крон */2 |
 | `scripts/delegate_watchdog.py` | Детектор обхода делегаций. Крон */5 |
-| `scripts/pm_instruction_monitor.py` | Change-detector канала ПМ-0 (для крона pm-instruction-relay) |
+| `archive/pm-instruction-channel/` | Архив мертвых каналов (волна 4, Н2/Н3): `watchdog_daily_digest.py` (суточный дайджест) и `pm_instruction_monitor.py` (change-detector канала ПМ-0) — джобы отключены, скрипты ниоткуда не вызываются |
 | `scripts/codegraph.py` | Граф зависимостей кода |
 | `scripts/smoke_static.py` | Смоук статики (класс DEF-002) |
 | `scripts/session_archive.py` | Архив транскриптов + разбор неуспеха |
