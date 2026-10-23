@@ -14,6 +14,10 @@ Usage:
   scripts/stand_reaper.py, scripts/session_watchdog.py,
   scripts/flow_state.py, flow_transition.py, session_check.py, gate_runner.py,
   flowctl.py, flow_mode.py, role_zone_policy.py (ядро Flow Control),
+  scripts/flow_scope_check.py (АУД-4, Н21: enforcing — коммиты ветки
+  соответствуют change-id), scripts/flow_preflight.py (АУД-4, Н24: advisory
+  — дешевые чеки до dev-цикла); check_mirrors.py — FACTORY-ONLY, в проект
+  и в списки НЕ входит (сверка зеркал имеет смысл только на машине фабрики);
   contracts/artifact_contract.md, contracts/flow_control_contract.md,
   templates/constitution.template.md, templates/task_delegation.md, templates/pm_launch.md,
   .github/workflows/flow.yml,
@@ -137,6 +141,150 @@ def install_plugin(skip: bool = False) -> bool:
     print(f"  plugins.enabled: '{PLUGIN_NAME}' добавлен в существующий блок")
     return True
 
+
+# --- Кроны и вотчдоги (политика 2026-10-23) ---------------------------------
+#
+# Инцидент сессии 2026-10-23: кроны исполняют КОПИИ из ~/.hermes/scripts/
+# (вне контроля версий), а не репо-копии фабрики — фикс из репо не доезжал
+# до боевого файла, вотчдог спамил чат 5-минутным «ok». Решение: канонический
+# источник — репо фабрики; в ~/.hermes/scripts живут только ТОНКИЕ
+# ОБЕРТКИ-ДЕЛЕГАТЫ (exec к репо-копии), которые install_crons создает/обновляет.
+
+# Скрипты, живущие под кроном: для каждого — обертка-делегат в ~/.hermes/scripts.
+WATCHDOG_SCRIPTS = [
+    "session_watchdog.py",
+    "delegate_watchdog.py",
+    "stand_reaper.py",
+]
+
+# Упраздненные крон-джобы (решение Заказчика 2026-10-23): обертки НЕ создаются,
+# оставшиеся standalone-копии — в WARN-список (удалить файл и крон).
+ABOLISHED_CRON_SCRIPTS = [
+    "watchdog_daily_digest.py",
+    "pm_instruction_monitor.py",
+]
+
+CRON_WRAPPER_TEMPLATE = """#!/usr/bin/env python3
+# factory-cron-wrapper (политика 2026-10-23): канонический источник — репо
+# фабрики. Крон исполняет ЭТУ обертку; фиксы вливаются в репо через PR и
+# доходят до крона без ручного копирования. Standalone-копии устарели.
+import subprocess, sys
+sys.exit(subprocess.run([sys.executable, {repo_script!r}] + sys.argv[1:]).returncode)
+"""
+
+
+def _is_delegate_wrapper(path: Path, repo_scripts: Path) -> bool:
+    """Обертка-делегат = файл исполняет репо-копию (путь репо в тексте)."""
+    try:
+        return str(repo_scripts) in path.read_text(encoding="utf-8")
+    except OSError:
+        return False
+
+
+def install_crons(target_scripts) -> dict:
+    """Создать/обновить обертки-делегаты кронов в ~/.hermes/scripts.
+
+    target_scripts — каталог живых скриптов кронов (обычно
+    ~/.hermes/scripts, для тестов — fixture tmp HERMES_HOME/scripts).
+
+    Вместо standalone-копий ставится тонкая обертка (exec к репо-копии
+    фабрики), поэтому фикс репо доезжает до крона сразу после merge.
+    Standalone-копии (файл без делегации) детектируются сверкой mtime/размера
+    с репо-копией и заменяются оберткой; устаревшие — в WARN-списке.
+    Упраздненные скрипты (digest, pm-instruction) НЕ оборачиваются — только
+    WARN «удалить копию и крон».
+
+    Возврат: {"installed": [...], "already": [...], "replaced": [...],
+              "stale_warn": [...], "abolished_warn": [...], "errors": [...]}.
+    """
+    target_scripts = Path(target_scripts)
+    repo_scripts = FACTORY / "scripts"
+    report = {"installed": [], "already": [], "replaced": [],
+              "stale_warn": [], "abolished_warn": [], "errors": []}
+
+    def standalone_staleness(dst: Path, src: Path) -> str:
+        reasons = []
+        try:
+            if dst.stat().st_mtime < src.stat().st_mtime:
+                reasons.append(
+                    f"mtime {dst.stat().st_mtime:.0f} старше репо "
+                    f"{src.stat().st_mtime:.0f}")
+            if dst.stat().st_size != src.stat().st_size:
+                reasons.append(
+                    f"размер {dst.stat().st_size} != репо {src.stat().st_size}")
+        except OSError:
+            pass
+        return "; ".join(reasons) or "без дрейфа mtime/размера"
+
+    for name in WATCHDOG_SCRIPTS:
+        src = repo_scripts / name
+        dst = target_scripts / name
+        if not src.is_file():
+            msg = f"{name}: репо-копия {src} не найдена"
+            print(f"  FACTORY-INIT WARNING: {msg}")
+            report["errors"].append(msg)
+            continue
+        wrapper = CRON_WRAPPER_TEMPLATE.format(repo_script=str(src))
+        if dst.is_file() and _is_delegate_wrapper(dst, repo_scripts):
+            if dst.read_text(encoding="utf-8") != wrapper:
+                try:
+                    dst.write_text(wrapper, encoding="utf-8")
+                    report["installed"].append(name)
+                    print(f"  {name}: обертка обновлена (репо-копия: {src})")
+                except OSError as exc:
+                    report["errors"].append(f"{name}: {exc}")
+            else:
+                report["already"].append(name)
+            continue
+        if dst.is_file():
+            detail = standalone_staleness(dst, src)
+            print(f"  FACTORY-INIT WARNING: {name}: standalone-копия устарела "
+                  f"({detail}) — заменяю оберткой-делегатом")
+            report["stale_warn"].append(f"{name}: {detail}")
+            report["replaced"].append(name)
+        target_scripts.mkdir(parents=True, exist_ok=True)
+        try:
+            dst.write_text(wrapper, encoding="utf-8")
+            report["installed"].append(name)
+            print(f"  {name}: обертка-делегат установлена (репо-копия: {src})")
+        except OSError as exc:
+            report["errors"].append(f"{name}: {exc}")
+
+    for name in ABOLISHED_CRON_SCRIPTS:
+        dst = target_scripts / name
+        if dst.is_file():
+            msg = (f"{name}: упразднен решением Заказчика 2026-10-23 — "
+                   "удалите копию и крон-джобу")
+            print(f"  FACTORY-INIT WARNING: {msg}")
+            report["abolished_warn"].append(msg)
+    return report
+
+
+def print_recommended_crons() -> None:
+    """Таблица рекомендуемых кронов (политика 2026-10-23, синхронно
+    с docs/README-flow-control.md и скиллом ekotov-watchdog-channel-policy).
+
+    Принцип тишины: чисто → пустой stdout → молчание; аномалия → непустой
+    stdout → доставляется в чат. Это ЕДИНСТВЕННЫЙ повод появления крона в чате.
+    """
+    rows = [
+        ("session-watchdog", "*/5 * * * *", "origin",
+         "залипшие сессии/ключи; чисто = пустой stdout = молчание"),
+        ("stand-reaper-hourly", "0 * * * *", "local",
+         "сироты стендов гасятся локально; в чат только если скрипт упал"),
+        ("delegate-watchdog", "*/5 * * * *", "origin",
+         "включается ПМ ПОСЛЕ проверки: прогнать починенную эвристику "
+         "(project-less диспатчи ПМ = норма) — clean, exit 0"),
+        ("watchdog-daily-digest", "—", "—",
+         "НЕ СОЗДАВАТЬ: упразднен решением Заказчика 2026-10-23"),
+    ]
+    print("\n  Рекомендуемые кроны (политика 2026-10-23; чисто = молчание):")
+    print("  | Джоба | Расписание | deliver | Поведение |")
+    print("  |---|---|---|---|")
+    for job, sched, deliver, behavior in rows:
+        print(f"  | {job} | {sched} | {deliver} | {behavior} |")
+
+
 COPY_FILES = [
     "scripts/flow_check.py",
     "scripts/pr_validate.py",
@@ -150,6 +298,7 @@ COPY_FILES = [
     "scripts/pm_bounds_check.py",
     "scripts/stand_reaper.py",
     "scripts/session_watchdog.py",
+    "scripts/flow_preflight.py",
     "scripts/impact_rules.json",
     "templates/pm_launch.md",
     "agents/debug_agent.md",
@@ -169,8 +318,13 @@ FLOW_CONTROL_FILES = [
     "scripts/flowctl.py",
     "scripts/flow_mode.py",
     "scripts/role_zone_policy.py",
+    "scripts/flow_scope_check.py",
     "contracts/flow_control_contract.md",
 ]
+
+# check_mirrors.py — FACTORY-ONLY: сверка зеркал проектов с эталоном фабрики
+# выполняется ТОЛЬКО на машине фабрики (CI/вручную), в проект не ставится и
+# в COPY_FILES/FLOW_CONTROL_FILES не входит (АУД, инцидент сессии 2026-10-23).
 
 # Скиллы-скелеты (копируются целиком как каталоги).
 SKILL_DIRS = [
@@ -320,6 +474,8 @@ def main() -> int:
     ap.add_argument("--force", action="store_true", help="перезаписывать существующие файлы")
     ap.add_argument("--skip-plugin", action="store_true",
                     help="не устанавливать плагин flow-enforcer в ~/.hermes/plugins")
+    ap.add_argument("--skip-crons", action="store_true",
+                    help="не ставить/не обновлять обертки-делегаты кронов в ~/.hermes/scripts")
     args = ap.parse_args()
 
     target = Path(args.target).resolve()
@@ -455,6 +611,19 @@ def main() -> int:
     # 4a. Плагин flow-enforcer (J43): машина (~/.hermes/plugins), не проект
     if not install_plugin(skip=args.skip_plugin):
         ok = False
+
+    # 4b. Кроны и вотчдоги (политика 2026-10-23): обертки-делегаты в
+    # ~/.hermes/scripts + таблица рекомендуемых кронов. Канонический
+    # источник — репо фабрики; standalone-копии устарели (инцидент сессии).
+    if args.skip_crons:
+        print("  кроны: пропуск (--skip-crons)")
+    else:
+        hermes_scripts = Path(os.environ.get(
+            "HERMES_HOME", str(Path.home() / ".hermes"))) / "scripts"
+        crons = install_crons(hermes_scripts)
+        if crons["errors"]:
+            ok = False
+        print_recommended_crons()
 
     # 5. Post-init ворота: flow_check = OK на пустом проекте
     r = subprocess.run(["python3", str(FACTORY / "scripts/flow_check.py"), str(target)],
