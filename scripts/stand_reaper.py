@@ -202,6 +202,7 @@ def kill_targets(targets: list[Proc]) -> None:
 def main() -> int:
     ap = argparse.ArgumentParser(description="Гашение осиротевших тестовых стендов (J29)")
     ap.add_argument("--kill", action="store_true", help="реально гасить (по умолчанию dry-run)")
+    ap.add_argument("--strict-exit", action="store_true", help="exit 1 при кандидатах в dry-run (CI/ручные проверки)")
     ap.add_argument("--json", action="store_true", help="машиночитаемый вывод")
     ap.add_argument("--min-age", type=float, default=DEFAULT_MIN_AGE_SEC)
     ap.add_argument("--allowlist", help="файл: подстрока cmdline, которую не трогать")
