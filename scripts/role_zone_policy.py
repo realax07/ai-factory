@@ -31,15 +31,15 @@ import session_check as sc
 # строки-ряда включительно, join "\n", без завершающего перевода строки,
 # UTF-8) в указанном коммите.
 POLICY_TABLE_DIGEST = (
-    "agents/README.md@8d5db6d:таблица-записи (роль→зона), sha256 "
-    "8cf9cababb28c8b82b6ae931d482c55c9906a89ef8f9fa3491fbe0e4da6e3b3c"
+    "agents/README.md@1b6040b:таблица-записи (роль→зона), sha256 "
+    "fc87330d1b8344bce8fcdbb4bb4b31707f2125f2e7096494b453bd513a3876b1"
 )
-POLICY_TABLE_DATE = "2026-10-17"
+POLICY_TABLE_DATE = "2026-10-23"
 # Поправка Н13 (аудит 2026-10-23): зоны integrator (merge-артефакты),
 # pm (PLAN-*.md, docs/**) расширены относительно запиненной таблицы —
 # редакция политики фиксируется в version-строке, чтобы резервации/сверки
 # diff до и после поправки были различимы (контракт policy_version).
-POLICY_AMENDMENT = "; поправка Н13: 2026-10-23 (integrator/pm-зоны)"
+POLICY_AMENDMENT = "; поправка Н13: 2026-10-23 (integrator/pm-зоны, таблица синхронизирована)"
 POLICY_VERSION = f"{POLICY_TABLE_DIGEST}; дата: {POLICY_TABLE_DATE}{POLICY_AMENDMENT}"
 POLICY_SOURCE = "agents/README.md"
 
