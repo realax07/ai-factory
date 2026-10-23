@@ -26,12 +26,20 @@ import session_check as _sc  # noqa: E402  (единая валидация chan
 # --- Наборы обязательных артефактов по типам (контракты) ---
 
 def check_bug(repo: Path, num: str) -> list[str]:
-    """Флоу 2: баг-репорт обязателен; после мержа — статус CLOSED."""
+    """Флоу 2: баг-репорт обязателен; после мержа — статус CLOSED.
+
+    Н5 (аудит 2026-10-23): контракт артефакта единый с flow_transition —
+    test-model/bugs/BUG-<id>.md ИЛИ BUG-<id>-<slug>.md
+    (flow_check.bug_report_paths); прежде здесь принимался только glob
+    с суффиксом, и файл BUG-001.md, прошедший переход Флоу 2, валил PR.
+    """
+    from flow_check import bug_report_paths  # noqa: E402  (единый контракт Н5)
     missing = []
     digits = re.sub(r"^BUG-", "", num)  # принимаем и "BUG-001", и "001"
-    bugs = list((repo / "test-model" / "bugs").glob(f"BUG-{digits}-*.md")) if (repo / "test-model" / "bugs").is_dir() else []
+    bugs = bug_report_paths(repo, num)
     if not bugs:
-        return [f"test-model/bugs/BUG-{digits}-*.md: баг-репорт отсутствует (контракт 6/правило 7)"]
+        return [f"test-model/bugs/BUG-{digits}.md (или BUG-{digits}-*.md): "
+                "баг-репорт отсутствует (контракт 6/правило 7)"]
     text = bugs[0].read_text(encoding="utf-8", errors="replace")
     # На момент PR статус может быть открыт; CLOSED требуется после мержа (проверяет отдельно post-merge job)
     if "Статус" not in text and "CLOSED" not in text:
@@ -192,12 +200,26 @@ def check_change(repo: Path, change_id: str, marker: str = "") -> list[str]:
 
 
 def check_chore(repo: Path, marker: str) -> list[str]:
-    """Флоу 4: обслуживание — минимальный набор, спека не меняется."""
+    """Флоу 4: обслуживание — минимальный набор, спека не меняется.
+
+    Н16 (аудит 2026-10-23): [chore] блокировал только openspec/ — продуктовый
+    код под [chore] проходил CI без ревью-артефактов (дыра ровно в классе
+    «ошибки выбора маркера»). Дифф продуктового кода (конвенция CI:
+    PR_CHANGED_CODE=1 — backend/frontend/services/src/e2e, т.е. вне
+    openspec/, docs/, tests/, scripts/) под [chore] = FAIL с подсказкой.
+    """
     # Запрет: chore не имеет права менять спеки (изменение as is только через change)
     changed_specs = os.environ.get("PR_CHANGED_SPECS", "")
     if changed_specs.strip() in ("1", "true"):
         return [
             "PR помечен [chore], но содержит изменения openspec/ — изменение as is только через change-пакет (контракт 7)"
+        ]
+    if os.environ.get("PR_CHANGED_CODE", "").strip() in ("1", "true"):
+        return [
+            "PR помечен [chore], но содержит изменения кода продукта "
+            "(backend/frontend/services/src/e2e; вне openspec/, docs/, "
+            "tests/, scripts/) — используй маркер [change-id]/[BUG-NNN] "
+            "(Н16: chore не прикрывает продуктовый код)"
         ]
     return []
 

@@ -1602,21 +1602,24 @@ def check_bug_fix(snapshot, action, ctx, flow):
     if status == "ready" and isinstance(value, dict) and not value.get("bugs"):
         out.append(Finding(
             MISSING_INPUT,
-            f"баг-репорт test-model/bugs/{bug_id}.md "
+            f"баг-репорт test-model/bugs/{bug_id}.md (или {bug_id}-*.md) "
             f"отсутствует — Флоу 2 требует BUG-NNN репорт (ТЗ 03 п.3)"))
     elif (status == "ready" and repo and bug_id and not any(
             p.get("code") == "FLOW_ID_INVALID"
             for p in snapshot.get("problems", []))
-            and not (Path(repo) / "test-model" / "bugs" /
-                     f"{bug_id}.md").is_file()):
+            and not flow_check.bug_report_paths(Path(repo), bug_id)):
         # J43.1: легальный общий план test-model/bugs/PLAN.md делает каталог
         # bugs/ непустым (факт test_model.present грубый: dir non-empty) —
         # требуем репорт ИМЕННО этого BUG-NNN. При невалидном scope-id
         # (FLOW_ID_INVALID) точная проверка не применяется — scope и так
         # дает AMBIGUOUS_STATE/UNKNOWN.
+        # Н5 (аудит 2026-10-23): контракт единый с pr_validate — точное имя
+        # BUG-<id>.md ИЛИ BUG-<id>-<slug>.md (flow_check.bug_report_paths);
+        # прежде здесь принималось только точное имя, а pr_validate — только
+        # glob с суффиксом: файл, прошедший переход Флоу 2, валил PR.
         out.append(Finding(
             MISSING_INPUT,
-            f"баг-репорт test-model/bugs/{bug_id}.md "
+            f"баг-репорт test-model/bugs/{bug_id}.md (или {bug_id}-*.md) "
             f"отсутствует — Флоу 2 требует BUG-NNN репорт (ТЗ 03 п.3; "
             f"план каталога не считается репортом)"))
     specs_value, specs_status, out1 = _fact_ready(snapshot, "specs.present", ctx)
