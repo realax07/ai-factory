@@ -166,7 +166,7 @@ def make_chore_repo(tmp_path: Path) -> Path:
 
 class TestN6ProvisionalFinish:
     def test_finish_pr_validate_skipped_not_finalized(self, tmp_path):
-        """pr_validate SKIPPED (нет PR-контекста) → вердикт provisional:
+        """TC-AUD-001: pr_validate SKIPPED (нет PR-контекста) → вердикт provisional:
         НЕ финализирован, сессия открыта (running в реестре)."""
         repo = base.make_repo(tmp_path)
         reg = make_registry(tmp_path)
@@ -189,7 +189,7 @@ class TestN6ProvisionalFinish:
         assert sessions[0]["status"] == "running"
 
     def test_finish_with_pr_id_refinalizes(self, tmp_path):
-        """Повторный finish с появившимся --pr-id пересчитывает ворота и
+        """TC-AUD-002: Повторный finish с появившимся --pr-id пересчитывает ворота и
         выносит ФИНАЛЬНЫЙ вердикт (provisional больше не возвращается)."""
         repo = base.make_repo(tmp_path)
         reg = make_registry(tmp_path)
@@ -211,7 +211,7 @@ class TestN6ProvisionalFinish:
         assert sessions[0]["status"] == "finished"
 
     def test_provisional_repeat_without_pr_id_stays_provisional(self, tmp_path):
-        """Повтор finish без PR-контекста — снова provisional (не blocked)."""
+        """TC-AUD-003: Повтор finish без PR-контекста — снова provisional (не blocked)."""
         repo = base.make_repo(tmp_path)
         reg = make_registry(tmp_path)
         state = tmp_path / "state" / "flowctl_state.json"
@@ -236,7 +236,7 @@ class TestN7ReleaseStale:
 
     def test_zone_conflict_diagnoses_stale_holder_with_release_cmd(
             self, tmp_path):
-        """ZONE_CONFLICT с finished+returned-сессией: диагностика содержит
+        """TC-AUD-004: ZONE_CONFLICT с finished+returned-сессией: диагностика содержит
         держателя и ГОТОВУЮ команду авто-освобождения."""
         repo, reg, state = self._setup(tmp_path)
         finish_returned_out_of_zone(tmp_path, repo, reg, state, cid="corrA")
@@ -256,7 +256,7 @@ class TestN7ReleaseStale:
         assert "released" not in statuses.values()
 
     def test_release_stale_auto_reconciles_and_reserves(self, tmp_path):
-        """--release-stale: finished+returned-держатель освобожден, резервация
+        """TC-AUD-005: --release-stale: finished+returned-держатель освобожден, резервация
         нового prepare прошла, worktree/записи не удалены."""
         repo, reg, state = self._setup(tmp_path)
         finish_returned_out_of_zone(tmp_path, repo, reg, state, cid="corrA")
@@ -275,7 +275,7 @@ class TestN7ReleaseStale:
         assert rec_a["status"] == "released"
 
     def test_release_stale_does_not_touch_running_holder(self, tmp_path):
-        """Живой (running) держатель — не stale: авто-освобождения нет."""
+        """TC-AUD-006: Живой (running) держатель — не stale: авто-освобождения нет."""
         repo, reg, state = self._setup(tmp_path)
         run_flowctl(*prepare_argv(repo, reg, state, tmp_path, cid="corrA"))
         run_flowctl("run", "--correlation-id", "corrA",
@@ -319,7 +319,7 @@ class TestN8DelegateGateFlows:
         assert sessions[0]["role"] == "dev"
 
     def test_flow3_without_incident_ref_denied(self, tmp_path):
-        """Без проброса --incident-ref машина Флоу 3 честно DENY-ит."""
+        """TC-AUD-007: Без проброса --incident-ref машина Флоу 3 честно DENY-ит."""
         repo = base.make_repo(tmp_path)
         reg = tmp_path / "state" / "active_sessions.json"
         reg.parent.mkdir(parents=True, exist_ok=True)
@@ -364,7 +364,7 @@ class TestN8DelegateGateFlows:
         assert registry_sessions(reg)[0]["status"] == "running"
 
     def test_flow5_without_small_change_not_allowed(self, tmp_path):
-        """Флоу 5 без --small-change машина не пропускает (UNKNOWN)."""
+        """TC-AUD-008: Флоу 5 без --small-change машина не пропускает (UNKNOWN)."""
         repo = base.make_repo(tmp_path)
         reg = tmp_path / "state" / "active_sessions.json"
         reg.parent.mkdir(parents=True, exist_ok=True)
@@ -388,7 +388,7 @@ def _file_state(path: Path) -> str | None:
 
 class TestN18RegistrySandbox:
     def test_registry_flag_does_not_touch_prod_state(self, tmp_path):
-        """delegate_gate start --registry PATH: боевой ~/.hermes/state не
+        """TC-AUD-009: delegate_gate start --registry PATH: боевой ~/.hermes/state не
         меняется (ни active_sessions.json, ни flowctl_state.json)."""
         prod_reg = Path.home() / ".hermes" / "state" / "active_sessions.json"
         prod_state = Path.home() / ".hermes" / "state" / "flowctl_state.json"
@@ -413,7 +413,7 @@ class TestN18RegistrySandbox:
         assert len(runs) == 1
 
     def test_registry_flag_finish_also_sandboxed(self, tmp_path):
-        """finish с --registry тоже не трогает боевые пути."""
+        """TC-AUD-010: finish с --registry тоже не трогает боевые пути."""
         prod_reg = Path.home() / ".hermes" / "state" / "active_sessions.json"
         prod_state = Path.home() / ".hermes" / "state" / "flowctl_state.json"
         before = (_file_state(prod_reg), _file_state(prod_state))
@@ -445,7 +445,7 @@ class TestN18RegistrySandbox:
 
 class TestN12Diagnostics:
     def test_ambiguous_state_names_invalid_field(self, tmp_path):
-        """AMBIGUOUS_STATE: диагностика называет поле — scope=xxx не
+        """TC-AUD-011: AMBIGUOUS_STATE: диагностика называет поле — scope=xxx не
         соответствует формату Флоу 3 (BUG-NNN)."""
         repo = base.make_repo(tmp_path)
         reg = make_registry(tmp_path)
@@ -479,7 +479,7 @@ class TestN12Diagnostics:
         assert any("Флоу 4" in h and "[chore]" in h for h in hints), hints
 
     def test_invalid_flow_json_diagnostic_not_argparse(self, tmp_path):
-        """Невалидный --flow — JSON-диагностика FLOW_ID_INVALID (не сырой
+        """TC-AUD-012: Невалидный --flow — JSON-диагностика FLOW_ID_INVALID (не сырой
         argparse-usage в stderr)."""
         repo = base.make_repo(tmp_path)
         reg = make_registry(tmp_path)
@@ -509,7 +509,7 @@ class TestN12Diagnostics:
         assert data["value"] == "hotfix"
 
     def test_valid_flow_still_accepted(self, tmp_path):
-        """Регресс: валидный --flow по-прежнему работает (dry-run ALLOW)."""
+        """TC-AUD-013: Регресс: валидный --flow по-прежнему работает (dry-run ALLOW)."""
         repo = base.make_repo(tmp_path)
         reg = make_registry(tmp_path)
         state = tmp_path / "state" / "flowctl_state.json"
@@ -529,7 +529,7 @@ class TestN14ProtectedPathsGate:
                             path="scripts/**", **kw)
 
     def test_chore_task_paths_deploy_denied_j3_without_marker(self, tmp_path):
-        """chore_task c --paths deploy/x без [pipeline]-маркера = DENY J3,
+        """TC-AUD-014: chore_task c --paths deploy/x без [pipeline]-маркера = DENY J3,
         reservation не создается (раньше ворота молча проходили)."""
         repo = make_chore_repo(tmp_path)
         reg = make_registry(tmp_path)
@@ -545,7 +545,7 @@ class TestN14ProtectedPathsGate:
             state.read_text(encoding="utf-8"))["runs"] == {}
 
     def test_chore_task_paths_deploy_with_marker_allowed(self, tmp_path):
-        """[pipeline]-маркер снимает J3-отказ — prepare проходит."""
+        """TC-AUD-015: [pipeline]-маркер снимает J3-отказ — prepare проходит."""
         repo = make_chore_repo(tmp_path)
         reg = make_registry(tmp_path)
         state = tmp_path / "state" / "flowctl_state.json"
@@ -558,7 +558,7 @@ class TestN14ProtectedPathsGate:
         assert data["record"]["zones"] == ["scripts/**"]
 
     def test_chore_task_paths_contracts_denied(self, tmp_path):
-        """--paths contracts/api.yaml (защищенный префикс) — тоже DENY J3."""
+        """TC-AUD-016: --paths contracts/api.yaml (защищенный префикс) — тоже DENY J3."""
         repo = make_chore_repo(tmp_path)
         reg = make_registry(tmp_path)
         state = tmp_path / "state" / "flowctl_state.json"
@@ -570,7 +570,7 @@ class TestN14ProtectedPathsGate:
         assert data["protected_paths"] == ["contracts/api.yaml"]
 
     def test_paths_without_protected_hits_passes(self, tmp_path):
-        """--paths вне защищенных префиксов ворота J3 не трогает."""
+        """TC-AUD-017: --paths вне защищенных префиксов ворота J3 не трогает."""
         repo = make_chore_repo(tmp_path)
         reg = make_registry(tmp_path)
         state = tmp_path / "state" / "flowctl_state.json"
