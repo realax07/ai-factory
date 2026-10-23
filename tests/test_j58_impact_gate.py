@@ -274,18 +274,27 @@ def test_j58_status_filter_unknown_status_conservative(rules_repo, no_env):
     assert errs and "IR-02" in errs[0]
 
 
-# --- TC-J58-018: фабричный rules.json валиден, 4 стартовых правила ---
+# --- TC-J58-018: фабричный rules.json валиден, правила IR-01..IR-06 ---
 
 def test_j58_factory_rules_valid():
     data = json.loads((FACTORY / "scripts" / "impact_rules.json").read_text(encoding="utf-8"))
     rules = data["rules"]
-    assert [r["id"] for r in rules] == ["IR-01", "IR-02", "IR-03", "IR-04"]
+    # АУД-4 (Н20/Н25): +IR-05 (docker build в PR-теле), +IR-06 (URL+sha256
+    # контент-ассетов в PR-теле) — декларативные pr_body-правила.
+    assert [r["id"] for r in rules] == [
+        "IR-01", "IR-02", "IR-03", "IR-04", "IR-05", "IR-06"]
     for r in rules:
         assert r.get("title") and r.get("when") and r.get("require")
         for w in r["when"]:
             assert w.get("path")
         for req in r["require"]:
-            assert req.get("path") and req.get("label") and req.get("hint")
+            if req.get("pr_body"):
+                # pr_body-требование (Н20/Н25): DENY-ворота его пропускают,
+                # механика — flow_preflight.py check pr-body
+                assert req.get("label") and req.get("hint")
+                assert "path" not in req
+            else:
+                assert req.get("path") and req.get("label") and req.get("hint")
 
 
 # --- TC-J58-019: factory_init ставит шаблон impact-карты ---
