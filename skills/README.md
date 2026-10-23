@@ -17,6 +17,22 @@
 | [handoff](handoff/) | Handoff-документ при завершении/обрыве сессии | ПМ |
 | [factory-flow](factory-flow/) | Скелет детерминированного флоу: стадии 5 флоу, карта блокеров, правила эскалации | Все роли (входит во все бандлы) |
 
+## Дизайн-скиллы (зеркало `~/.hermes/skills/creative/`)
+
+Вендорские/творческие скиллы визуального дизайна. Не процессные процедуры конвейера — дистилляты и инструменты: загружаются ui_designer и design_validator (см. таблицы «Скиллы» в agents/). Обновляются зеркалированием из локальной библиотеки, не правятся в фабрике напрямую.
+
+| Скилл | Назначение | Источник / лицензия |
+|---|---|---|
+| [frontend-design](frontend-design/) | Эстетическая директория до кода, анти-AI-эстетика, bans/качество-пол для мокапов | Дистиллят anthropics/skills frontend-design + Impeccable (Apache-2.0) |
+| [design-review](design-review/) | Ревью UI по трём столпам качества, чек-листы сдачи/приемки, два режима (ревью/создание) | Дистиллят microsoft/skills frontend-design-review (MIT) |
+| [ui-ux-matrices](ui-ux-matrices/) | Локальный поиск: стили, палитры, шрифтовые пары, UX-гайдлайны (`scripts/search.py`) | Vendor nextlevelbuilder/ui-ux-pro-max-skill (MIT), скопирован целиком |
+| [claude-design](claude-design/) | Дисциплина HTML-мокапов: один файл = самодостаточный артефакт | BadTechBandit (MIT) |
+| [popular-web-designs](popular-web-designs/) | 54 реальных дизайн-системы (Stripe, Linear, Vercel) как HTML-референсы | — |
+| [baoyu-infographic](baoyu-infographic/) | Инфографика: 21 макет × 21 стиль, layout/style-референсы | — |
+| [design-md](design-md/) | Формализация дизайн-токенов в DESIGN.md spec-файл | — |
+| [p5js](p5js/) | p5.js скетчи: генеративка, шейдеры, интерактив, 3D | — |
+| [architecture-diagram](architecture-diagram/) | Темные SVG architecture/cloud-диаграммы как HTML | — |
+
 ## Формат скилла
 
 ```
