@@ -13,7 +13,7 @@
 | Проверка | Где исполняется | Обязательность | Статус |
 |---|---|---|---|
 | `openspec validate --all --strict` | GitHub Actions (job `flow`, `.github/workflows/flow.yml`) | Обязательна | **GitHub-enforced** (job `flow` на PR и push в main) |
-| `flow_check` (`scripts/flow_check.py .`) | GitHub Actions (job `flow`) | Обязательна | **GitHub-enforced** (job `flow` на PR и push в main; известен красный статус на main — гигиена P0.6, самоссылочные ошибки пакета add-deterministic-flow) |
+| `flow_check` (`scripts/flow_check.py .`) | GitHub Actions (job `flow`) | Обязательна | **GitHub-enforced** (job `flow` на PR и push в main; main зелен — самоссылочные ошибки пакета add-deterministic-flow вычищены, гигиена P0.6 закрыта) |
 | `pytest tests/` (полный набор, 405+ тестов, вкл. негативные сценарии P0.2–P0.4) | GitHub Actions (job `test-flow-control`, `.github/workflows/flow.yml`) | Обязательна для merge после включения Заказчиком в required checks ruleset | **GitHub-enforced** (после включения; до того — CI-сигнал без блокировки merge) |
 | Branch protection ruleset на `main` (required checks, ветка + PR) | GitHub (ruleset репозитория) | Обязательна; bypass не предусмотрен и не должен выдаваться | **GitHub-enforced** |
 | `session_check` zone-check (резервация зоны, diff ⊆ зона, OUT_OF_ZONE) | Машина (`scripts/session_check.py` на маршруте `flowctl finish`) | Обязательна на штатном маршруте `flowctl` | **машинная (enforcing)** — GitHub не видит и не блокирует обход вне маршрута |
@@ -48,5 +48,15 @@
   Reviewer-Delegation и вердиктами approve (J10, SELF_REVIEW-защита).
   (remove-qa-checklist: чеклист (бывший контракт 4) больше не требуется.)
 
-Правило: change-маркер ставится ТОЛЬКО на финальный PR пакета; промежуточные —
-[chore]/[docs]/[ops].
+Правило стадий маркеров (документированное, волна 4 Н27; машина различает
+стадии по маркеру в title/body PR):
+
+- **Промежуточные** — `[chore]` / `[docs]` / `[ops]`: работа по ходу пакета
+  (обслуживание, документация, эксплуатация) и этапы Флоу 1 до финала;
+  полный QA-хвост к ним не существует по дизайну, pr_validate проверяет
+  маркер + механические правила J58.
+- **Финальные** — `[change-id]` / `[BUG-NNN]`: change-маркер ставится
+  ТОЛЬКО на финальный PR пакета (полный набор: impact, approved-кейсы,
+  review-файлы); `[BUG-NNN]` — завершенный багфикс.
+- Красный промежуточный PR = срыв этапности (P14), красный main = дефект
+  конвейера (сейчас main зелен).

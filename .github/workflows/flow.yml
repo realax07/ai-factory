@@ -121,8 +121,7 @@ jobs:
             exit 1
           fi
 
-# Примечание (P0.5): job test-flow-control (pytest tests/) НЕ зависит от job flow —
-# pytest независим от flow_check. На момент этого изменения flow_check на main
-# красный из-за 5 самоссылочных ошибок пакета add-deterministic-flow (гигиена P0.6,
-# вне рамок P0.5), поэтому PR могут оставаться красными из-за соседнего job flow —
-# это ожидаемо и не связано с тестами.
+# Примечание (P0.5, обновлено волной 4 Н27): job test-flow-control (pytest tests/) НЕ
+# зависит от job flow — pytest независим от flow_check. Историческая краснота flow_check
+# на main (5 самоссылочных ошибок пакета add-deterministic-flow, гигиена P0.6) вычищена:
+# main зелен. Красный job flow на PR — дефект ветки/этапности, не фон.

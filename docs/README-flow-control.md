@@ -200,18 +200,44 @@ dev-lead, ПМ git не трогает.**
 - Timeout/crash не продвигают шаг; worktree сохраняется; повторный run без нового решения отказывает.
 - Дропнутые при rollover отчеты делегаций — `state.db → async_delegations.result_json`.
 
-## Компоненты
+## Компоненты: полный реестр скриптов (волна 4, Н4)
 
-| Скрипт | Назначение |
-|---|---|
-| `flow_state.py` | снимок фактов по scope (чистый, read-only) |
-| `flow_transition.py` | ALLOW/DENY/UNKNOWN + коды причин, графы флоу |
-| `session_check.py` | резервация зон, post-check, reconcile |
-| `gate_runner.py` | ворота с digest/STALE, provenance, audit JSONL |
-| `flowctl.py` | оркестратор: prepare/run/finish/status/reconcile/integrate |
-| `flow_mode.py` | shadow/enforcing |
+«Скрипт → кто вызывает → режим → что делает». Режим: **enforcing** — блокирует
+на штатном маршруте; **detect** — репорт/инцидент, не блокирует; **manual** —
+запуск руками, детерминированный отчет.
 
-Контракт: `contracts/flow_control_contract.md`. Спека: `openspec/specs/deterministic-flow/` (после слияния). Прогон всего: `python3 -m pytest tests/` (446 green).
+| Скрипт | Кто вызывает | Режим | Что делает |
+|---|---|---|---|
+| `flowctl.py` | ПМ/диспетчеризация, enforcer, delegate_gate | enforcing | Оркестратор: prepare/run/finish/status/reconcile/integrate/regress/phase |
+| `flow_state.py` | flowctl, flow_transition | read-only | Снимок фактов по scope (чистый) |
+| `flow_transition.py` | flowctl, enforcer | enforcing | ALLOW/DENY/UNKNOWN этапов + коды причин, графы флоу |
+| `session_check.py` | flowctl (prepare/finish) | enforcing | Резервация зон, post-check (OUT_OF_ZONE), reconcile |
+| `gate_runner.py` | flowctl finish | enforcing | Единый запуск ворот (digest/STALE, SKIPPED≠PASS), provenance, audit JSONL |
+| `flow_check.py` | CI job `flow`, gate_runner | GitHub-enforced + ворота | Ворота state machine: артефакты, трассировка, правило 6 |
+| `flow_mode.py` | ПМ (вручную) | config | Переключатель shadow/enforcing |
+| `pr_validate.py` | CI job `flow`, gate_runner | GitHub-enforced + ворота | PR-ворота: маркер/стадия, артефакты контрактов, J58-правила (вкл. pr_body IR-05/06) |
+| `pm_bounds_check.py` | gate_runner, ПМ | enforcing | Границы записи ПМ: защищенные пути, реестр сессий, продукт-коммиты |
+| `role_zone_policy.py` | session_check/flowctl (import) | enforcing | Политика зон записи ролей (источник — таблица agents/README.md) |
+| `delegate_gate.py` | ПМ перед каждым диспатчем | enforcing | Обертка prepare→run→finish: делегация не существует вне flowctl |
+| `delegate_watchdog.py` | крон */5 (выключен — см. guarantees слой 2), вручную | detect | Обход flowctl: делегация с непустым project вне реестра → BYPASS (Н18: project-less диспатчи ПМ — норма) |
+| `session_watchdog.py` | крон */2 | detect | DM-роутинг: залипшие ключи, тайтл main, dropped-делегации, контаминация |
+| `stand_reaper.py` | вручную/приемка (АУД-3: крон или обязательная приемка) | manual | Гашение осиротевших тестовых стендов (J29) |
+| `session_archive.py` | ПМ при приемке делегаций | manual | Архив транскриптов + детерминированный разбор неуспеха (E16) |
+| `session_worktree.sh` | ПМ/сабагенты при старте сессии | manual | Worktree-изоляция параллельных сессий |
+| `flow_preflight.py` | ПМ в точке диспетчеризации (АУД-4, Н24) | detect (advisory) | Дешевые чеки ДО dev-цикла: static_v-freshness, regress-staleness, pr-body (IR-05/06 WARN) |
+| `flow_scope_check.py` | integrate/finish (АУД-4, Н21) | enforcing | Коммиты ветки соответствуют заявленному change-id (чужие маркеры → DENY) |
+| `check_mirrors.py` | CI/вручную (АУД-4, Н22) | detect | sha256-сверка копий фабричных скриптов в проектах с эталоном фабрики |
+| `codegraph.py` | dev/ПМ, артефакт репо (E14) | manual | Граф зависимостей кода (backend AST + frontend ES-imports, stdlib) |
+| `smoke_static.py` | post-deploy (E10) | manual | Смоук отдачи статики: ссылки шаблонов vs диск vs прод-URL (DEF-002) |
+| `check_auth_timing.py` | QA/dev на backend проекта (F5) | manual | Timing-safety аутентификации: bcrypt, dummy-проверки, нет прямых сравнений секретов |
+| `factory_bootstrap.py` | разово на новой машине | manual | Установка фабрики: окружение, state, крон вотчдога, приемка переносимости |
+| `factory_init.py` | разово на новый проект (E15) | manual | Развертывание конвейера в проект + post-init ворота (flow_check = OK) |
+| `archive/pm-instruction-channel/` | — (архив, волна 4 Н2/Н3) | архив | `watchdog_daily_digest.py` + `pm_instruction_monitor.py`: мертвые каналы, ниоткуда не вызываются |
+
+Данные (не скрипт): `impact_rules.json` — декларативные правила J58 для
+pr_validate/flow_preflight.
+
+Контракт: `contracts/flow_control_contract.md`. Спека: `openspec/specs/deterministic-flow/` (после слияния). Прогон всего: `python3 -m pytest tests/`.
 
 ## Журнал решений Заказчика (P0.4)
 

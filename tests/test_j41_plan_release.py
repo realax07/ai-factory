@@ -360,9 +360,14 @@ class TestDevTaskTransitive:
 
 
 def bypass_delegation(did: str, age_s: float = 3600) -> dict:
-    """Платформенная запись делегации, завершенной МИМО flowctl (J39)."""
+    """Платформенная запись делегации, завершенной МИМО flowctl (J39).
+
+    Волна 4 (Н18): bypass — только делегация С project-scope (делегации ПМ
+    без project через delegate_task — норма, не флагаются).
+    """
     return {"delegation_id": did, "state": "completed",
             "delivery_state": "delivered",
+            "scope": {"project": "proj"},
             "created_at": time.time() - age_s,
             "dispatched_at": None, "completed_at": None,
             "parent_session_id": "sess-parent"}
