@@ -19,6 +19,7 @@ import hashlib
 import re
 import subprocess
 import sys
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -80,7 +81,7 @@ def write_final(repo: Path, *, verdict: str = "PASS",
     lines = [
         f"# Regress {change} — regress-final.md", "",
         f"- change: {change}",
-        "- date: 2026-10-17T12:00:00+00:00",
+        f"- date: {(datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat()}",
         f"- commit: {commit}",
     ]
     if worktree is not None:
