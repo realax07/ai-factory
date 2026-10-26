@@ -171,7 +171,7 @@ def make_origin(base: Path) -> tuple[Path, str]:
     write(origin, f"test-model/regress/{CHANGE}/regress-final.md",
           f"# Regress {CHANGE} — regress-final.md\n\n"
           f"- change: {CHANGE}\n"
-          "- date: 2026-10-18T12:00:00+00:00\n"
+          f"- date: {ts(5)}\n"
           f"- commit: {c_run}\n"
           "- verdict: PASS\n")
     commit_all(origin, "regress final", date=ts(6))
