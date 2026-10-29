@@ -32,7 +32,12 @@
 - **THEN** пакет возвращается системному аналитику
 
 ### Requirement: Трассировка требований
-Каждый Requirement в спеке MUST ссылаться на идентификатор ТЗ (FR-N/NFR-N). Каждый пункт чеклиста и каждый тест-кейс MUST иметь ссылку на источник. Матрица трассировки MUST находиться в sdd.md.
+Каждый Requirement в спеке MUST ссылаться на идентификатор ТЗ (FR-N/NFR-N). Каждый тест-кейс MUST иметь ссылку на источник: заголовок `### Requirement:` или `#### Scenario:` спеки (remove-qa-checklist: трассировка через CHK-чеклист упразднена). Матрица трассировки MUST находиться в sdd.md.
+
+#### Scenario: Кейс без трассировки к спеке
+- **GIVEN** тест-кейс не ссылается ни на один заголовок Requirement/Scenario спеки
+- **WHEN** flow_check проверяет артефакты
+- **THEN** кейс помечается дефектом трассировки
 
 #### Scenario: Requirement без источника
 - **GIVEN** Requirement не ссылается на FR-N/NFR-N
@@ -40,7 +45,7 @@
 - **THEN** элемент помечается дефектом трассировки
 
 ### Requirement: Директории QA-артефактов
-QA-артефакты MUST располагаться: чеклисты — `test-model/checklists/`, новые тест-кейсы — `test-model/new/<change-id>/`, ревью — `test-model/reviews/<change-id>/`, одобренные кейсы — `test-model/approved/<change-id>/`, баг-репорты — `test-model/bugs/`.
+QA-артефакты MUST располагаться: новые тест-кейсы — `test-model/new/<change-id>/`, ревью — `test-model/reviews/<change-id>/`, одобренные кейсы — `test-model/approved/<change-id>/`, баг-репорты — `test-model/bugs/`. Каталог `test-model/checklists/` — append-only история упраздненного этапа чеклистов: существующие файлы MUST NOT удаляться, новые чеклисты MUST NOT создаваться.
 
 #### Scenario: Кейсы размещены в новой папке
 - **GIVEN** автор тест-кейсов завершил работу
