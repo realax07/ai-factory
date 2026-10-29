@@ -3,3 +3,4 @@
 venv/
 __pycache__/
 .gate-logs/
+codegraph.json
