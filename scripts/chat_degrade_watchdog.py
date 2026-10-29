@@ -16,9 +16,10 @@ from pathlib import Path
 
 LOG = Path("/home/openclaw/.hermes/logs/errors.log")
 STATE = Path("/home/openclaw/.hermes/state/chat-degrade-watchdog.json")
-PATTERNS = re.compile(
-    r"(runaway repetition loop|Stream cut:|Clean EOF, no finish_reason)"
-)
+# Clean EOF (сервер молча закрыл поток) — транзиторный само-ретраящийся сбой
+# вызовов сабагентов, НЕ деградация чата: не алертим. Настоящий сигнал —
+# runaway repetition (зацикливание модели на длинном контексте) и Stream cut.
+PATTERNS = re.compile(r"(runaway repetition loop|Stream cut:)")
 COOLDOWN = 3600
 MAX_READ = 2_000_000  # предохранитель: не читать разом больше 2 MB
 
