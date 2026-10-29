@@ -77,7 +77,8 @@ def test_canonical_openspec_scenario_recognized(tmp_path):
 def test_real_package_deterministic_flow_29_scenarios():
     """TC-AF-RECHECK-004-03: реальный пакет add-deterministic-flow —
     распознано 29 сценариев (канонические «#### Scenario:»)."""
-    pkg = FACTORY / "openspec" / "changes" / "add-deterministic-flow"
+    # 2026-10-29: change архивирован (repo-cleanup) — пакет в archive/
+    pkg = FACTORY / "openspec" / "changes" / "archive" / "2026-10-29-add-deterministic-flow"
     cases = FACTORY / "test-model" / "new"
     p = run_matrix(pkg, cases)
     assert p.returncode in (0, 1, 2), p.stdout + p.stderr
