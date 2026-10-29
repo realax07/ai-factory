@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""Вотчдог деградации моделей в чатах гейтвея.
+"""Вотчдог деградации моделей в чатах гейтвея (v2 — offset-модель).
 
-Сканирует хвост gateway.log на признаки деградации модели (runaway
-repetition, stream cut) и шлет ОДНО оповещение на аномалию (дедуп через
-state-файл). Тишина = норма (политика вотчдогов 2026-10-23).
+Читает ТОЛЬКО новые байты errors.log (offset в state-файле) — старые
+аномалии не всплывают повторно. Аномалия = runaway repetition / stream cut /
+clean EOF без finish_reason. Алерт раз на кластер (не чаще раза в час на тип),
+тишина = норма. Первый запуск: offset = размер файла (история не алертится).
 
-stdlib-only. exit 0 всегда (кроме фатальной ошибки окружения).
+stdlib-only. exit 0 всегда.
 """
 import json
 import re
@@ -18,9 +19,8 @@ STATE = Path("/home/openclaw/.hermes/state/chat-degrade-watchdog.json")
 PATTERNS = re.compile(
     r"(runaway repetition loop|Stream cut:|Clean EOF, no finish_reason)"
 )
-# алерт, если аномалия встречалась в последних N строках лога
-TAIL = 400
-COOLDOWN = 3600  # не чаще раза в час на один тип
+COOLDOWN = 3600
+MAX_READ = 2_000_000  # предохранитель: не читать разом больше 2 MB
 
 
 def load_state():
@@ -39,41 +39,54 @@ def save_state(s):
 def main():
     if not LOG.exists():
         return 0
-    lines = LOG.read_text(encoding="utf-8", errors="replace").splitlines()[-TAIL:]
-    lines += [l.replace("agent.chat_completion_helpers: ", " ") for l in lines if False]
+    size = LOG.stat().st_size
     state = load_state()
+    offset = state.get("offset")
+    if offset is None or offset > size:
+        # первый запуск или ротация лога: начинаем «с сейчас»
+        state["offset"] = size
+        save_state(state)
+        return 0
+    if size == offset:
+        return 0
+    with LOG.open("rb") as f:
+        f.seek(offset)
+        chunk = f.read(min(size - offset, MAX_READ))
+        new_offset = f.tell()
+    text = chunk.decode("utf-8", errors="replace")
+    state["offset"] = new_offset
+
     now = time.time()
     alerts = []
-    for line in reversed(lines):
-        if not PATTERNS.search(line):
+    seen = set()
+    for line in text.splitlines():
+        m = PATTERNS.search(line)
+        if not m:
             continue
-        m = re.match(r"(\S+)\s", line)
-        ts = m.group(1) if m else ""
-        kind = "repetition" if "repetition" in line else "stream-cut"
-        key = f"{kind}:{ts[:13]}"  # час + тип
-        if key in state:
+        kind = "repetition" if "repetition" in m.group(1) else "stream-cut"
+        if kind in seen:
             continue
+        seen.add(kind)
         if now - state.get(f"_last_{kind}", 0) < COOLDOWN:
             continue
-        # вытащить модель/чата из строки
-        chat = re.search(r"\[(\d{8}_[0-9a-f]+)\]", line)
-        model = re.search(r"model=([\w.\-]+)", line)
-        alerts.append(
-            f"деградация модели: {model.group(1) if model else '?'}"
-            f" (сессия {chat.group(1) if chat else '?'}, {ts[11:19]} UTC)"
-        )
         state[f"_last_{kind}"] = now
-    # мусор-сборка старых key
-    for k in [k for k in state if not k.startswith("_")]:
-        pass
+        ts = re.match(r"(\S+ \S+)", line)
+        model = re.search(r"model=([\w.\-]+)", line)
+        sess = re.search(r"\[(\d{8}_[0-9a-f]+)\]", line)
+        alerts.append(
+            f"деградация модели {model.group(1) if model else '?'}"
+            f" (сессия {sess.group(1) if sess else '?'}, {ts.group(1)[-8:] if ts else ''})"
+        )
+    # гигиена state (храним не более 60 ключей)
+    if len(state) > 60:
+        keep = dict(sorted(state.items(), key=lambda kv: 0 if kv[0].startswith("_") else 1)[:60])
+        state = keep
+    save_state(state)
     if alerts:
-        save_state(state)
         print(
             "АНОМАЛИЯ гейтвея: " + "; ".join(alerts)
-            + ". Чат-собеседнику может требоваться /new или пауза — модель деградирует на длинном контексте."
+            + ". Возможна деградация модели на длинном контексте — собеседнику может требоваться /new."
         )
-        return 0
-    save_state(state)
     return 0
 
 
