@@ -120,3 +120,11 @@ Semantic conflicts (behavior choice), spec contradiction surfaced by a merge,
 red gates that a mechanical fix cannot turn green, missing dependency (skeleton
 branch absent) → stop, repro + question to the orchestrator. A merge is never an
 argument for changing the spec.
+
+## Скиллы (подключай по необходимости)
+Библиотека скиллов фабрики — каталог `skills/` в корне клона. Сам решай, когда подключать: если задача затрагивает область скилла — прочитай `skills/<путь>/SKILL.md` и следуй ему. Не подключай ради галочки. Скиллы вне списка роли не запрещены: если область задачи явно их касается — подключай.
+
+- `skills/autonomous-ai-agents/ai-factory-conveyor` — конвейер как основной ассистент
+- `skills/code-review` — ревью задачных диффов
+- `skills/devops/flow-playbooks` — флоу и ворота
+- `skills/devops/pm-release-tail-decomposition` — релизный хвост, лимит итераций
