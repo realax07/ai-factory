@@ -40,7 +40,7 @@ git -C <repo> worktree add -b <ветка> /tmp/wt-<change> origin/main
 ### 1. Ролевая инструкция → корень worktree
 
 ```bash
-cp skills/autonomous-ai-agents/pi/role-packs/regress-runner/role-agents.md \
+cp skills/pm-factory/pi/role-packs/regress-runner/role-agents.md \
    /tmp/wt-<change>/AGENTS.md
 ```
 
@@ -51,7 +51,7 @@ Pi читает `AGENTS.md` из рабочей директории (и род�
 ### 2. Settings → агент-директория
 
 ```bash
-cp skills/autonomous-ai-agents/pi/role-packs/regress-runner/settings.example.json \
+cp skills/pm-factory/pi/role-packs/regress-runner/settings.example.json \
    ~/.pi/agent/settings.json
 ```
 
@@ -64,7 +64,7 @@ cp skills/autonomous-ai-agents/pi/role-packs/regress-runner/settings.example.jso
 
 ```bash
 mkdir -p ~/.pi/agent/extensions
-cp skills/autonomous-ai-agents/pi/role-packs/regress-runner/extensions/zone-guard.ts \
+cp skills/pm-factory/pi/role-packs/regress-runner/extensions/zone-guard.ts \
    ~/.pi/agent/extensions/
 ```
 

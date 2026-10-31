@@ -6,34 +6,34 @@
 
 | Скилл | Назначение | Используют |
 |---|---|---|
-| [requirements-elaboration](requirements-elaboration/) | Elicitation и структурирование ТЗ (IEEE 830/29148, MoSCoW) | БА |
-| [openspec-authoring](openspec-authoring/) | Спеки, change-пакеты, SDD по конвенциям Fission-AI | СА |
-| [brainstorming](brainstorming/) | Прояснение замысла до требований (альтернативы, anti-scope) | БА |
-| [service-decomposition](service-decomposition/) | Границы сервисов, владение схемой БД, сквозные процессы, швы делегаций | СА, dev_lead |
-| [test-case-design](test-case-design/) | Чеклисты и тест-кейсы: покрытие, границы, трассировка | QA-чеклисты, QA-автор |
-| [case-review](case-review/) | Ревью кейсов: оси проверки, серьезности, итерации | QA-ревьюер |
-| [implementation](implementation/) | Реализация одной задачи спека с трассировкой и self-review | dev |
-| [code-review](code-review/) | Ревью задачного диффа против спеки и стандартов | code_reviewer |
-| [test-automation](test-automation/) | Автотесты pytest/requests/playwright с трассировкой | QA-автоматизатор |
-| [playwright-pro](playwright-pro/) | Playwright: golden rules, локаторы, anti-patterns, flaky-таксономия | QA-автоматизатор |
-| [handoff](handoff/) | Handoff-документ при завершении/обрыве сессии | ПМ |
-| [factory-flow](factory-flow/) | Скелет детерминированного флоу: стадии 5 флоу, карта блокеров, правила эскалации | Все роли (входит во все бандлы) |
+| [requirements-elaboration](roles/requirements-elaboration/) | Elicitation и структурирование ТЗ (IEEE 830/29148, MoSCoW) | БА |
+| [openspec-authoring](roles/openspec-authoring/) | Спеки, change-пакеты, SDD по конвенциям Fission-AI | СА |
+| [brainstorming](roles/brainstorming/) | Прояснение замысла до требований (альтернативы, anti-scope) | БА |
+| [service-decomposition](roles/service-decomposition/) | Границы сервисов, владение схемой БД, сквозные процессы, швы делегаций | СА, dev_lead |
+| [test-case-design](roles/test-case-design/) | Чеклисты и тест-кейсы: покрытие, границы, трассировка | QA-чеклисты, QA-автор |
+| [case-review](roles/case-review/) | Ревью кейсов: оси проверки, серьезности, итерации | QA-ревьюер |
+| [implementation](roles/implementation/) | Реализация одной задачи спека с трассировкой и self-review | dev |
+| [code-review](roles/code-review/) | Ревью задачного диффа против спеки и стандартов | code_reviewer |
+| [test-automation](roles/test-automation/) | Автотесты pytest/requests/playwright с трассировкой | QA-автоматизатор |
+| [playwright-pro](roles/playwright-pro/) | Playwright: golden rules, локаторы, anti-patterns, flaky-таксономия | QA-автоматизатор |
+| [handoff](pm-factory/handoff/) | Handoff-документ при завершении/обрыве сессии | ПМ |
+| [factory-flow](flow/factory-flow/) | Скелет детерминированного флоу: стадии 5 флоу, карта блокеров, правила эскалации | Все роли (входит во все бандлы) |
 
-## Дизайн-скиллы (зеркало `~/.hermes/skills/creative/`)
+## Дизайн-скиллы (зеркало локальной библиотеки, группа `roles-tools/`)
 
 Вендорские/творческие скиллы визуального дизайна. Не процессные процедуры конвейера — дистилляты и инструменты: загружаются ui_designer и design_validator (см. таблицы «Скиллы» в agents/). Обновляются зеркалированием из локальной библиотеки, не правятся в фабрике напрямую.
 
 | Скилл | Назначение | Источник / лицензия |
 |---|---|---|
-| [frontend-design](creative/frontend-design/) | Эстетическая директория до кода, анти-AI-эстетика, bans/качество-пол для мокапов | Дистиллят anthropics/skills frontend-design + Impeccable (Apache-2.0) |
-| [design-review](creative/design-review/) | Ревью UI по трём столпам качества, чек-листы сдачи/приемки, два режима (ревью/создание) | Дистиллят microsoft/skills frontend-design-review (MIT) |
-| [ui-ux-matrices](creative/ui-ux-matrices/) | Локальный поиск: стили, палитры, шрифтовые пары, UX-гайдлайны (`scripts/search.py`) | Vendor nextlevelbuilder/ui-ux-pro-max-skill (MIT), скопирован целиком |
-| [claude-design](creative/claude-design/) | Дисциплина HTML-мокапов: один файл = самодостаточный артефакт | BadTechBandit (MIT) |
-| [popular-web-designs](creative/popular-web-designs/) | 54 реальных дизайн-системы (Stripe, Linear, Vercel) как HTML-референсы | — |
-| [baoyu-infographic](creative/baoyu-infographic/) | Инфографика: 21 макет × 21 стиль, layout/style-референсы | — |
-| [design-md](creative/design-md/) | Формализация дизайн-токенов в DESIGN.md spec-файл | — |
-| [p5js](creative/p5js/) | p5.js скетчи: генеративка, шейдеры, интерактив, 3D | — |
-| [architecture-diagram](creative/architecture-diagram/) | Темные SVG architecture/cloud-диаграммы как HTML | — |
+| [frontend-design](roles-tools/frontend-design/) | Эстетическая директория до кода, анти-AI-эстетика, bans/качество-пол для мокапов | Дистиллят anthropics/skills frontend-design + Impeccable (Apache-2.0) |
+| [design-review](roles-tools/design-review/) | Ревью UI по трём столпам качества, чек-листы сдачи/приемки, два режима (ревью/создание) | Дистиллят microsoft/skills frontend-design-review (MIT) |
+| [ui-ux-matrices](roles-tools/ui-ux-matrices/) | Локальный поиск: стили, палитры, шрифтовые пары, UX-гайдлайны (`scripts/search.py`) | Vendor nextlevelbuilder/ui-ux-pro-max-skill (MIT), скопирован целиком |
+| [claude-design](roles-tools/claude-design/) | Дисциплина HTML-мокапов: один файл = самодостаточный артефакт | BadTechBandit (MIT) |
+| [popular-web-designs](roles-tools/popular-web-designs/) | 54 реальных дизайн-системы (Stripe, Linear, Vercel) как HTML-референсы | — |
+| [baoyu-infographic](roles-tools/baoyu-infographic/) | Инфографика: 21 макет × 21 стиль, layout/style-референсы | — |
+| [design-md](roles-tools/design-md/) | Формализация дизайн-токенов в DESIGN.md spec-файл | — |
+| [p5js](roles-tools/p5js/) | p5.js скетчи: генеративка, шейдеры, интерактив, 3D | — |
+| [architecture-diagram](roles-tools/architecture-diagram/) | Темные SVG architecture/cloud-диаграммы как HTML | — |
 
 ## Формат скилла
 

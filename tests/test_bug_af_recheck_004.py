@@ -17,7 +17,7 @@ from pathlib import Path
 import pytest
 
 FACTORY = Path(__file__).resolve().parent.parent
-SCRIPT = (FACTORY / "skills" / "test-case-design" / "scripts"
+SCRIPT = (FACTORY / "skills" / "roles" / "test-case-design" / "scripts"
           / "coverage_matrix.py")
 
 RU_SPEC = "### Requirement: Логин\n### Сценарий: Успешный вход\n- GIVEN a\n"
