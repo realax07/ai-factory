@@ -32,7 +32,7 @@ Usage:
   сверки diff→требование) и openspec/changes/_template/impact.md
   (шаблон impact-карты СА);
   tests/ (smoke TC-BOOTSTRAP-001), openspec/config.yaml (root-маркер CLI),
-  skills/ — 12 скиллов конвейера (factory-flow, ролевые + J45: brainstorming,
+  skills/ — 12 скиллов конвейера (flow/factory-flow, roles/* + J45: brainstorming,
   service-decomposition, playwright-pro),
   ПЛЮС плагин flow-enforcer (J43): копия plugins/flow-enforcer/ в
   ~/.hermes/plugins/flow-enforcer/ (машина, не проект) и — если в
@@ -328,19 +328,20 @@ FLOW_CONTROL_FILES = [
 
 # Скиллы-скелеты (копируются целиком как каталоги).
 SKILL_DIRS = [
-    "skills/factory-flow",
-    "skills/case-review",
-    "skills/code-review",
-    "skills/implementation",
-    "skills/openspec-authoring",
-    "skills/requirements-elaboration",
-    "skills/test-automation",
-    "skills/test-case-design",
+    # Перегруппировка 2026-10-31: 9 плоских групп вместо категорий-источников
+    "skills/flow/factory-flow",
+    "skills/roles/case-review",
+    "skills/roles/code-review",
+    "skills/roles/implementation",
+    "skills/roles/openspec-authoring",
+    "skills/roles/requirements-elaboration",
+    "skills/roles/test-automation",
+    "skills/roles/test-case-design",
     # J45 (2026-10-13): расширение скиллового контура
-    "skills/brainstorming",
-    "skills/service-decomposition",
-    "skills/playwright-pro",
-    "skills/handoff",
+    "skills/roles/brainstorming",
+    "skills/roles/service-decomposition",
+    "skills/roles/playwright-pro",
+    "skills/pm-factory/handoff",
 ]
 
 # Каталоги журналов решений и релизов (аудит-след Flow Control).

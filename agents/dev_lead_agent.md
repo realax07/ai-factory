@@ -126,5 +126,5 @@ argument for changing the spec.
 
 - `skills/autonomous-ai-agents/ai-factory-conveyor` — конвейер как основной ассистент
 - `skills/code-review` — ревью задачных диффов
-- `skills/devops/flow-playbooks` — флоу и ворота
-- `skills/devops/pm-release-tail-decomposition` — релизный хвост, лимит итераций
+- `skills/flow/flow-playbooks` — флоу и ворота
+- `skills/pm-factory/pm-release-tail-decomposition` — релизный хвост, лимит итераций

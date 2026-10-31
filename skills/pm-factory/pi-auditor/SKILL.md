@@ -14,10 +14,10 @@ description: "Use for large-context audits; manual Pi+Kimi run, read-only."
 ```bash
 rm -rf /tmp/pi-audit-<slug> && mkdir -p /tmp/pi-audit-<slug>
 git -C <репо> archive origin/main | tar -x -C /tmp/pi-audit-<slug>
-cp /home/openclaw/ai-factory/skills/autonomous-ai-agents/pi/role-packs/auditor/role-agents.md \
+cp /home/openclaw/ai-factory/skills/pm-factory/pi/role-packs/auditor/role-agents.md \
    /tmp/pi-audit-<slug>/AGENTS.md
 cd /tmp/pi-audit-<slug> && pi --provider kimi --model k3.1-pro --no-session \
-   -e /home/openclaw/ai-factory/skills/autonomous-ai-agents/pi/role-packs/auditor/extensions/auditor-readonly.ts \
+   -e /home/openclaw/ai-factory/skills/pm-factory/pi/role-packs/auditor/extensions/auditor-readonly.ts \
    -p "<область аудита> + <критерии вердикта>"
 ```
 
@@ -38,4 +38,4 @@ cd /tmp/pi-audit-<slug> && pi --provider kimi --model k3.1-pro --no-session \
 - Вердикт аудита — СЕЛФ-РЕПОРТ: перед доверием ПМ выборочно верифицирует атрибуции (файл:строка) руками.
 
 ## Проверка живости (после пауз)
-Мини-аудит на skills/autonomous-ai-agents/pi/role-packs/auditor/ + попытка записи с guard (ожидается отказ, файл не создан).
+Мини-аудит на skills/pm-factory/pi/role-packs/auditor/ + попытка записи с guard (ожидается отказ, файл не создан).
