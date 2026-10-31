@@ -12,6 +12,8 @@
 | [service-decomposition](service-decomposition/) | Границы сервисов, владение схемой БД, сквозные процессы, швы делегаций | СА, dev_lead |
 | [test-case-design](test-case-design/) | Чеклисты и тест-кейсы: покрытие, границы, трассировка | QA-чеклисты, QA-автор |
 | [case-review](case-review/) | Ревью кейсов: оси проверки, серьезности, итерации | QA-ревьюер |
+| [implementation](implementation/) | Реализация одной задачи спека с трассировкой и self-review | dev |
+| [code-review](code-review/) | Ревью задачного диффа против спеки и стандартов | code_reviewer |
 | [test-automation](test-automation/) | Автотесты pytest/requests/playwright с трассировкой | QA-автоматизатор |
 | [playwright-pro](playwright-pro/) | Playwright: golden rules, локаторы, anti-patterns, flaky-таксономия | QA-автоматизатор |
 | [handoff](handoff/) | Handoff-документ при завершении/обрыве сессии | ПМ |
@@ -23,15 +25,15 @@
 
 | Скилл | Назначение | Источник / лицензия |
 |---|---|---|
-| [frontend-design](frontend-design/) | Эстетическая директория до кода, анти-AI-эстетика, bans/качество-пол для мокапов | Дистиллят anthropics/skills frontend-design + Impeccable (Apache-2.0) |
-| [design-review](design-review/) | Ревью UI по трём столпам качества, чек-листы сдачи/приемки, два режима (ревью/создание) | Дистиллят microsoft/skills frontend-design-review (MIT) |
-| [ui-ux-matrices](ui-ux-matrices/) | Локальный поиск: стили, палитры, шрифтовые пары, UX-гайдлайны (`scripts/search.py`) | Vendor nextlevelbuilder/ui-ux-pro-max-skill (MIT), скопирован целиком |
-| [claude-design](claude-design/) | Дисциплина HTML-мокапов: один файл = самодостаточный артефакт | BadTechBandit (MIT) |
-| [popular-web-designs](popular-web-designs/) | 54 реальных дизайн-системы (Stripe, Linear, Vercel) как HTML-референсы | — |
-| [baoyu-infographic](baoyu-infographic/) | Инфографика: 21 макет × 21 стиль, layout/style-референсы | — |
-| [design-md](design-md/) | Формализация дизайн-токенов в DESIGN.md spec-файл | — |
-| [p5js](p5js/) | p5.js скетчи: генеративка, шейдеры, интерактив, 3D | — |
-| [architecture-diagram](architecture-diagram/) | Темные SVG architecture/cloud-диаграммы как HTML | — |
+| [frontend-design](creative/frontend-design/) | Эстетическая директория до кода, анти-AI-эстетика, bans/качество-пол для мокапов | Дистиллят anthropics/skills frontend-design + Impeccable (Apache-2.0) |
+| [design-review](creative/design-review/) | Ревью UI по трём столпам качества, чек-листы сдачи/приемки, два режима (ревью/создание) | Дистиллят microsoft/skills frontend-design-review (MIT) |
+| [ui-ux-matrices](creative/ui-ux-matrices/) | Локальный поиск: стили, палитры, шрифтовые пары, UX-гайдлайны (`scripts/search.py`) | Vendor nextlevelbuilder/ui-ux-pro-max-skill (MIT), скопирован целиком |
+| [claude-design](creative/claude-design/) | Дисциплина HTML-мокапов: один файл = самодостаточный артефакт | BadTechBandit (MIT) |
+| [popular-web-designs](creative/popular-web-designs/) | 54 реальных дизайн-системы (Stripe, Linear, Vercel) как HTML-референсы | — |
+| [baoyu-infographic](creative/baoyu-infographic/) | Инфографика: 21 макет × 21 стиль, layout/style-референсы | — |
+| [design-md](creative/design-md/) | Формализация дизайн-токенов в DESIGN.md spec-файл | — |
+| [p5js](creative/p5js/) | p5.js скетчи: генеративка, шейдеры, интерактив, 3D | — |
+| [architecture-diagram](creative/architecture-diagram/) | Темные SVG architecture/cloud-диаграммы как HTML | — |
 
 ## Формат скилла
 
