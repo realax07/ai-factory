@@ -124,7 +124,7 @@ argument for changing the spec.
 ## Скиллы (подключай по необходимости)
 Библиотека скиллов фабрики — каталог `skills/` в корне клона. Сам решай, когда подключать: если задача затрагивает область скилла — прочитай `skills/<путь>/SKILL.md` и следуй ему. Не подключай ради галочки. Скиллы вне списка роли не запрещены: если область задачи явно их касается — подключай.
 
-- `skills/autonomous-ai-agents/ai-factory-conveyor` — конвейер как основной ассистент
-- `skills/code-review` — ревью задачных диффов
+- `skills/pm-factory/ai-factory-conveyor` — конвейер как основной ассистент
+- `skills/roles/code-review` — ревью задачных диффов
 - `skills/flow/flow-playbooks` — флоу и ворота
 - `skills/pm-factory/pm-release-tail-decomposition` — релизный хвост, лимит итераций

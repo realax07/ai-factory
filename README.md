@@ -10,7 +10,7 @@
 > и автономные CI-ворота). Развертывание конвейера в новый проект — одна команда
 > (factory_init); ядро обслуживает все проекты по путям.
 >
-> Оперативные правила — [AGENTS.md](AGENTS.md), статус — [PLAN.md](PLAN.md), уроки — [backlog/MAP.md](backlog/MAP.md), контракты — [contracts/artifact_contract.md](contracts/artifact_contract.md).
+> Оперативные правила — [AGENTS.md](AGENTS.md), статус — [PLAN.md](PLAN.md), уроки — [BACKLOG.md](BACKLOG.md), контракты — [contracts/artifact_contract.md](contracts/artifact_contract.md).
 
 ---
 
@@ -33,7 +33,7 @@ git clone <ai-factory> && cd ai-factory
 python3 scripts/factory_bootstrap.py            # окружение + state + крон вотчдога + приемочные тесты
 ```
 
-Bootstrap: проверяет окружение (python ≥ 3.10, git, npx для openspec), создает state-каталоги (`~/.hermes/state/`, реестр, `flow_mode.json` с **дефолтом shadow**), ставит крон вотчдога (session_watchdog */2 + delegate_watchdog */5), гоняет приемочные тесты (730). Секреты НЕ переносит — кладутся вручную в `~/.hermes/.env`. Режим enforcing включается явно (`flow_mode.py set enforcing`), после shadow-прогона. Подсказку по плагину flow-enforcer (J43) ставит factory_init (см. ниже).
+Bootstrap: проверяет окружение (python ≥ 3.10, git, npx для openspec), создает state-каталоги (`~/.hermes/state/`, реестр, `flow_mode.json` с **дефолтом shadow**), ставит крон вотчдога (session_watchdog */2 + delegate_watchdog */5), гоняет приемочные тесты (990). Секреты НЕ переносит — кладутся вручную в `~/.hermes/.env`. Режим enforcing включается явно (`flow_mode.py set enforcing`), после shadow-прогона. Подсказку по плагину flow-enforcer (J43) ставит factory_init (см. ниже).
 
 ### Настройка GitHub (вручную, один раз на репозиторий)
 
@@ -239,10 +239,10 @@ Severity до начала реакции: **S1** (прод недоступен
 | Путь | Что это |
 |---|---|
 | `AGENTS.md` | Оперативные правила, роутинг ревью, здоровье сабагентов, уроки E16 |
-| `PLAN.md` / `backlog/` | Статус + журнал делегаций / уроки и тюны (карта MAP.md + файлы item'ов, J22) |
+| `PLAN.md` / `BACKLOG.md` | Статус + журнал делегаций / бэклог (история этапных решений — `archive/backlog/`) |
 | `docs/process-context.md` | Наследуемый процессный контекст (среда, дисциплина, уроки) — читается при входе |
 | `docs/README-flow-control.md` | Производственный процесс всех флоу с развилками и валидациями |
-| `agents/*.md` | Промпты 13 ролей + [реестр](agents/README.md) |
+| `agents/*.md` | Промпты 16 ролей + [реестр](agents/README.md); в каждой — секция «Скиллы» (карта применимости, подключение — на усмотрение агента) |
 | `contracts/artifact_contract.md` + `contracts/flow_control_contract.md` | Контракты 1–7 + контракт Flow Control |
 | `scripts/factory_bootstrap.py` | **Установка фабрики на новую машину** (окружение, state, вотчдог, приемка) |
 | `scripts/factory_init.py` | **Развертывание конвейера на проект** (E15) |
@@ -265,7 +265,9 @@ Severity до начала реакции: **S1** (прод недоступен
 | `scripts/session_archive.py` | Архив транскриптов + разбор неуспеха |
 | `scripts/session_worktree.sh` | Worktree-изоляция параллельных сессий |
 | `templates/` | Constitution, task_delegation |
-| `archive/` | Промежуточные артефакты завершенных спайков/аудитов (выжимки J20/J8, e12-спайк, shadow-r6) — живые документы в `docs/` |
+| `skills/` | Библиотека скиллов, 9 плоских групп (перегруппировка 2026-10-31 по аудиту): `pm-factory` (эксплуатация фабрики + Pi: regress-runner, auditor), `flow` (флоу и чистки артефактов), `roles` / `roles-tools` (процедуры и инструменты сабагентов), `runtimes` (claude-code/codex/computer-use), `engineering` (общие практики), `creative`, `research`, `office` — реестр в [skills/README.md](skills/README.md) |
+| `agents/*.md` → скиллы роли | Роль-паки Pi: `skills/pm-factory/pi/role-packs/` — regress-runner (зоны записи, zone-guard) и auditor (read-only guard, Kimi K3.1, ручной вызов вне конвейера) |
+| `archive/` | Промежуточные артефакты завершенных спайков/аудитов + старые планы этапов (`archive/plans/`), код-ревью старых релизов (`archive/code-reviews/`), история J-решений (`archive/backlog/`) — живые документы в `docs/` |
 | `docs/e12-speckit-spike.md` | Спайк GitHub Spec Kit (вердикт: гибрид) |
 | `openspec/specs/` | Спеки конвейера (источник правды правил) |
 
