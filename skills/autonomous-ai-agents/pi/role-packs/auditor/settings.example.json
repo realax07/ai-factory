@@ -1,8 +1,8 @@
 {
   "$schema": "https://pi.dev/schemas/settings.schema.json",
   "//": "Аудитор: ручной вызов ПМ (вне конвейера/флоу). Ключ kimi — в ~/.pi/agent/models.json (600).",
-  "defaultProvider": "moonshot",
-  "defaultModel": "kimi-k3.1",
+  "defaultProvider": "kimi",
+  "defaultModel": "k3.1-pro",
   "defaultThinkingLevel": "off",
   "defaultTools": [
     "read",

@@ -4,20 +4,21 @@
 **Вне конвейера**: во флоу/ворота не встроен, вызывается только ПМ вручную.
 
 ## Сборка
-1. Провайдер в `~/.pi/agent/models.json` — блок `"moonshot"` (endpoint Moonshot
-   OpenAI-совместимый, модель `kimi-k3.1`, ключ — от Заказчика, chmod 600).
-2. `cp settings.example.json ~/.pi/agent/settings.json.auditor` (НЕ поверх
-   regress-runner: у ролей разные settings; вызов с флагами ниже).
-3. `cp extensions/auditor-readonly.ts ~/.pi/agent/extensions/` — грузится всегда;
-   guard блокирует write/edit и bash-мутации (git push/commit, docker-мутации,
-   rm/tee/редиректы, пакетные менеджеры, systemctl/crontab).
+1. Провайдер в `~/.pi/agent/models.json` — блок `"kimi"`: baseUrl
+   `https://api.kimi.com/coding/v1` (Kimi For Coding), модель `k3.1-pro`
+   (262k ctx; `k3.1-pro-highspeed`/1M требует высший тариф), ключ — chmod 600.
+2. role-agents.md → корень клона как `AGENTS.md` (Pi подхватывает безусловно).
+3. settings.example.json — справочный; при вызове роль задается флагами.
 
 ## Вызов (не меняя settings regress-runner)
 ```bash
 cd <репо-клон>
-pi --provider moonshot --model kimi-k3.1 --no-session \
-   --agent-dir ~/.pi/agent-auditor -p "<область аудита и критерии вердикта>"
+pi --provider kimi --model k3.1-pro --no-session \
+   -e /путь/к/паку/extensions/auditor-readonly.ts \
+   -p "<область аудита и критерии вердикта>"
 ```
-Либо одноразово: скопировать role-agents.md в корень клона как AGENTS.md —
-Pi подхватит как контекст. Результат — вердикт в stdout (факты → атрибуция →
-severity → рекомендации); агент ничего не пишет на диск.
+Guard грузится ТОЛЬКО флагом -e (НЕ копировать в ~/.pi/agent/extensions/ —
+иначе он заблокирует запись и regress-runner'у). Блокирует write/edit и
+bash-мутации (git push/commit, docker-мутации, rm/tee/редиректы, пакетные
+менеджеры, systemctl/crontab). Результат — вердикт в stdout; агент ничего
+не пишет на диск.
