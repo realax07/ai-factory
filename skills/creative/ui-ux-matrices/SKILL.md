@@ -44,7 +44,7 @@ metadata:
 
 ```bash
 python3 <skill-dir>/scripts/search.py "<query>" --domain <domain> [-n <max>]
-# skill-dir = каталог этого SKILL.md; варианты: ~/.hermes/skills/creative/ui-ux-matrices/scripts/search.py
+# skill-dir = каталог этого SKILL.md; варианты: <каталог скилла>/scripts/search.py
 ```
 
 Новые страницы/проекты — генерация дизайн-системы целиком:
