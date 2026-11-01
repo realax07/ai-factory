@@ -16,10 +16,16 @@ docs/guides/pipeline-manifest.md. Pi в тестах НЕ вызывается �
   (д) STOP gate-fail: exit 2, диагностика, следующий stage не исполняется,
       повтор (без правки) снова STOP — ретрая нет; pi-fail; таймаут;
   (е) e2e на реальном worktree (session_worktree.sh): role-agents.md →
-      AGENTS.md, PI_ZONE_WRITE из stage.zones, бриф несет inputs/task.
+      AGENTS.md, PI_ZONE_WRITE из stage.zones, бриф несет inputs/task;
+  (ж) фиксы по ревью pi:dev 2b76c39: STOP-контракт (битый state / PLAN вне
+      git / кривой PIPELINE_TIMEOUT → RUNNER-STOP exit 2), хвост частичного
+      вывода при таймауте, диагностика переживает падение journal,
+      валидация pi-роли / зон с ':' / flow 1..5, хэш-суффикс сессии,
+      подсказка очистки только после успеха.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import subprocess
 import sys
@@ -302,13 +308,243 @@ def test_d3_timeout_stop_exit2(tmp_path, monkeypatch):
 # ------------------------------------------------------------- (е) e2e
 
 
+# ------------------------------------------- (ж) фиксы по ревью pi:dev
+
+
+@pytest.mark.parametrize("broken", ["garbage{{not-json", '{"schema_version": "other/1"}'])
+def test_j1_broken_state_stop_exit2(tmp_path, monkeypatch, capsys, broken):
+    """TC-PR-012: битый runner-state (JSON/чужая схема) — RUNNER-STOP exit 2, без traceback (F1)."""
+    repo = make_repo(tmp_path)
+    plan = write_plan(repo)
+    (repo / "PLAN-demo.md.runner-state.json").write_text(broken, "utf-8")
+    calls: list = []
+    patch_executors(monkeypatch, repo, pi_calls=calls)
+    assert pr.cmd_run(plan, dry_run=False) == 2
+    err = capsys.readouterr().err
+    assert "RUNNER-STOP:" in err and "runner-state" in err
+    assert calls == []  # до исполнения дело не дошло
+
+
+def test_j1b_plan_outside_git_stop_exit2(tmp_path, capsys):
+    """TC-PR-013: PLAN вне git-репозитория — RUNNER-STOP exit 2, без traceback (F1)."""
+    plan = write_tmp_plan(VALID)
+    assert pr.cmd_run(plan, dry_run=False) == 2
+    err = capsys.readouterr().err
+    assert "RUNNER-STOP:" in err
+    assert "git" in err.lower()
+
+
+@pytest.mark.parametrize("bad", ["abc", "0", "-5", "12.5"])
+def test_j2_bad_pipeline_timeout_stop(tmp_path, monkeypatch, capsys, bad):
+    """TC-PR-014: кривой PIPELINE_TIMEOUT (не целое/<=0) — RUNNER-STOP exit 2 (F2)."""
+    repo = make_repo(tmp_path)
+    plan = write_plan(repo)
+    calls: list = []
+    patch_executors(monkeypatch, repo, pi_calls=calls)
+    monkeypatch.setenv("PIPELINE_TIMEOUT", bad)
+    assert pr.cmd_run(plan, dry_run=False) == 2
+    err = capsys.readouterr().err
+    assert "RUNNER-STOP:" in err and "PIPELINE_TIMEOUT" in err
+    assert calls == []
+
+
+def test_j2b_valid_pipeline_timeout_runs(tmp_path, monkeypatch, capsys):
+    """TC-PR-014b: валидный PIPELINE_TIMEOUT исполняется (не STOP)."""
+    repo = make_repo(tmp_path)
+    plan = write_plan(repo, "# PLAN-x\n\n```yaml\npipeline:\n"
+                            "  package: p\n  flow: 4\n  stages:\n"
+                            "    - id: a\n      run: gate:true\n```\n")
+    calls: list = []
+    patch_executors(monkeypatch, repo, pi_calls=calls)
+    monkeypatch.setenv("PIPELINE_TIMEOUT", "120")
+    assert pr.cmd_run(plan, dry_run=False) == 0
+
+
+def test_j3_timeout_keeps_partial_output(tmp_path, monkeypatch, capsys):
+    """TC-PR-015: таймаут pi — хвост частичного stdout/stderr в диагностике STOP (F6)."""
+    repo = make_repo(tmp_path)
+    plan = write_plan(repo)
+
+    def slow_pi(args, cwd, env, timeout):
+        raise subprocess.TimeoutExpired(cmd="pi", timeout=timeout,
+                                        output=b"PARTIAL-OUT line1\nline2\n",
+                                        stderr=b"partial-err trace\n")
+    monkeypatch.setattr(pr, "run_pi", slow_pi)
+    monkeypatch.setattr(pr, "ensure_worktree", lambda repo_, sid, br: repo_)
+    assert pr.cmd_run(plan, dry_run=False) == 2
+    err = capsys.readouterr().err
+    assert "таймаут pi" in err
+    assert "PARTIAL-OUT line1" in err   # хвост stdout не выброшен
+    assert "partial-err trace" in err   # хвост stderr не выброшен
+
+
+def test_j3b_timeout_gate_stage_keeps_output(tmp_path, monkeypatch, capsys):
+    """TC-PR-015b: таймаут gate stage — частичный вывод в диагностике (F6)."""
+    repo = make_repo(tmp_path)
+    plan = write_plan(repo, "# PLAN-x\n\n```yaml\npipeline:\n"
+                            "  package: p\n  flow: 4\n  stages:\n"
+                            "    - id: a\n      run: pi:dev\n"
+                            "      zones: [src/**]\n"
+                            "      gate: python3 check.py\n```\n")
+
+    def slow_gate(cmd, cwd, timeout):
+        raise subprocess.TimeoutExpired(cmd=cmd, timeout=timeout,
+                                        output=b"GATE-PARTIAL\n")
+    monkeypatch.setattr(pr, "run_pi",
+                        lambda args, cwd, env, timeout: (0, "", ""))
+    monkeypatch.setattr(pr, "run_shell", slow_gate)
+    monkeypatch.setattr(pr, "ensure_worktree", lambda repo_, sid, br: repo_)
+    assert pr.cmd_run(plan, dry_run=False) == 2
+    err = capsys.readouterr().err
+    assert "таймаут gate stage" in err and "GATE-PARTIAL" in err
+
+
+def test_j4_stop_survives_journal_failure(tmp_path, monkeypatch, capsys):
+    """TC-PR-016: падение state/journal при STOP — диагностика напечатана, exit 2, без traceback (F8)."""
+    repo = make_repo(tmp_path)
+    plan = write_plan(repo, "# PLAN-x\n\n```yaml\npipeline:\n"
+                            "  package: p\n  flow: 4\n  stages:\n"
+                            "    - id: a\n      run: gate:true\n```\n",
+                      name="PLAN-x.md")
+
+    def failing_gate(cmd, cwd, timeout):
+        return 1, "out", "gate failed: details"
+
+    def broken_journal(plan_path, line):
+        raise OSError("план удален/readonly")
+    monkeypatch.setattr(pr, "run_shell", failing_gate)
+    monkeypatch.setattr(pr, "ensure_worktree", lambda repo_, sid, br: repo_)
+    monkeypatch.setattr(pr, "journal_append", broken_journal)
+    assert pr.cmd_run(plan, dry_run=False) == 2
+    err = capsys.readouterr().err
+    assert "gate exit 1" in err and "gate failed: details" in err
+
+
+@pytest.mark.parametrize("payload", ["../etc", "/abs", "a b", "a/b", "role;id"])
+def test_j5_pi_role_payload_validation(payload):
+    """TC-PR-017: pi-роль — плоский [A-Za-z0-9._-]+: traversal/пробелы/слэши — ManifestError (F11)."""
+    text = ("# PLAN-x\n\n```yaml\npipeline:\n  package: p\n  flow: 4\n"
+            "  stages:\n"
+            f"    - id: a\n      run: pi:{payload}\n"
+            "      zones: [src/**]\n```\n")
+    with pytest.raises(pr.ManifestError):
+        pr.parse_manifest(write_tmp_plan(text))
+
+
+def test_j5b_gate_payload_not_restricted():
+    """TC-PR-017b: gate-payload не ограничен роль-регэкспом (команды с пробелами/путями ок)."""
+    text = ("# PLAN-x\n\n```yaml\npipeline:\n  package: p\n  flow: 4\n"
+            "  stages:\n"
+            "    - id: a\n      run: gate:python3 scripts/x.py --all\n```\n")
+    m = pr.parse_manifest(write_tmp_plan(text))
+    assert m["stages"][0]["payload"] == "python3 scripts/x.py --all"
+
+
+def test_j6_package_hash_suffix_no_collision(tmp_path, monkeypatch):
+    """TC-PR-018: «a b» и «a/b» — разные session/branch (суффикс sha1[:8]); демо-пакет ветки e2e стабильна (F12)."""
+    seen: list = []
+
+    def capture_wt(repo_, sid, br):
+        seen.append((sid, br))
+        return repo_
+    monkeypatch.setattr(pr, "ensure_worktree", capture_wt)
+    monkeypatch.setattr(pr, "run_shell", lambda cmd, cwd, t: (0, "", ""))
+    for pkg, sub_name in (("a b", "a_b"), ("a/b", "a_slash_b")):
+        sub = tmp_path / sub_name
+        sub.mkdir(exist_ok=True)
+        repo = make_repo(sub)
+        plan = write_plan(repo, "# PLAN-x\n\n```yaml\npipeline:\n"
+                                f"  package: {pkg}\n  flow: 4\n  stages:\n"
+                                "    - id: a\n      run: gate:true\n```\n",
+                          name="PLAN-x.md")
+        assert pr.cmd_run(plan, dry_run=False) == 0
+    assert len(seen) == 2
+    (sid1, br1), (sid2, br2) = seen
+    assert sid1 != sid2 and br1 != br2          # коллизии нет
+    for sid, br in seen:                        # суффикс-хэш на месте
+        assert len(sid.rsplit("-", 1)[1]) == 8
+        assert br.rsplit("-", 1)[1] == sid.rsplit("-", 1)[1]
+
+
+@pytest.mark.parametrize("flow", [0, 6, 99, -1])
+def test_j7_flow_out_of_range(flow):
+    """TC-PR-019: flow вне 1..5 — ManifestError (F17)."""
+    text = ("# PLAN-x\n\n```yaml\npipeline:\n  package: p\n"
+            f"  flow: {flow}\n  stages:\n"
+            "    - id: a\n      run: gate:true\n```\n")
+    with pytest.raises(pr.ManifestError):
+        pr.parse_manifest(write_tmp_plan(text))
+
+
+@pytest.mark.parametrize("flow", [1, 5])
+def test_j7b_flow_in_range(flow):
+    """TC-PR-019b: flow 1 и 5 — граница принимается (F17)."""
+    text = ("# PLAN-x\n\n```yaml\npipeline:\n  package: p\n"
+            f"  flow: {flow}\n  stages:\n"
+            "    - id: a\n      run: gate:true\n```\n")
+    assert pr.parse_manifest(write_tmp_plan(text))["flow"] == flow
+
+
+def test_j8_cleanup_hint_after_success_only(tmp_path, monkeypatch, capsys):
+    """TC-PR-020: после «докатан» — готовая команда remove; при STOP и hermes-стопе подсказки нет (F15)."""
+    good = "# PLAN-x\n\n```yaml\npipeline:\n  package: p\n  flow: 4\n" \
+           "  stages:\n    - id: a\n      run: gate:true\n```\n"
+    repo = make_repo(tmp_path)
+    plan = write_plan(repo, good, name="PLAN-x.md")
+    calls: list = []
+    patch_executors(monkeypatch, repo, pi_calls=calls)
+    assert pr.cmd_run(plan, dry_run=False) == 0
+    out = capsys.readouterr().out
+    assert "session_worktree.sh remove" in out
+    assert "pipeline-p-" in out  # session-id с хэш-суффиксом в команде
+
+    # STOP: worktree сохраняется, подсказки очистки нет (свежий репо —
+    # без resume-состояния первого сценария)
+    def failing_gate(cmd, cwd, timeout):
+        return 1, "", "boom"
+    sub = tmp_path / "stop-proj"
+    sub.mkdir(exist_ok=True)
+    repo2 = make_repo(sub)
+    write_plan(repo2, good, name="PLAN-x.md")
+    capsys.readouterr()
+    monkeypatch.setattr(pr, "run_shell", failing_gate)
+    assert pr.cmd_run(repo2 / "PLAN-x.md", dry_run=False) == 2
+    captured = capsys.readouterr()
+    assert "STOP" in captured.err
+    assert "session_worktree.sh remove" not in captured.out
+
+    # hermes-стоп-точка: тоже без подсказки (пакет не докатан)
+    hermes = "# PLAN-x\n\n```yaml\npipeline:\n  package: p\n  flow: 4\n" \
+             "  stages:\n    - id: a\n      run: hermes:pm\n```\n"
+    capsys.readouterr()
+    plan2 = write_plan(repo, hermes, name="PLAN-h.md")
+    assert pr.cmd_run(plan2, dry_run=False) == 0
+    captured = capsys.readouterr()
+    assert "ЖДУ ПМ" in captured.out
+    assert "session_worktree.sh remove" not in captured.out
+
+
+@pytest.mark.parametrize("zone", ["backend:x", "src/**:y"])
+def test_j9_zone_with_colon_rejected(zone):
+    """TC-PR-021: зона с ':' — ManifestError (PI_ZONE_WRITE разделяется по ':') (F14)."""
+    text = ("# PLAN-x\n\n```yaml\npipeline:\n  package: p\n  flow: 4\n"
+            "  stages:\n"
+            f"    - id: a\n      run: pi:dev\n      zones: [src/**, {zone}]\n"
+            "```\n")
+    with pytest.raises(pr.ManifestError):
+        pr.parse_manifest(write_tmp_plan(text))
+
+
 def test_e1_e2e_real_worktree_brief_env_agents(tmp_path, monkeypatch):
     """TC-PR-010: e2e на session_worktree.sh — AGENTS.md, PI_ZONE_WRITE, бриф."""
     repo = make_repo(tmp_path)
     # ветка пакета существует заранее → session_worktree.sh подключит ее
-    # (без remote origin/main, как в свежих fixture-репо)
-    subprocess.run(["git", "-C", str(repo), "branch",
-                    "pipeline/demo-pkg"], check=True)
+    # (без remote origin/main, как в свежих fixture-репо); имя ветки
+    # строит сам раннер: pipeline/<санитиз>, суффикс sha1(package)[:8]
+    sane = pr._UNSAFE_RE.sub("-", "demo-pkg").strip("-")
+    suffix = hashlib.sha1(b"demo-pkg").hexdigest()[:8]
+    branch = f"pipeline/{sane}-{suffix}"
+    subprocess.run(["git", "-C", str(repo), "branch", branch], check=True)
     plan = write_plan(repo)
     calls: list = []
     shell_cmds: list = []
