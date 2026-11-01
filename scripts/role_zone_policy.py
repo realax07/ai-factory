@@ -150,7 +150,8 @@ ROLE_ZONE_POLICY: dict[str, tuple[str, ...]] = {
         # (план релиза change/бага/легкий Флоу 4) — pm-зона обязана их
         # покрывать, иначе prepare плана дает OUT_OF_ZONE.
         "PLAN-*.md",
-        "BACKLOG.md",
+        "backlog/MAP.md",
+        "backlog/J*.md",  # J22: бэклог — папка, 1 item = 1 файл
         "README.md",
         # Н13 (аудит 2026-10-23): docs/** был ничьей — назначена docs-зона
         # ПМ (docs_task ведет ПМ-делегация; продуктовый код по-прежнему вне).
