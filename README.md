@@ -253,6 +253,7 @@ Severity до начала реакции: **S1** (прод недоступен
 | `scripts/flowctl.py` | Оркестратор: prepare/run/finish/status/reconcile |
 | `scripts/flow_mode.py` | Переключатель shadow/enforcing |
 | `scripts/flowctl.py phase` | Память фазы: последний завершенный этап scope (J43.1) |
+| `scripts/flowctl.py gc` | Механическая чистка: merged-ветки (--merged origin/main по всем ремоутам), worktrees done/closed-сессий реестра, docker test/stand-префиксы Exited > 24ч (тома — только `--deep`), /tmp (deleg-*/стенды/пробы > 24ч). Dry-run по умолчанию, `--apply` исполняет (J55); regress-артефакты, code-reviews, archive/, backlog/ и бэкапы не трогаются |
 | `plugins/flow-enforcer/` | Плагин: pre_tool_call-энфорсер делегаций (J43/J43.1); source of truth, установка — factory_init / `hermes plugins install` |
 | `scripts/stand_reaper.py` | Гашение осиротевших тестовых стендов (J29) |
 | `scripts/pr_validate.py` | PR-ворота |
