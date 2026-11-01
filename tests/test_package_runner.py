@@ -113,6 +113,7 @@ def patch_executors(monkeypatch, repo: Path, pi_calls: list,
 
 
 def test_a1_valid_manifest_parsed():
+    """TC-PR-001: валидный манифест парсится (package/flow/stages, kinds)."""
     m = pr.parse_manifest(write_tmp_plan(VALID))
     assert m["package"] == "demo-pkg"
     assert m["flow"] == 4
@@ -124,6 +125,7 @@ def test_a1_valid_manifest_parsed():
 
 
 def test_a2_no_pipeline_section():
+    """TC-PR-002: PLAN без секции pipeline: — ManifestError."""
     with pytest.raises(pr.ManifestError):
         pr.parse_manifest(write_tmp_plan("# PLAN-x\n\n```yaml\nother: 1\n```\n"))
 
@@ -147,6 +149,7 @@ def test_a2_no_pipeline_section():
      "    - id: a\n      run: gate:true\n"),
 ])
 def test_a3_crooked_manifests_rejected(snippet):
+    """TC-PR-003: кривые манифесты (6 вариантов) — ManifestError."""
     with pytest.raises(pr.ManifestError):
         pr.parse_manifest(
             write_tmp_plan("# PLAN-x\n\n```yaml\n" + snippet + "```\n"))
@@ -154,6 +157,7 @@ def test_a3_crooked_manifests_rejected(snippet):
 
 def test_a4_depends_out_of_order_warns_not_stops(tmp_path, monkeypatch,
                                                  capsys):
+    """TC-PR-004: depends вне порядка — WARNING, прогон продолжается."""
     text = ("# PLAN-x\n\n```yaml\npipeline:\n  package: p\n  flow: 4\n"
             "  stages:\n"
             "    - id: a\n      run: gate:true\n      depends: [b]\n"
@@ -181,6 +185,7 @@ def test_a4_depends_out_of_order_warns_not_stops(tmp_path, monkeypatch,
 
 
 def test_v1_resume_skips_done_stages(tmp_path, monkeypatch, capsys):
+    """TC-PR-005: state/resume — done/waited пропускаются, pi не повторяется."""
     repo = make_repo(tmp_path)
     plan = write_plan(repo)
     calls: list = []
@@ -209,6 +214,7 @@ def test_v1_resume_skips_done_stages(tmp_path, monkeypatch, capsys):
 
 
 def test_g1_hermes_step_waits_pm_exit0(tmp_path, monkeypatch, capsys):
+    """TC-PR-006: hermes-шаг — «ЖДУ ПМ», exit 0, статус waited, журнал."""
     repo = make_repo(tmp_path)
     plan = write_plan(repo)
     calls: list = []
@@ -232,6 +238,7 @@ def test_g1_hermes_step_waits_pm_exit0(tmp_path, monkeypatch, capsys):
 
 
 def test_d1_gate_fail_stop_exit2_no_retry(tmp_path, monkeypatch, capsys):
+    """TC-PR-007: gate-fail — STOP exit 2, диагностика, повтор без правки снова STOP."""
     repo = make_repo(tmp_path)
     plan = write_plan(repo)
     pi_calls: list = []
@@ -264,6 +271,7 @@ def test_d1_gate_fail_stop_exit2_no_retry(tmp_path, monkeypatch, capsys):
 
 
 def test_d2_pi_fail_stop_exit2(tmp_path, monkeypatch, capsys):
+    """TC-PR-008: ненулевой exit pi — STOP exit 2, stage stopped."""
     repo = make_repo(tmp_path)
     plan = write_plan(repo)
 
@@ -280,6 +288,7 @@ def test_d2_pi_fail_stop_exit2(tmp_path, monkeypatch, capsys):
 
 
 def test_d3_timeout_stop_exit2(tmp_path, monkeypatch):
+    """TC-PR-009: таймаут pi — STOP exit 2."""
     repo = make_repo(tmp_path)
     plan = write_plan(repo)
 
@@ -294,6 +303,7 @@ def test_d3_timeout_stop_exit2(tmp_path, monkeypatch):
 
 
 def test_e1_e2e_real_worktree_brief_env_agents(tmp_path, monkeypatch):
+    """TC-PR-010: e2e на session_worktree.sh — AGENTS.md, PI_ZONE_WRITE, бриф."""
     repo = make_repo(tmp_path)
     # ветка пакета существует заранее → session_worktree.sh подключит ее
     # (без remote origin/main, как в свежих fixture-репо)
@@ -332,3 +342,18 @@ def test_e1_e2e_real_worktree_brief_env_agents(tmp_path, monkeypatch):
     assert "openspec/changes/demo/spec.md" in brief  # inputs в брифе
     assert "сделать по спеке" in brief               # task в брифе
     assert str(wt) == str(shell_cmds[0][1])          # gate в worktree
+
+
+def test_a5_quoted_scalars_block_list():
+    """TC-PR-011: кавычкованные скаляры в блочном списке (паритет с YAML)."""
+    text = ("# PLAN-x\n\n```yaml\npipeline:\n  package: p\n  flow: 2\n"
+            "  stages:\n"
+            "    - id: a\n      run: pi:dev\n      zones: [src/**]\n"
+            "      inputs:\n"
+            "        - docs/x.md\n"
+            "        - 'path with: colon'\n"
+            "      task: \"сделать: быстро\"\n```\n")
+    m = pr.parse_manifest(write_tmp_plan(text))
+    st = m["stages"][0]
+    assert st["inputs"] == ["docs/x.md", "path with: colon"]
+    assert st["task"] == "сделать: быстро"

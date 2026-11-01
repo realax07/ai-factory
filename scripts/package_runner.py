@@ -65,8 +65,6 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-import yaml
-
 SCRIPTS = Path(__file__).resolve().parent
 REPO_ROOT = SCRIPTS.parent
 ROLE_PACKS = REPO_ROOT / "skills" / "pm-factory" / "pi" / "role-packs"
@@ -97,14 +95,141 @@ def utcnow_iso() -> str:
 
 
 # ------------------------------------------------------------- парсинг
+# Мини-парсер YAML-подмножества манифеста: скрипт самодостаточен (в CI —
+# только pytest, PyYAML нет; прецедент стиля — pm_bounds_check повторяет
+# parse_verdict без импорта). Поддерживается ровно то, что задокументировано
+# в docs/guides/pipeline-manifest.md: вложенные отображения, списки
+# (блочные `- x` и инлайновые `[a, b]`), скаляры (строка в кавычках/без,
+# целое, true/false), комментарии целой строкой. Многострочных скаляров,
+# якорей и тегов нет — за границами формата.
+
+
+def _yaml_split_commas(inner: str) -> list[str]:
+    parts: list[str] = []
+    buf: list[str] = []
+    quote: str | None = None
+    for ch in inner:
+        if quote:
+            buf.append(ch)
+            if ch == quote:
+                quote = None
+        elif ch in "\"'":
+            quote = ch
+            buf.append(ch)
+        elif ch == ",":
+            parts.append("".join(buf))
+            buf = []
+        else:
+            buf.append(ch)
+    parts.append("".join(buf))
+    return [p.strip() for p in parts if p.strip()]
+
+
+def _yaml_scalar(s: str):
+    """Скаляр: кавычки снимаются, [..] — инлайн-список, целое — int."""
+    s = s.strip()
+    if len(s) >= 2 and s[0] == s[-1] and s[0] in "\"'":
+        return s[1:-1]
+    if s.startswith("[") and s.endswith("]"):
+        return [_yaml_scalar(p) for p in _yaml_split_commas(s[1:-1])]
+    if re.fullmatch(r"-?\d+", s):
+        return int(s)
+    if s.lower() in ("true", "false"):
+        return s.lower() == "true"
+    return s
+
+
+def _yaml_rows(text: str) -> list[tuple[int, str]]:
+    rows: list[tuple[int, str]] = []
+    for raw in text.splitlines():
+        line = raw.rstrip()
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        rows.append((len(line) - len(line.lstrip(" ")), stripped))
+    return rows
+
+
+def _yaml_dict(rows: list[tuple[int, str]], i: int,
+               indent: int) -> tuple[dict, int]:
+    out: dict = {}
+    while i < len(rows) and rows[i][0] == indent \
+            and not rows[i][1].startswith("- "):
+        key, _, val = rows[i][1].partition(":")
+        i += 1
+        val = val.strip()
+        if val:
+            out[key.strip()] = _yaml_scalar(val)
+        elif i < len(rows) and (rows[i][0] > indent
+                                or (rows[i][0] == indent
+                                    and rows[i][1].startswith("- "))):
+            nested, i = _yaml_value(rows, i, rows[i][0])
+            out[key.strip()] = nested
+        else:
+            out[key.strip()] = None
+    return out, i
+
+
+def _yaml_key_ok(key: str) -> bool:
+    """Ключ отображения — идентификатор формата манифеста (package, run,
+    zones…). Защита от трактовки 'quoted: scalar' как ключа."""
+    return re.fullmatch(r"[A-Za-z_][A-Za-z0-9_.-]*\s*", key) is not None
+
+
+def _yaml_list(rows: list[tuple[int, str]], i: int,
+               indent: int) -> tuple[list, int]:
+    out: list = []
+    while i < len(rows) and rows[i][0] == indent \
+            and rows[i][1].startswith("- "):
+        item = rows[i][1][2:].strip()
+        i += 1
+        if not item:
+            nested, i = _yaml_value(rows, i, rows[i][0])
+            out.append(nested)
+        elif ":" in item:
+            # первый ключ элемента-отображения в строке маркера
+            key, _, val = item.partition(":")
+            if not _yaml_key_ok(key):
+                out.append(_yaml_scalar(item))
+                continue
+            val = val.strip()
+            entry: dict = {}
+            if val:
+                entry[key.strip()] = _yaml_scalar(val)
+                if i < len(rows) and rows[i][0] > indent:
+                    rest, i = _yaml_dict(rows, i, rows[i][0])
+                    entry.update(rest)
+            else:
+                nested, i = _yaml_value(rows, i, rows[i][0])
+                entry[key.strip()] = nested
+            out.append(entry)
+        else:
+            out.append(_yaml_scalar(item))
+    return out, i
+
+
+def _yaml_value(rows, i, indent):
+    if rows[i][1].startswith("- "):
+        return _yaml_list(rows, i, indent)
+    return _yaml_dict(rows, i, indent)
+
+
+def yaml_subset_load(text: str):
+    """Манифест-подмножество YAML → dict. Синтаксическая ошибка отступов —
+    ManifestError на уровне extract_pipeline/parse_manifest."""
+    rows = _yaml_rows(text)
+    if not rows:
+        return {}
+    value, _ = _yaml_value(rows, 0, rows[0][0])
+    return value
 
 
 def extract_pipeline(text: str) -> dict:
     """Достает секцию pipeline из первого YAML-блока, где она есть."""
     for m in _FENCED_YAML_RE.finditer(text):
         try:
-            data = yaml.safe_load(m.group(1))
-        except yaml.YAMLError as exc:
+            data = yaml_subset_load(m.group(1))
+        except Exception as exc:  # noqa: BLE001 — диагностика, не молчание
             raise ManifestError(f"YAML-блок не парсится: {exc}") from exc
         if isinstance(data, dict) and "pipeline" in data:
             pipe = data["pipeline"]
