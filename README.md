@@ -10,7 +10,7 @@
 > и автономные CI-ворота). Развертывание конвейера в новый проект — одна команда
 > (factory_init); ядро обслуживает все проекты по путям.
 >
-> Оперативные правила — [AGENTS.md](AGENTS.md), статус — [PLAN.md](PLAN.md), уроки — [BACKLOG.md](BACKLOG.md), контракты — [contracts/artifact_contract.md](contracts/artifact_contract.md).
+> Оперативные правила — [AGENTS.md](AGENTS.md), статус — [PLAN.md](PLAN.md), уроки — [backlog/MAP.md](backlog/MAP.md), контракты — [contracts/artifact_contract.md](contracts/artifact_contract.md).
 
 ---
 
@@ -239,7 +239,7 @@ Severity до начала реакции: **S1** (прод недоступен
 | Путь | Что это |
 |---|---|
 | `AGENTS.md` | Оперативные правила, роутинг ревью, здоровье сабагентов, уроки E16 |
-| `PLAN.md` / `BACKLOG.md` | Статус + журнал делегаций / бэклог (история этапных решений — `archive/backlog/`) |
+| `PLAN.md` / `backlog/` | Статус + журнал делегаций / бэклог-папка (карта `backlog/MAP.md`, 1 item = 1 файл; легаси-BACKLOG — `archive/backlog-legacy-2026-10-09.md`) |
 | `docs/process-context.md` | Наследуемый процессный контекст (среда, дисциплина, уроки) — читается при входе |
 | `docs/README-flow-control.md` | Производственный процесс всех флоу с развилками и валидациями |
 | `agents/*.md` | Промпты 16 ролей + [реестр](agents/README.md); в каждой — секция «Скиллы» (карта применимости, подключение — на усмотрение агента) |
