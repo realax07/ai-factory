@@ -23,7 +23,8 @@
     ```
 
     run: pi:<роль>     — Pi роль-пак skills/pm-factory/pi/role-packs/<роль>/
-                         (role-agents.md → AGENTS.md в worktree, вызов
+                         (роль — плоский идентификатор [A-Za-z0-9._-]+;
+                         role-agents.md → AGENTS.md в worktree, вызов
                          `pi --no-session` с zone-guard, env PI_ZONE_WRITE);
     run: gate:<команда>— shell-команда в worktree; ненулевой exit → STOP;
     run: hermes:<роль> — стоп-точка ПМ: раннер печатает «ЖДУ ПМ …», exit 0;
@@ -52,11 +53,14 @@ Usage:
     python3 scripts/package_runner.py <PLAN-файл> [--dry-run]
 
 Exit codes: 0 — пакет докатан ИЛИ ожидается ручной диспатч ПМ (hermes:);
-2 — STOP (манифест невалиден, таймаут, ненулевой exit pi/gate).
+2 — STOP (манифест невалиден, битый state, таймаут, ненулевой exit pi/gate).
+После «докатан» раннер печатает готовую команду очистки сессии
+(session_worktree.sh remove); при STOP/hermes worktree сохраняется (resume).
 """
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -88,6 +92,9 @@ class ManifestError(Exception):
 
 class RunnerStop(Exception):
     """Остановка конвейера: stage, код, диагностика (STOP, exit 2)."""
+
+ROLE_RE = re.compile(r"[A-Za-z0-9._-]+")
+EXIT_STOP = 2
 
 
 def utcnow_iso() -> str:
@@ -255,7 +262,8 @@ def parse_manifest(plan_path: Path) -> dict:
         raise ManifestError("pipeline.package обязателен (непустая строка)")
     package = package.strip()
     flow = pipe.get("flow")
-    if not isinstance(flow, int) or isinstance(flow, bool):
+    if not isinstance(flow, int) or isinstance(flow, bool) \
+            or not 1 <= flow <= 5:
         raise ManifestError("pipeline.flow обязателен (целое число 1–5)")
     stages_raw = pipe.get("stages")
     if not isinstance(stages_raw, list) or not stages_raw:
@@ -288,6 +296,11 @@ def parse_manifest(plan_path: Path) -> dict:
         if not payload:
             raise ManifestError(f"{where}.run: пустой payload после "
                                 f"{kind}:")
+        if kind == "pi" and not ROLE_RE.fullmatch(payload):
+            # Роли — плоские каталоги роль-паков: без '/', без выхода наружу.
+            raise ManifestError(
+                f"{where}.run: роль pi — идентификатор "
+                f"[A-Za-z0-9._-]+, получено: {payload!r}")
         zones = raw.get("zones") or []
         if kind == "pi" and not (isinstance(zones, list) and zones):
             raise ManifestError(
@@ -299,6 +312,13 @@ def parse_manifest(plan_path: Path) -> dict:
                     isinstance(x, str) and x.strip() for x in val):
                 raise ManifestError(
                     f"{where}.{field}: ожидается список непустых строк")
+        if any(":" in z for z in zones):
+            # Зоны склеиваются в PI_ZONE_WRITE через ':' — двоеточие
+            # внутри зоны ломает парсинг guard'а.
+            bad = next(z for z in zones if ":" in z)
+            raise ManifestError(
+                f"{where}.zones: зона с ':' недопустима "
+                f"(PI_ZONE_WRITE разделяется по ':'): {bad!r}")
         stage = {
             "id": sid,
             "kind": kind,
@@ -341,7 +361,10 @@ def state_load(path: Path) -> dict | None:
         raw = path.read_text(encoding="utf-8")
     except FileNotFoundError:
         return None
-    data = json.loads(raw)
+    try:
+        data = json.loads(raw)
+    except ValueError as exc:
+        raise RunnerStop(f"битый runner-state (JSON): {path} ({exc})") from exc
     if not isinstance(data, dict) or data.get("schema_version") != STATE_SCHEMA:
         raise RunnerStop(f"битый runner-state: {path}")
     return data
@@ -467,6 +490,30 @@ def tail(text: str, lines: int = DIAG_TAIL_LINES) -> str:
     return "\n".join(rows[-lines:])
 
 
+def timeout_stream(data) -> str:
+    """Частичный вывод TimeoutExpired (bytes даже в text-режиме) → str."""
+    if data is None:
+        return ""
+    if isinstance(data, bytes):
+        return data.decode("utf-8", errors="replace")
+    return str(data)
+
+
+def parse_timeout(raw: str | None) -> int:
+    """PIPELINE_TIMEOUT → сек; кривое/неположительное — STOP (exit 2)."""
+    if raw is None or raw.strip() == "":
+        return DEFAULT_TIMEOUT
+    try:
+        val = int(raw.strip())
+    except ValueError as exc:
+        raise RunnerStop(f"PIPELINE_TIMEOUT не целое: {raw!r} "
+                         f"(дефолт {DEFAULT_TIMEOUT})") from exc
+    if val <= 0:
+        raise RunnerStop(f"PIPELINE_TIMEOUT должен быть > 0: {val} "
+                         f"(дефолт {DEFAULT_TIMEOUT})")
+    return val
+
+
 # ---------------------------------------------------------------- main
 
 
@@ -485,21 +532,18 @@ def cmd_run(plan_path: Path, dry_run: bool) -> int:
         return 0
 
     spath = state_path_for(plan_path)
-    state = state_load(spath) or {
-        "plan": str(plan_path), "package": manifest["package"],
-        "flow": manifest["flow"], "stages": {}, "history": [],
-    }
-    done = {sid for sid, rec in state.get("stages", {}).items()
-            if rec.get("status") in ("done", "waited")}
 
     def _stop(stage: dict | None, detail: str, exit_code: int | None,
               stdout: str = "", stderr: str = "") -> int:
         if stage is not None:
             state_record(state, stage["id"], "stopped", detail, exit_code)
-            state_write(spath, state)
-            journal_append(plan_path, f"{utcnow_iso()} | stage "
-                           f"{stage['id']} | {stage['kind']}:"
-                           f"{stage['payload']} | STOP ({detail})")
+            try:
+                state_write(spath, state)
+                journal_append(plan_path, f"{utcnow_iso()} | stage "
+                               f"{stage['id']} | {stage['kind']}:"
+                               f"{stage['payload']} | STOP ({detail})")
+            except OSError:
+                pass  # план удален/readonly — диагностика важнее state
         print(f"ЖДУ ПМ: STOP — {detail}", file=sys.stderr)
         if stdout.strip():
             print(f"--- stdout (хвост ≤{DIAG_TAIL_LINES} строк) ---",
@@ -509,12 +553,26 @@ def cmd_run(plan_path: Path, dry_run: bool) -> int:
             print(f"--- stderr (хвост ≤{DIAG_TAIL_LINES} строк) ---",
                   file=sys.stderr)
             print(tail(stderr), file=sys.stderr)
-        return 2
+        return EXIT_STOP
 
-    repo = repo_of(plan_path)
-    session_id = "pipeline-" + _UNSAFE_RE.sub("-", manifest["package"]).strip("-")
-    branch = "pipeline/" + _UNSAFE_RE.sub("-", manifest["package"]).strip("-")
-    timeout = int(os.environ.get("PIPELINE_TIMEOUT") or DEFAULT_TIMEOUT)
+    try:
+        state = state_load(spath) or {
+            "plan": str(plan_path), "package": manifest["package"],
+            "flow": manifest["flow"], "stages": {}, "history": [],
+        }
+        repo = repo_of(plan_path)
+        timeout = parse_timeout(os.environ.get("PIPELINE_TIMEOUT"))
+    except RunnerStop as exc:
+        print(f"RUNNER-STOP: {exc}", file=sys.stderr)
+        return EXIT_STOP
+    done = {sid for sid, rec in state.get("stages", {}).items()
+            if rec.get("status") in ("done", "waited")}
+
+    # F12: суффикс-хэш пакета — «a b»/«a/b»/«a-b» не делят одну сессию.
+    sane = _UNSAFE_RE.sub("-", manifest["package"]).strip("-")
+    suffix = hashlib.sha1(manifest["package"].encode("utf-8")).hexdigest()[:8]
+    session_id = f"pipeline-{sane}-{suffix}"
+    branch = f"pipeline/{sane}-{suffix}"
 
     for stage in manifest["stages"]:
         if stage["id"] in done:
@@ -552,8 +610,10 @@ def cmd_run(plan_path: Path, dry_run: bool) -> int:
         if stage["kind"] == "gate":
             try:
                 rc, out, err = run_shell(stage["payload"], worktree, timeout)
-            except subprocess.TimeoutExpired:
-                return _stop(stage, f"таймаут gate ({timeout}с)", None)
+            except subprocess.TimeoutExpired as exc:
+                return _stop(stage, f"таймаут gate ({timeout}с)", None,
+                             timeout_stream(exc.stdout),
+                             timeout_stream(exc.stderr))
             if rc != 0:
                 # Воротный отказ НЕ ретраится — разбор ПМ.
                 return _stop(stage, f"gate exit {rc}", rc, out, err)
@@ -579,16 +639,20 @@ def cmd_run(plan_path: Path, dry_run: bool) -> int:
                 "-p", build_brief(manifest, stage)]
         try:
             rc, out, err = run_pi(args, worktree, env, timeout)
-        except subprocess.TimeoutExpired:
-            return _stop(stage, f"таймаут pi ({timeout}с)", None)
+        except subprocess.TimeoutExpired as exc:
+            return _stop(stage, f"таймаут pi ({timeout}с)", None,
+                         timeout_stream(exc.stdout),
+                         timeout_stream(exc.stderr))
         if rc != 0:
             return _stop(stage, f"pi exit {rc}", rc, out, err)
         # Опциональный gate-этап стадии (после успешного pi; отказ — STOP).
         if stage["gate"]:
             try:
                 grc, gout, gerr = run_shell(stage["gate"], worktree, timeout)
-            except subprocess.TimeoutExpired:
-                return _stop(stage, f"таймаут gate stage ({timeout}с)", None)
+            except subprocess.TimeoutExpired as exc:
+                return _stop(stage, f"таймаут gate stage ({timeout}с)", None,
+                             timeout_stream(exc.stdout),
+                             timeout_stream(exc.stderr))
             if grc != 0:
                 return _stop(stage, f"gate stage exit {grc}", grc, gout, gerr)
         state_record(state, stage["id"], "done", "pi ok", 0)
@@ -599,6 +663,8 @@ def cmd_run(plan_path: Path, dry_run: bool) -> int:
 
     print(f"RUNNER: пакет {manifest['package']} докатан "
           f"({len(manifest['stages'])} stage); state: {spath}")
+    print(f"RUNNER: очистка сессии (по желанию): "
+          f"{WORKTREE_SCRIPT.name} remove {repo} {session_id}")
     return 0
 
 
