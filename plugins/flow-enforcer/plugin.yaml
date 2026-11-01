@@ -1,5 +1,5 @@
 name: flow-enforcer
-version: "0.2.0"
+version: "0.3.0"
 description: >-
   J43/J43.1 pre_tool_call-энфорсер делегаций: перехватывает delegate_task,
   парсит flow-aware маркеры (flow=<1-5> role/repo/scope) из goal/context,
@@ -11,3 +11,7 @@ description: >-
   J42 (L4): в контексте активной делегации перехватывает Bash git push —
   разрешен только push в ветку из ALLOW-объекта (session['branch']);
   вне делегации и без ALLOW-ветки — прежнее поведение.
+  J60 (MODEL_ENFORCE, дефолт ON; FLOW_MODEL_ENFORCE=off — деградация):
+  боевой этап 5.3-роли (SA/архитектор/DEV/BA, регруп J59) в goal обязан нести
+  маркер исполнителя [pi:<роль>] / [hermes:<роль>]; hermes на 5.3-роли —
+  DENY с подсказкой pi роль-пака; без маркера — WARN в лог (миграция).

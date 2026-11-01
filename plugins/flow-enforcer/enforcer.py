@@ -93,6 +93,26 @@ Env:
   FLOW_BYPASS_REGISTRY     путь к реестру bypass-решений (дефолт
                            ~/.hermes/state/flow-bypass-decisions.json)
   FLOW_ENFORCER_PUSH       0/false/no → выключить push-политику J42 (L4)
+  FLOW_MODEL_ENFORCE       0/false/no/off → выключить правило MODEL_ENFORCE
+                           J60 (ДЕФОЛТ ON — решение Заказчика: механика
+                           5.3-ролей включена; off — деградация при
+                           недоступности Pi-инфраструктуры)
+
+J60 (MODEL_ENFORCE): боевой этап 5.3-роли (SA/архитектор/DEV/BA — регруп
+J59, AGENTS.md §Оркестрация 2.1) распознается ЭВРИСТИКОЙ по ключевым словам
+роли в goal («СА», «create_change», «архитектор», «arch-review», «dev_task»,
+«задача dev», «BA», «requirements»). Ни одно слово не совпало → не боевой
+вызов, без директивы (свобода выбора исполнителя для Флоу 2/4/5,
+devops/qa/docs-вызовов сохранена; goal с маркером flow=2|4|5 гасится
+guard'ом явно). На боевом этапе goal обязан нести маркер исполнителя
+[pi:<роль>] / [hermes:<роль>]:
+  - [hermes:<роль5.3>] → DENY MODEL_ENFORCE с подсказкой «используй pi
+    роль-пак skills/pm-factory/pi/role-packs/<роль> (J59); делегация —
+    только с обоснованием в журнале PLAN.md»;
+  - [pi:<роль>] → ALLOW (запись model_enforce_pass в лог);
+  - маркера нет вообще → WARN в лог (НЕ блок: миграционный период).
+Проверка стоит ДО разбора flow-маркеров и работает даже для делегаций без
+канонического заголовка (в permissive те сегодня проходят молча).
 """
 from __future__ import annotations
 
@@ -704,6 +724,95 @@ def pm_integration_gate(pushes: list[dict], cwd: str | None,
         f"{PM_PUSH_HANDOFF_MSG}.")}
 
 
+# ------------------------------------------------------- J60: MODEL_ENFORCE
+# Модели-регруп (J59, решение Заказчика 2026-10-31): боевые волны
+# SA/архитектор/DEV/BA исполняются через Pi роль-паки (glm-5.3), не через
+# general-делегацию. Правило — AGENTS.md §Оркестрация 2.1; здесь —
+# механический энфорсер (J60).
+MODEL_ENFORCE_ENV = "FLOW_MODEL_ENFORCE"
+MODEL_ENFORCE_POLICY = "MODEL_ENFORCE"
+MODEL_ROLES = ("sa", "architect", "dev", "ba")
+# Маркер исполнителя в goal: [pi:sa] / [hermes:dev] / ... (регистр не важен).
+EXECUTOR_MARKER_RE = re.compile(
+    r"\[(pi|hermes):(" + "|".join(MODEL_ROLES) + r")\]", re.IGNORECASE)
+# Эвристика боевого этапа: ключевые слова роли 5.3 в goal (ТЗ J60). «СА» и
+# «BA» — ТОЛЬКО верхним регистром целым словом (иначе «Са»/латиница в
+# обычном тексте дают ложное срабатывание). Флоу 1-воины: create_change /
+# arch-review / dev_task; «requirements» — этап BA.
+STAGE_KEYWORD_RE = {
+    "sa": re.compile(r"\bСА\b|\bcreate_change\b"),
+    "architect": re.compile(
+        r"\bархитектор\w*|\barch[-_ ]?review\b", re.IGNORECASE),
+    "dev": re.compile(
+        r"\bdev_task\b|\bзадач\w+\s+dev\b|\bdev-задач\w*", re.IGNORECASE),
+    "ba": re.compile(r"\bBA\b|\brequirements\b"),
+}
+# Свобода выбора исполнителя (ТЗ J60): Флоу 2/4/5 — НЕ боевые волны 5.3;
+# явный маркер flow=2|4|5 в goal гасит правило (guard), до эвристики.
+MODEL_FLOW_GUARD_RE = re.compile(r"\bflow=[245]\b")
+
+
+def model_enforce_enabled() -> bool:
+    """Флаг FLOW_MODEL_ENFORCE: ДЕФОЛТ ON (решение Заказчика — механика
+    включена); 0/false/no — полное отключение (деградация при недоступности
+    Pi-инфраструктуры)."""
+    flag = os.environ.get(MODEL_ENFORCE_ENV, "1").strip().lower()
+    return flag not in ("0", "false", "no", "off")
+
+
+def executor_markers(goal: str | None) -> list[tuple[str, str]]:
+    """Маркеры исполнителя [(kind, role)] в goal: pi | hermes × 5.3-роль."""
+    return [(m.group(1).lower(), m.group(2).lower())
+            for m in EXECUTOR_MARKER_RE.finditer(goal or "")]
+
+
+def stage_roles(goal: str | None) -> list[str]:
+    """5.3-роли, чьи ключевые слова найдены в goal (эвристика боевого
+    этапа). Пусто → не боевой вызов, правило не применяется."""
+    return [role for role, rx in STAGE_KEYWORD_RE.items()
+            if rx.search(goal or "")]
+
+
+def model_enforce_gate(goal: str | None, task_id: str = "") -> dict | None:
+    """Ворота MODEL_ENFORCE (J60) для delegate_task: на боевом этапе
+    5.3-роли goal обязан нести маркер исполнителя. [hermes:<роль>] → block
+    (general-делегация запрещена J59); [pi:<роль>] → пропуск; маркера нет →
+    WARN в лог (НЕ блок — миграционный период). Не боевой вызов / Флоу
+    2/4/5 / флаг off — без директивы."""
+    if not model_enforce_enabled():
+        return None
+    if MODEL_FLOW_GUARD_RE.search(goal or ""):
+        return None  # Флоу 2/4/5: свобода выбора исполнителя сохранена
+    stages = stage_roles(goal)
+    if not stages:
+        return None  # не боевой вызов (devops/qa/docs/Ф2/Ф4/Ф5) — молча
+    markers = executor_markers(goal)
+    if not markers:
+        log_event({"event": "model_enforce_warn", "level": "WARNING",
+                   "task_id": task_id, "stages": stages,
+                   "note": "боевой этап 5.3-роли без маркера исполнителя "
+                           "([pi:<роль>]/[hermes:<роль>]) — миграционный "
+                           "WARN (J60), делегация не блокирована"})
+        return None
+    hermes = [role for kind, role in markers if kind == "hermes"]
+    if hermes:
+        role = hermes[0]
+        log_event({"event": "model_enforce_denied", "level": "WARNING",
+                   "task_id": task_id, "role": role, "stages": stages})
+        return {"action": "block", "message": (
+            f"FLOW-ENFORCER [{MODEL_ENFORCE_POLICY}]: боевой этап "
+            f"5.3-роли ({', '.join(stages)}) с маркером [hermes:{role}] — "
+            "general-делегация запрещена (J59, AGENTS.md §Оркестрация 2.1): "
+            f"используй pi роль-пак skills/pm-factory/pi/role-packs/{role} "
+            "(J59); делегация — только с обоснованием в журнале PLAN.md. "
+            f"Отключение механики: {MODEL_ENFORCE_ENV}=off (деградация).")}
+    log_event({"event": "model_enforce_pass", "task_id": task_id,
+               "pi_roles": sorted({role for kind, role in markers
+                                   if kind == "pi"}),
+               "stages": stages})
+    return None
+
+
 class FlowMarkerError(ValueError):
     """Очевидная ошибка маркера → block FLOW_MARKER_INVALID (J43.1)."""
 
@@ -1187,6 +1296,12 @@ def flow_enforce(tool_name: str, args: dict, task_id: str = "",
         args = args or {}
         goal = args.get("goal") if isinstance(args.get("goal"), str) else ""
         log_event({"event": "delegate_task_seen", "task_id": task_id})
+
+        # J60 (MODEL_ENFORCE): маркер исполнителя на боевом этапе 5.3-роли —
+        # ДО разбора flow-маркеров (работает и для делегаций без заголовка).
+        model_block = model_enforce_gate(goal, task_id)
+        if model_block is not None:
+            return model_block
 
         # BUG-AF-RECHECK-002: маркер bypass — ЗАЯВКА; разрешает только запись
         # в реестре решений. Проверка возможна только когда известны
