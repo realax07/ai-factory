@@ -98,9 +98,9 @@ pipeline:
 
       - id: code_review
         run: pi:code-reviewer
-        zones: [test-model/reviews/**]
+        zones: [code-reviews/my-package/review-001.md]
         verdict:
-          file: test-model/reviews/my-package/review-001.md
+          file: code-reviews/my-package/review-001.md
           contains: "Одобрить"
 - Таймаут вызова: env `PIPELINE_TIMEOUT` (сек), дефолт 1800; таймаут и
   ненулевой exit pi/gate/stand → STOP: exit 2, хвост stdout/stderr ≤30 строк.
@@ -112,6 +112,59 @@ pipeline:
   `<план>.runner.log` — вывод успешных стадий тоже доступен после
   прогона. После каждого stage — строка в секцию «## Журнал раннера»
   плана.
+
+## Ворота pi-стадии
+
+pi-стадия проходит тот же жизненный цикл ворот, что и делегация
+`delegate_task` (движок фабрики, `scripts/flowctl.py`):
+
+1. **Вход** — `flowctl prepare --worktree <wt> --path <zones>` по этапу роли
+   в STAGE_TABLE флоу пакета (`--change <package>`): план релиза, требования,
+   политика зон роли (`agents/README.md`, CLI только сужает), конфликт зон с
+   активными сессиями того же repo (`ZONE_CONFLICT` — реестр общий с
+   делегациями). Отказ (DENY/UNKNOWN) — STOP до pi с кодом причины;
+   затем `flowctl run`.
+2. **Агент** — pi в worktree; ролевой AGENTS-файл раннера после pi
+   удаляется (в дифф и коммит стадии не попадает).
+3. **Выход** — `flowctl finish --gate-scope post_agent`: фактический
+   git diff ⊆ суженная зона + гейты этапа (flow_check …). `returned`/
+   `blocked` — STOP с дефектами (`OUT_OF_ZONE`, FAIL гейта). `provisional`,
+   где не выполнен только `pr_validate` (нет PR-контекста), стадией
+   засчитывается: `pr_validate` — ворота PR в CI (flow.yml).
+4. **Коммит стадии** в ветку пакета (`[pipeline] <package>/<stage>: pi:<роль>
+   (correlation <id>)`, без SESSION.md) и закрытие резервации
+   (finished → closed): следующая стадия стартует от чистого дерева.
+
+Ключи стадии для ворот (необязательные): `action` — этап STAGE_TABLE, если
+роль участвует в нескольких (по умолчанию — первый этап роли во флоу);
+`task_id` → `--task` (dev_task Флоу 1 требует задачу tasks.md);
+`approval_ref` → `--approval-ref` (этап с утверждением Заказчика, например
+create_change).
+
+- **Роль без этапа во флоу** (ba, regress_runner, devops вне Флоу 3) —
+  решение flowctl не выносится: резервация зоны по политике роли и
+  post-check диффа (`session_check`), WARNING `ROLE_WITHOUT_STAGE`. Роль
+  вне политики зон (debug, auditor) — STOP `ZONE_OUTSIDE_POLICY`.
+- **Зоны стадии — в рамках политики роли.** Зона шире политики — STOP
+  `ZONE_OUTSIDE_POLICY` (например, `test-model/reviews/**` у code-reviewer:
+  политика — `code-reviews/*/review-*.md`). Для zone-guard зона с glob в
+  середине сводится к конкретному префиксу (`code-reviews`); точная сверка
+  — по диффу на выходе.
+- **Отказ после входа:** обязательная стадия — STOP, зона держится
+  (`needs_attention` / `finished`) до разбора; повторный запуск раннера
+  сначала освобождает зону прошлой попытки (`released`, worktree и файлы
+  сохранены), затем проходит ворота заново. optional-стадия — `skipped`,
+  зона освобождается сразу.
+- Реестр и state — как у делегаций (`~/.hermes/state/active_sessions.json`,
+  `flowctl_state.json`); env `PIPELINE_FLOW_REGISTRY` /
+  `PIPELINE_FLOW_STATE` переопределяют. Отчет стадии для finish —
+  `<план>.runner-reports/<stage>-<попытка>.md`.
+- **Известное ограничение — Флоу 4:** `flow_state` принимает scope Флоу 4
+  только буквальным `chore` (`CHORE_RE`), а пакеты обслуживания называются
+  `<slug>` (план `PLAN-<slug>.md`, J43.1). Реальный prepare такого пакета —
+  UNKNOWN `AMBIGUOUS_STATE`; раннер не подменяет scope и останавливается с
+  этим кодом (энфорсер в dry-run гасит тот же отказ постфильтром). Решение —
+  за Заказчиком.
 
 ### Опциональные стадии (`optional: true`)
 
@@ -153,7 +206,7 @@ pipeline:
   stages:
     - id: requirements
       run: pi:ba
-      zones: [requirements.md, docs/ba/**]
+      zones: [requirements.md, docs/ba/*]
       inputs: [docs/backlog/my-package.md]
       task: черновик требований по брифу Заказчика
     - id: approve
@@ -161,17 +214,26 @@ pipeline:
                               # Заказчику и вносит правки; repeat раннера —
                               # когда требования утверждены
     - id: create_change
-      run: pi:sa              # СА пишет proposal/spec/design/tasks (зоны
-      zones: [openspec/changes/my-package/**, sdd.md]   # openspec + sdd)
+      run: pi:sa              # СА пишет proposal/spec/design/tasks
+      zones:
+        - openspec/changes/my-package/proposal.md
+        - openspec/changes/my-package/design.md
+        - openspec/changes/my-package/tasks.md
+        - openspec/changes/my-package/specs/**
+        - sdd.md
+      approval_ref: decisions/my-package-requirements.md  # этап с утверждением
       inputs: [requirements.md, docs/ba/answers_round1.md]
       gate: openspec validate --strict
     - id: arch_review
       run: pi:architect
-      zones: [test-model/reviews/**, architecture/**, docs/**]
-      inputs: [openspec/changes/my-package/proposal.md,
-               openspec/changes/my-package/design.md]
+      zones:
+        - architecture/**
+        - test-model/reviews/my-package/review-001-architecture.md
+      inputs:
+        - openspec/changes/my-package/proposal.md
+        - openspec/changes/my-package/design.md
       verdict:
-        file: test-model/reviews/my-package/arch-review-001.md
+        file: test-model/reviews/my-package/review-001-architecture.md
         contains: "Одобрить"
     - id: design              # дизайн-макеты/токены ДО кода (J36); опциональна:
       run: pi:ui-designer     # задачи без фронт-дельты — падение → skipped,
@@ -180,30 +242,33 @@ pipeline:
       optional: true
     - id: design_check
       run: pi:design-validator
-      zones: [test-model/reviews/**]
+      zones: [test-model/reviews/my-package/review-001-design.md]
       inputs: [design/]
       verdict:
-        file: test-model/reviews/my-package/design-check-001.md
+        file: test-model/reviews/my-package/review-001-design.md
         contains: "Одобрить"
       optional: true          # отказ вердикта → skipped, не STOP
     - id: dev
       run: pi:dev
       zones: [backend/**, frontend/**, services/**, src/**, tests/**]
-      inputs: [openspec/changes/my-package/spec.md,
-               openspec/changes/my-package/design.md]
+      task_id: "1.1"          # задача tasks.md (dev_task требует задачу)
+      inputs:
+        - openspec/changes/my-package/spec.md
+        - openspec/changes/my-package/design.md
       gate: python3 scripts/flow_check.py
     - id: code_review
       run: pi:code-reviewer
-      zones: [test-model/reviews/**]
+      zones: [code-reviews/my-package/review-001.md]
       verdict:                # вердикт-ворота: нет «Одобрить» в файле —
-        file: test-model/reviews/my-package/review-001.md   # STOP «ЖДУ ПМ:
+        file: code-reviews/my-package/review-001.md         # STOP «ЖДУ ПМ:
         contains: "Одобрить"                                # возврат ревью»,
                               # ПМ возвращает дифф dev, потом repeat
     - id: qa_cases
       run: pi:qa-case-author
-      zones: [test-model/new/**]
-      inputs: [openspec/changes/my-package/spec.md,
-               openspec/changes/my-package/sdd.md]
+      zones: [test-model/new/my-package/**]
+      inputs:
+        - openspec/changes/my-package/spec.md
+        - openspec/changes/my-package/sdd.md
     - id: case_review
       run: pi:qa-case-reviewer
       zones: [test-model/reviews/**, test-model/approved/**]
@@ -217,16 +282,17 @@ pipeline:
                               # гашение НЕ автоматом — reaper/gc подберет
     - id: qa_auto
       run: pi:qa-automation
-      zones: [tests/**, test-model/**]
+      zones: [tests/**, test-model/bugs/*]
       inputs: [test-model/approved/my-package/]
     - id: impact
       run: pi:qa-impact-analyst
-      zones: [test-model/impact/**]
-      inputs: [openspec/changes/my-package/specs/,
-               test-model/regression/manifest.md]
+      zones: [test-model/impact/my-package.md]
+      inputs:
+        - openspec/changes/my-package/specs/
+        - test-model/regression/manifest.md
     - id: regress
-      run: pi:regress-runner
-      zones: [test-model/regress/**, tests/**]
+      run: pi:regress-runner  # роль без этапа во Флоу 1 — ворота зоны
+      zones: [test-model/regress/my-package/**]
       inputs: [test-model/impact/my-package.md]
     - id: archive
       run: hermes:pm          # СТОП-ТОЧКА: ПМ приемлет пакет (задачи tasks.md,
@@ -237,7 +303,7 @@ pipeline:
                               # тег релиза, архивация change-пакета
     - id: deploy              # релизная инфра (devops, J62-остаток): runbook,
       run: pi:devops          # деплой-скрипты (бэкап/EXPECTED_COMMIT/смоук/
-      zones: [deploy/**, docs/ops/**]       # DRY_RUN), миграции — в worktree.
+      zones: [deploy/**, ops/**]            # DRY_RUN), миграции — в worktree.
       optional: true          # БОЕВОЙ деплой прод-стека — только по
                               # утверждению ПМ (hermes-стоп), накатку
                               # выполняет Заказчик; падение стадии →
