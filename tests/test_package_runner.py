@@ -580,7 +580,9 @@ def test_e1_e2e_real_worktree_brief_env_agents(tmp_path, monkeypatch):
     assert args[args.index("--provider") + 1] == "zai-glm"
     assert args[args.index("--model") + 1] == "glm-5.3"
     assert args[args.index("-e") + 1].endswith("zone-guard.ts")
-    assert call["env"]["PI_ZONE_WRITE"] == "backend/**:tests/**"
+    # J61: PI_ZONE_WRITE — нормализованные зоны (префикс-форма guard'а),
+    # не glob-форма манифеста
+    assert call["env"]["PI_ZONE_WRITE"] == "backend:tests"
     assert call["cwd"] == wt
     brief = args[args.index("-p") + 1]
     assert "openspec/changes/demo/spec.md" in brief  # inputs в брифе
@@ -804,3 +806,44 @@ def test_z5c_own_state_resumes(tmp_path, monkeypatch, capsys):
     assert pr.cmd_run(plan, dry_run=False) == 0   # resume: всё skipped
     assert "RUNNER-STOP" not in capsys.readouterr().err
     assert len(calls) == 1                        # pi не повторялся
+
+
+# ------------------------- (и) J61: нормализация зон runner → guard
+
+
+@pytest.mark.parametrize("zone,expected", [
+    ("services/images/**", "services/images"),   # glob-форма манифеста
+    ("tests", "tests"),                          # плоская форма
+    ("tests/**/*", "tests"),                     # вложенный glob-хвост
+    ("docs/*", "docs"),                          # одноуровневый glob
+    ("src/backend/", "src/backend"),             # хвостовой слэш
+    ("./src/**", "src"),                         # ведущий ./ (паритет с guard)
+    ("a/b/**/", "a/b"),                          # glob + хвостовой слэш
+])
+def test_j61_normalize_zone(zone, expected):
+    """TC-PR-027 (J61): normalize_zone — glob-хвосты (`/**`, `/*`, `**`)
+    и слэши срезаны, плоская форма без изменений: guard матчит зоны
+    префиксом, glob-форма как префикс не матчится ни с одним путем."""
+    assert pr.normalize_zone(zone) == expected
+
+
+def test_j61_zone_glob_normalized_in_env(tmp_path, monkeypatch):
+    """TC-PR-027b (J61): PI_ZONE_WRITE в env pi — нормализованная строка
+    (смесь glob- и плоской форм), не glob-форма манифеста: с
+    `services/images/**` guard уходил в дефолтные зоны и блокировал
+    записи pi в свою зону (пилот BUG-026)."""
+    repo = make_repo(tmp_path)
+    plan = write_plan(repo, "# PLAN-x\n\n```yaml\npipeline:\n"
+                            "  package: p\n  flow: 4\n  stages:\n"
+                            "    - id: a\n      run: pi:dev\n"
+                            "      zones: [services/images/**, tests]\n"
+                            "```\n", name="PLAN-x.md")
+    calls: list = []
+    patch_executors(monkeypatch, repo, pi_calls=calls, worktree=repo)
+    assert pr.cmd_run(plan, dry_run=False) == 0
+    env = calls[0]["env"]
+    assert env["PI_ZONE_WRITE"] == "services/images:tests"
+    # бриф несет зоны как в манифесте (человекочитаемо), нормализация —
+    # только в env
+    brief = calls[0]["args"][calls[0]["args"].index("-p") + 1]
+    assert "services/images/**" in brief
