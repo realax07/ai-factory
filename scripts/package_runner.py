@@ -24,20 +24,31 @@
 
     run: pi:<роль>     — Pi роль-пак skills/pm-factory/pi/role-packs/<роль>/
                          (роль — плоский идентификатор [A-Za-z0-9._-]+;
-                         role-agents.md → AGENTS.md в worktree, вызов
+                         role-agents.md → AGENTS.md в worktree, а если там
+                         уже есть AGENTS.md проекта — рядом как AGENTS.pi.md
+                         с пометкой «читай вместе с AGENTS.md»; вызов
                          `pi --no-session` с zone-guard, env PI_ZONE_WRITE);
-    run: gate:<команда>— shell-команда в worktree; ненулевой exit → STOP;
+    run: gate:<команда>— shell-команда в worktree (env стенда E6 —
+                         EKOTOV_WIKI_BASE_URL/EKOTOV_WIKI_DB_PATH — срезается;
+                         скоуп тестов — ответственность gate-команды);
+                         ненулевой exit → STOP;
     run: hermes:<роль> — стоп-точка ПМ: раннер печатает «ЖДУ ПМ …», exit 0;
                          после действий ПМ повторный запуск докатывает пакет.
 
 Слой 2 — исполнение: v0 строго последовательный (без параллелей). depends[]
 сверяется с порядком: зависимость от более позднего/несуществующего stage —
-WARNING и игнор (не STOP). Состояние — JSON рядом с планом
-(<план>.runner-state.json); resume = пропуск stage со статусом done
-(остановленный stage при повторе исполняется заново — ретраев нет).
-hermes:-шаг получает статус waited: повторный запуск после ПМ-действий
-считает его обработанным и докатывает пакет (диспатч — ручной, раннер
-факт ПМ-работы не проверяет).
+WARNING и игнор (не STOP). Worktree создается от текущего HEAD репо (не
+origin/main — иначе теряется ветка ПМ с PLAN/карточками; дефект пилота
+BUG-026 на ekotov-wiki). Состояние — JSON рядом с планом
+(<план>.runner-state.json; путь печатается в начале прогона и при STOP);
+resume = пропуск stage со статусом done (остановленный stage при повторе
+исполняется заново — ретраев нет); чужой state (другой package/plan) —
+RUNNER-STOP. hermes:-шаг получает статус waited: повторный запуск после
+ПМ-действий считает его обработанным и докатывает пакет (диспатч — ручной,
+раннер факт ПМ-работы не проверяет).
+
+Вывод стадий не теряется: хвост stdout/stderr каждой стадии (≤50 строк)
+сохраняется в state (stdout_tail/stderr_tail) и в лог <план>.runner.log.
 
 Семантика останова: таймаут (env PIPELINE_TIMEOUT, сек; дефолт 1800),
 ненулевой exit pi/gate, отсутствие роль-пака — STOP: exit 2 + диагностика
@@ -78,7 +89,14 @@ DEFAULT_TIMEOUT = 1800
 DEFAULT_PROVIDER = "zai-glm"
 DEFAULT_MODEL = "glm-5.3"
 DIAG_TAIL_LINES = 30
+STAGE_TAIL_LINES = 50
 JOURNAL_HEADER = "## Журнал раннера"
+LOG_SUFFIX = ".runner.log"
+# Env стенда (E6), наследуемый раннером: в gate-команде срезается — с ним
+# pytest коллекция цепляет tests/web (нужен стенд, E6-класс) и падает с
+# collection error (дефект пилота BUG-026). Скоуп тестов — ответственность
+# самой gate-команды (см. docs/guides/pipeline-manifest.md).
+GATE_ENV_STRIP = ("EKOTOV_WIKI_BASE_URL", "EKOTOV_WIKI_DB_PATH")
 STATE_SCHEMA = "package-runner-state/1"
 
 RUN_KINDS = ("pi", "hermes", "gate")
@@ -379,13 +397,19 @@ def state_write(path: Path, state: dict) -> None:
 
 
 def state_record(state: dict, stage_id: str, status: str,
-                 detail: str, exit_code: int | None = None) -> None:
-    state.setdefault("stages", {})[stage_id] = {
+                 detail: str, exit_code: int | None = None,
+                 stdout: str = "", stderr: str = "") -> None:
+    """Запись стадии: + хвост stdout/stderr (≤50 строк) — вывод успешных
+    стадий тоже сохраняется (дефект пилота: stdout терялся при успехе)."""
+    entry = {
         "status": status, "at": utcnow_iso(),
         "detail": detail, "exit_code": exit_code,
+        "stdout_tail": tail(stdout, STAGE_TAIL_LINES),
+        "stderr_tail": tail(stderr, STAGE_TAIL_LINES),
     }
+    state.setdefault("stages", {})[stage_id] = entry
     state.setdefault("history", []).append({
-        "at": utcnow_iso(), "stage": stage_id,
+        "at": entry["at"], "stage": stage_id,
         "status": status, "detail": detail, "exit_code": exit_code,
     })
 
@@ -405,6 +429,22 @@ def journal_append(plan_path: Path, line: str) -> None:
     plan_path.write_text(text + f"- {line}\n", encoding="utf-8")
 
 
+def log_append(plan_path: Path, stage: dict, status: str,
+               stdout: str, stderr: str) -> None:
+    """Хвост stdout/stderr стадии (≤50 строк) — в лог рядом с планом
+    (<план>.runner.log): вывод успешных стадий тоже доступен после прогона
+    (дефект пилота BUG-026: stdout/stderr терялись при успехе)."""
+    header = (f"--- {utcnow_iso()} | stage {stage['id']} | "
+              f"{stage['kind']}:{stage['payload']} | {status} ---")
+    log = plan_path.parent / (plan_path.name + LOG_SUFFIX)
+    with open(log, "a", encoding="utf-8") as f:
+        f.write(header + "\n")
+        for name, data in (("stdout", stdout), ("stderr", stderr)):
+            body = tail(data, STAGE_TAIL_LINES)
+            if body.strip():
+                f.write(f"[{name}]\n{body}\n")
+
+
 # ------------------------------------------------------------ worktree
 
 
@@ -421,13 +461,20 @@ def repo_of(plan_path: Path) -> Path:
 
 def ensure_worktree(repo: Path, session_id: str, branch: str) -> Path:
     """Worktree сессии через session_worktree.sh (E5); уже существует —
-    переиспользуется (resume/idempotency)."""
+    переиспользуется (resume/idempotency). База — текущий HEAD репо:
+    дефолт скрипта (origin/main) теряет ветку ПМ — PLAN/карточки бага
+    отсутствуют в сцене pi/gate (дефект пилота BUG-026 на ekotov-wiki).
+    Скрипт умеет base-ref пятым аргументом — передаем HEAD."""
     expected = repo.parent / f"{repo.name}-worktrees" / session_id
     if expected.is_dir():
         return expected
-    proc = subprocess.run(
-        ["bash", str(WORKTREE_SCRIPT), "create", str(repo), session_id, branch],
-        capture_output=True, text=True)
+    head = subprocess.run(["git", "-C", str(repo), "rev-parse", "HEAD"],
+                          capture_output=True, text=True)
+    cmd = ["bash", str(WORKTREE_SCRIPT), "create", str(repo),
+           session_id, branch]
+    if head.returncode == 0 and head.stdout.strip():
+        cmd.append(head.stdout.strip())  # HEAD репо, не origin/main
+    proc = subprocess.run(cmd, capture_output=True, text=True)
     if proc.returncode != 0:
         raise RunnerStop(f"worktree не создан "
                          f"({proc.stderr.strip().splitlines()[-1] if proc.stderr.strip() else 'без диагностики'})")
@@ -450,14 +497,18 @@ def pi_provider_model(role: str) -> tuple[str, str]:
     return str(provider), str(model)
 
 
-def build_brief(manifest: dict, stage: dict) -> str:
+def build_brief(manifest: dict, stage: dict,
+                agents_file: str = "AGENTS.md") -> str:
     """Бриф pi-вызова: входы списком, задача — stage.task, иначе description."""
     task = stage["task"] or stage["description"]
+    read_note = "прочитай сам"
+    if agents_file != "AGENTS.md":
+        read_note += " вместе с AGENTS.md проекта"
     lines = [
         f"# Пакет {manifest['package']} (Флоу {manifest['flow']}), "
         f"stage {stage['id']}",
-        f"Роль: {stage['payload']} — ролевая инструкция в AGENTS.md корня "
-        "worktree (прочитай сам)",
+        f"Роль: {stage['payload']} — ролевая инструкция в {agents_file} "
+        f"корня worktree ({read_note})",
     ]
     if task:
         lines.append(f"Задача: {task}")
@@ -478,10 +529,17 @@ def run_pi(args: list[str], cwd: Path, env: dict,
     return proc.returncode, proc.stdout, proc.stderr
 
 
+def gate_env() -> dict:
+    """Env для gate-команд: наследуется от раннера, но переменные стенда
+    (E6) срезаются (эквивалент env -u EKOTOV_WIKI_BASE_URL EKOTOV_WIKI_DB_PATH).
+    Скоуп тестов — ответственность самой gate-команды."""
+    return {k: v for k, v in os.environ.items() if k not in GATE_ENV_STRIP}
+
+
 def run_shell(cmd: str, cwd: Path, timeout: int) -> tuple[int, str, str]:
-    """Точка подмены в тестах (gate-команды)."""
+    """Точка подмены в тестах (gate-команды); env — gate_env() (без стенда)."""
     proc = subprocess.run(cmd, shell=True, cwd=cwd, capture_output=True,
-                          text=True, timeout=timeout)
+                          text=True, timeout=timeout, env=gate_env())
     return proc.returncode, proc.stdout, proc.stderr
 
 
@@ -536,15 +594,23 @@ def cmd_run(plan_path: Path, dry_run: bool) -> int:
     def _stop(stage: dict | None, detail: str, exit_code: int | None,
               stdout: str = "", stderr: str = "") -> int:
         if stage is not None:
-            state_record(state, stage["id"], "stopped", detail, exit_code)
+            state_record(state, stage["id"], "stopped", detail, exit_code,
+                         stdout, stderr)
             try:
                 state_write(spath, state)
+                try:
+                    log_append(plan_path, stage, "STOP", stdout, stderr)
+                except OSError:
+                    pass
                 journal_append(plan_path, f"{utcnow_iso()} | stage "
                                f"{stage['id']} | {stage['kind']}:"
                                f"{stage['payload']} | STOP ({detail})")
             except OSError:
                 pass  # план удален/readonly — диагностика важнее state
         print(f"ЖДУ ПМ: STOP — {detail}", file=sys.stderr)
+        # Дефект пилота BUG-026: после STOP ПМ не знал, где state-файл
+        # (путь печатались только на hermes-шаге/успехе) — печатаем всегда.
+        print(f"  state: {spath}", file=sys.stderr)
         if stdout.strip():
             print(f"--- stdout (хвост ≤{DIAG_TAIL_LINES} строк) ---",
                   file=sys.stderr)
@@ -560,11 +626,23 @@ def cmd_run(plan_path: Path, dry_run: bool) -> int:
             "plan": str(plan_path), "package": manifest["package"],
             "flow": manifest["flow"], "stages": {}, "history": [],
         }
+        # Resume-логика: state-файл лежит по имени плана — чужой/скопированный
+        # state (другой package или plan) молча «докатил» бы не тот пакет.
+        if state.get("package") not in (None, manifest["package"]) \
+                or (state.get("plan") and state["plan"] != str(plan_path)):
+            raise RunnerStop(
+                f"runner-state чужой (package/plan не совпадают): {spath} "
+                f"(state: package={state.get('package')!r}, "
+                f"plan={state.get('plan')!r}; манифест: "
+                f"package={manifest['package']!r}, plan={plan_path})")
         repo = repo_of(plan_path)
         timeout = parse_timeout(os.environ.get("PIPELINE_TIMEOUT"))
     except RunnerStop as exc:
         print(f"RUNNER-STOP: {exc}", file=sys.stderr)
         return EXIT_STOP
+    # Дефект пилота BUG-026: путь state-файла печатается в начале каждого
+    # прогона — файл «не теряется» после прогона на реальном репо.
+    print(f"RUNNER: state: {spath}")
     done = {sid for sid, rec in state.get("stages", {}).items()
             if rec.get("status") in ("done", "waited")}
 
@@ -617,26 +695,41 @@ def cmd_run(plan_path: Path, dry_run: bool) -> int:
             if rc != 0:
                 # Воротный отказ НЕ ретраится — разбор ПМ.
                 return _stop(stage, f"gate exit {rc}", rc, out, err)
-            state_record(state, stage["id"], "done", "gate ok", 0)
+            state_record(state, stage["id"], "done", "gate ok", 0, out, err)
             state_write(spath, state)
+            try:
+                log_append(plan_path, stage, "ok", out, err)
+            except OSError:
+                pass
             journal_append(plan_path, f"{utcnow_iso()} | stage "
                            f"{stage['id']} | gate:{stage['payload']} | ok")
             done.add(stage["id"])
             continue
 
-        # kind == pi: роль-пак → AGENTS.md в корень worktree, вызов pi.
+        # kind == pi: роль-пак → AGENTS.md в корень worktree (а если там
+        # уже есть AGENTS.md проекта — рядом как AGENTS.pi.md, проектные
+        # правила не затираются; дефект пилота BUG-026), вызов pi.
         role_pack = ROLE_PACKS / stage["payload"]
         role_agents = role_pack / "role-agents.md"
         if not role_agents.is_file():
             return _stop(stage, f"роль-пак не найден: {role_agents}", None)
-        (worktree / "AGENTS.md").write_text(
-            role_agents.read_text(encoding="utf-8"), encoding="utf-8")
+        role_text = role_agents.read_text(encoding="utf-8")
+        agents_target = worktree / "AGENTS.md"
+        if agents_target.exists():
+            agents_file = worktree / "AGENTS.pi.md"
+            agents_file.write_text(
+                role_text + "\n---\n> Читай вместе с AGENTS.md проекта: "
+                "этот файл — ролевая инструкция Pi, проектные правила — "
+                "в AGENTS.md.\n", encoding="utf-8")
+        else:
+            agents_file = agents_target
+            agents_target.write_text(role_text, encoding="utf-8")
         provider, model = pi_provider_model(stage["payload"])
         env = dict(os.environ)
         env["PI_ZONE_WRITE"] = ":".join(stage["zones"])
         args = ["pi", "--provider", provider, "--model", model,
                 "--no-session", "-e", str(ZONE_GUARD),
-                "-p", build_brief(manifest, stage)]
+                "-p", build_brief(manifest, stage, agents_file.name)]
         try:
             rc, out, err = run_pi(args, worktree, env, timeout)
         except subprocess.TimeoutExpired as exc:
@@ -655,8 +748,14 @@ def cmd_run(plan_path: Path, dry_run: bool) -> int:
                              timeout_stream(exc.stderr))
             if grc != 0:
                 return _stop(stage, f"gate stage exit {grc}", grc, gout, gerr)
-        state_record(state, stage["id"], "done", "pi ok", 0)
+            out += f"\n--- gate ---\n{gout}"
+            err += f"\n--- gate ---\n{gerr}"
+        state_record(state, stage["id"], "done", "pi ok", 0, out, err)
         state_write(spath, state)
+        try:
+            log_append(plan_path, stage, "ok", out, err)
+        except OSError:
+            pass
         journal_append(plan_path, f"{utcnow_iso()} | stage {stage['id']} | "
                        f"pi:{stage['payload']} | ok")
         done.add(stage["id"])
