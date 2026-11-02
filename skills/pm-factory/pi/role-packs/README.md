@@ -24,9 +24,18 @@ env `PI_ZONE_WRITE="зона1:зона2"` (относительные globs от
 | [`architect/`](architect/README.md) | architect (`agents/architect_agent.md`) | **glm-5.3** | zai-glm | `architecture/**:docs/**` (+ review-путь по брифу) |
 | [`dev/`](dev/README.md) | dev (`agents/dev_agent.md`) | **glm-5.3** | zai-glm | `backend/**:frontend/**:services/**:src/**:tests/**:e2e/**` |
 | [`ba/`](ba/README.md) | ba (`agents/ba_agent.md`) | **glm-5.3** | zai-glm | `requirements.md:docs/ba/**` |
+| [`code-reviewer/`](code-reviewer/README.md) | code_reviewer (`agents/code_reviewer_agent.md`) | **glm-5.3-flash** | zai-glm | `test-model/reviews/**` (маркер «Одобрить» в вердикте обязателен) |
+| [`qa-case-author/`](qa-case-author/README.md) | qa_case_author (`agents/qa_case_author_agent.md`) | **glm-5.3-flash** | zai-glm | `test-model/new/**` (1 кейс = 1 файл TC-*.md) |
+| [`qa-case-reviewer/`](qa-case-reviewer/README.md) | qa_case_reviewer (`agents/qa_case_reviewer_agent.md`) | **glm-5.3-flash** | zai-glm | `test-model/reviews/**` (append-only партиии; + `test-model/approved/**` при переносе) |
+| [`qa-automation/`](qa-automation/README.md) | qa_automation (`agents/qa_automation_agent.md`) | **glm-5.3-flash** | zai-glm | `tests/**:test-model/**` |
+| [`qa-impact-analyst/`](qa-impact-analyst/README.md) | qa_impact_analyst (`agents/qa_impact_analyst_agent.md`) | **glm-5.3-flash** | zai-glm | `test-model/impact/**` |
+| [`ui-designer/`](ui-designer/README.md) | ui_designer (`agents/ui_designer_agent.md`) | **glm-5.3-flash** | zai-glm | `design/**` |
+| [`design-validator/`](design-validator/README.md) | design_validator (`agents/design_validator_agent.md`) | **glm-5.3-flash** | zai-glm | `test-model/reviews/**` (review-NNN-design.md) |
+| [`debug/`](debug/README.md) | debug (`agents/debug_agent.md`, вне flow-графа) | **glm-5.3-flash** | zai-glm | read-only диагностика; лог — `test-model/regress/**` (вердикт СРЕДА/КОД/ТЕСТ) |
 
-Распределение моделей — регруп J59: семантический ярус (SA/архитектор/DEV/BA) —
-glm-5.3, дешевые механические роли — glm-5.3-flash, большой контекст — Kimi
+Распределение моделей — регруп J59 + досборка flash-паков J62: семантический
+ярус (SA/архитектор/DEV/BA) — glm-5.3, дешевые механические роли (QA-квартет,
+ревьюеры, дизайнер, диагностика) — glm-5.3-flash, большой контекст — Kimi
 K3.1 (аудитор, вручную).
 
 ## Шаблон вызова
