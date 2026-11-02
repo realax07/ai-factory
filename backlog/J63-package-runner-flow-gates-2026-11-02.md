@@ -35,6 +35,26 @@ hermes-делегацию на 5.3-роли, а разрешенный путь 
 - Тесты TC-PR-042…053 (реальные flowctl/session_check во временном
   реестре); тесты раннера больше не трогают ~/.hermes.
 
+## Ревью PR #214 (code_reviewer, «Вернуть») — исправлено
+
+- blocker: снимок prepare брался из основного клона, а стадии коммитят в
+  ветку пакета — во Флоу 1 зависимая стадия (architect после sa) получала
+  DENY «change-пакет отсутствует». Теперь `prepare --repo <worktree>`;
+  `session_check.reserve` канонизирует repo до основного дерева
+  (`git_main_root`, git-common-dir) — зоны делятся с делегациями. Тест
+  TC-PR-054 (sa → architect подряд; мутационная проверка: со старым
+  `--repo` падает).
+- major: optional-отказ после записи оставлял файлы следующей стадии →
+  `git stash` попытки (TC-PR-055); provisional-запись + повторный finish
+  переоткрывали closed-зону → `flowctl finish` отклоняет closed/released
+  резервацию (blocked), запись помечается раннером (TC-PR-056).
+- minor: запись ворот — в state до prepare, резервация освобождается на
+  отказе prepare/run, сбой вызова flowctl → STOP, не traceback (TC-PR-057);
+  rc `git add`; повторная сверка зоны перед коммитом (TC-PR-058); сбой
+  коммита optional — skipped; суженные зоны из record.zones; движок ищется
+  рядом / AI_FACTORY_HOME / ~/ai-factory, нет — STOP FACTORY_ENGINE_MISSING
+  (TC-PR-059); `PIPELINE_OPENSPEC_CMD` → `finish --openspec-cmd`.
+
 ## Остаток (кандидаты, решение Заказчика)
 
 1. **Флоу 4 scope:** `flow_state.CHORE_RE = ^chore$`, а пакеты/планы
@@ -61,3 +81,8 @@ hermes-делегацию на 5.3-роли, а разрешенный путь 
    async_delegations Hermes) — теперь они видны в реестре сессий и state
    flowctl (owner_pm=package_runner), детектор обхода для них не нужен,
    пока раннер — единственный путь вызова pi.
+8. **Копии раннера в проектах** (зеркала ekotov-wiki/child_bot по J61/J62):
+   без движка фабрики pi-стадии теперь STOP FACTORY_ENGINE_MISSING —
+   зеркалам нужен AI_FACTORY_HOME (или запуск раннера из фабрики).
+9. Файлы, оставленные gate/stand-стадиями (без ворот), увидит дифф
+   следующей pi-стадии — стенды должны писать вне дерева пакета.

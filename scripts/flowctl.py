@@ -1217,6 +1217,26 @@ def cmd_finish(args) -> int:
     worktree = Path(record["worktree"]) if record.get("worktree") else Path(
         record["scope"]["repo"])
 
+    # Резервация уже вне ZONE_HOLDING (closed/released — например,
+    # provisional-стадия, закрытая package_runner после коммита): повторный
+    # finish зону не переоткрывает — реестр — источник факта (контракт §13).
+    reg_data, reg_err = sc.registry_load(registry_path)
+    reg_session = None if reg_err else next(
+        (s for s in reg_data.get("sessions", [])
+         if isinstance(s, dict)
+         and s.get("delegation_id") == record.get("delegation_id")), None)
+    if reg_session is not None and reg_session.get("status") in (
+            "closed", "released"):
+        _emit({
+            "schema_version": OUTPUT_SCHEMA, "command": "finish",
+            "correlation_id": args.correlation_id, "verdict": "blocked",
+            "registry_status": reg_session.get("status"),
+            "note": f"резервация {record.get('delegation_id')} уже "
+                    f"{reg_session.get('status')!r} — finish не переоткрывает "
+                    "зону; новая работа — новый prepare",
+        }, args.as_json)
+        return 2
+
     # 0) P0.2: обязательные gates — из политики (DEFAULT_GATES точки запуска
     #    + машинные ворота этапа из STAGE_TABLE), НЕ из флагов. --gates может
     #    только ДОБАВИТЬ проверки; попытка заменить обязательный набор — отказ
