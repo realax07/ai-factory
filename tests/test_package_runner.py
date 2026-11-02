@@ -22,6 +22,14 @@ docs/guides/pipeline-manifest.md. Pi в тестах НЕ вызывается �
       вывода при таймауте, диагностика переживает падение journal,
       валидация pi-роли / зон с ':' / flow 1..5, хэш-суффикс сессии,
       подсказка очистки только после успеха.
+  (з) интеграционные дефекты пилота BUG-026 на ekotov-wiki:
+      Д1 worktree от текущего HEAD репо (не origin/main — ветка ПМ с
+      PLAN/карточками в сцене); Д2 gate без env стенда (EKOTOV_WIKI_*
+      срезаются, скоуп тестов — ответственность gate-команды); Д3 AGENTS.md
+      проекта не перезаписывается (роль → AGENTS.pi.md, «читай вместе с
+      AGENTS.md»); Д4 хвост stdout/stderr успешных стадий — в state
+      (≤50 строк) и лог <план>.runner.log; Д5 путь state печатается в
+      начале и при STOP, чужой state (package/plan) — RUNNER-STOP.
 """
 from __future__ import annotations
 
@@ -593,3 +601,206 @@ def test_a5_quoted_scalars_block_list():
     st = m["stages"][0]
     assert st["inputs"] == ["docs/x.md", "path with: colon"]
     assert st["task"] == "сделать: быстро"
+
+
+# ------------------------- (з) интеграционные дефекты пилота BUG-026
+
+
+def test_z1_worktree_from_head_not_origin_main(tmp_path):
+    """TC-PR-022 (Д1): worktree создается от текущего HEAD репо — коммит
+    ветки ПМ (PLAN/карточки бага) присутствует в сцене, а не теряется с
+    origin/main (fixture-репо без origin: старый дефолт вообще не создал бы
+    worktree)."""
+    repo = make_repo(tmp_path)
+    (repo / "PLAN-BUG-026.md").write_text("план ПМ", encoding="utf-8")
+    subprocess.run(["git", "-C", str(repo), "add", "-A"], check=True)
+    subprocess.run(["git", "-C", str(repo), "commit", "-qm", "pm branch"],
+                   check=True)
+    head = subprocess.run(["git", "-C", str(repo), "rev-parse", "HEAD"],
+                          capture_output=True, text=True).stdout.strip()
+    sane = pr._UNSAFE_RE.sub("-", "d1").strip("-")
+    suffix = hashlib.sha1(b"d1").hexdigest()[:8]
+    sid, branch = f"pipeline-{sane}-{suffix}", f"pipeline/{sane}-{suffix}"
+    wt = pr.ensure_worktree(repo, sid, branch)
+    try:
+        assert (wt / "SESSION.md").is_file()
+        # план ПМ (коммит HEAD) есть в сцене worktree
+        assert (wt / "PLAN-BUG-026.md").read_text("utf-8") == "план ПМ"
+        wt_head = subprocess.run(["git", "-C", str(wt), "rev-parse", "HEAD"],
+                                 capture_output=True, text=True).stdout.strip()
+        assert wt_head == head  # база — HEAD, не origin/main
+    finally:
+        subprocess.run(["bash", str(pr.WORKTREE_SCRIPT), "remove",
+                        str(repo), sid], capture_output=True)
+
+
+def test_z2_gate_env_without_stand_vars(tmp_path, monkeypatch):
+    """TC-PR-023 (Д2): gate-команда наследует env без стенда (E6):
+    EKOTOV_WIKI_BASE_URL/EKOTOV_WIKI_DB_PATH срезаются (эквивалент env -u) —
+    pytest коллекция не цепляет tests/web; прочие переменные проходят."""
+    repo = make_repo(tmp_path)
+    monkeypatch.setenv("EKOTOV_WIKI_BASE_URL", "http://stand:8080")
+    monkeypatch.setenv("EKOTOV_WIKI_DB_PATH", "/tmp/stand.db")
+    monkeypatch.setenv("PIPELINE_TIMEOUT", "77")
+    rc, out, err = pr.run_shell(
+        'echo "BASE=[$EKOTOV_WIKI_BASE_URL] DB=[$EKOTOV_WIKI_DB_PATH] '
+        'T=[$PIPELINE_TIMEOUT]"', repo, 30)
+    assert rc == 0
+    assert "BASE=[]" in out and "DB=[]" in out   # env стенда срезан
+    assert "T=[77]" in out                        # остальной env проходит
+    env = pr.gate_env()
+    assert "EKOTOV_WIKI_BASE_URL" not in env
+    assert "EKOTOV_WIKI_DB_PATH" not in env
+    assert env.get("PIPELINE_TIMEOUT") == "77"
+
+
+def test_z3_existing_agents_md_not_overwritten(tmp_path, monkeypatch):
+    """TC-PR-024 (Д3): AGENTS.md проекта не перезаписывается — роль-пак
+    кладется рядом как AGENTS.pi.md с пометкой «читай вместе с AGENTS.md»,
+    бриф упоминает AGENTS.pi.md."""
+    repo = make_repo(tmp_path)
+    (repo / "AGENTS.md").write_text("ПРАВИЛА ПРОЕКТА v1", encoding="utf-8")
+    plan = write_plan(repo)
+    calls: list = []
+    patch_executors(monkeypatch, repo, pi_calls=calls, worktree=repo)
+    assert pr.cmd_run(plan, dry_run=False) == 0
+    # проектные правила не тронуты
+    assert (repo / "AGENTS.md").read_text("utf-8") == "ПРАВИЛА ПРОЕКТА v1"
+    pack = (FACTORY / "skills/pm-factory/pi/role-packs/dev/role-agents.md"
+            ).read_text("utf-8")
+    side = (repo / "AGENTS.pi.md").read_text("utf-8")
+    assert side.startswith(pack)               # роль — целиком
+    assert "Читай вместе с AGENTS.md" in side  # пометка для Pi
+    brief = calls[0]["args"][calls[0]["args"].index("-p") + 1]
+    assert "AGENTS.pi.md" in brief and "AGENTS.md" in brief
+
+
+def test_z3b_no_agents_md_role_landed_as_agents_md(tmp_path, monkeypatch):
+    """TC-PR-024b (Д3): AGENTS.md в worktree нет — роль кладется как
+    AGENTS.md (прежнее поведение), AGENTS.pi.md не создается."""
+    repo = make_repo(tmp_path)
+    plan = write_plan(repo)
+    calls: list = []
+    patch_executors(monkeypatch, repo, pi_calls=calls, worktree=repo)
+    assert pr.cmd_run(plan, dry_run=False) == 0
+    pack = (FACTORY / "skills/pm-factory/pi/role-packs/dev/role-agents.md"
+            ).read_text("utf-8")
+    assert (repo / "AGENTS.md").read_text("utf-8") == pack
+    assert not (repo / "AGENTS.pi.md").exists()
+    brief = calls[0]["args"][calls[0]["args"].index("-p") + 1]
+    assert "в AGENTS.md" in brief and "AGENTS.pi.md" not in brief
+
+
+def test_z4_success_output_in_state_and_log(tmp_path, monkeypatch):
+    """TC-PR-025 (Д4): stdout/stderr успешных стадий не теряются — хвост
+    в state (stdout_tail/stderr_tail) и в лог <план>.runner.log; pi и gate
+    обе стадии сохраняют вывод."""
+    repo = make_repo(tmp_path)
+    plan = write_plan(repo)
+    calls: list = []
+
+    def loud_gate(cmd, cwd, timeout):
+        return 0, "\n".join(f"out{i}" for i in range(60)), "GATE-ERR detail"
+
+    patch_executors(monkeypatch, repo, pi_calls=calls, shell_fn=loud_gate,
+                    worktree=repo)
+    assert pr.cmd_run(plan, dry_run=False) == 0
+    state = json.loads((repo / "PLAN-demo.md.runner-state.json")
+                       .read_text("utf-8"))
+    # pi-стадия: хвост stdout сохранен при успехе
+    assert state["stages"]["impl"]["stdout_tail"] == "pi stdout ok"
+    # gate-стадия: хвост в state, ограничен 50 строками (верхние отброшены)
+    gate_tail = state["stages"]["check"]["stdout_tail"].splitlines()
+    assert len(gate_tail) == 50
+    assert gate_tail[-1] == "out59" and "out0" not in gate_tail
+    assert state["stages"]["check"]["stderr_tail"] == "GATE-ERR detail"
+    # лог рядом с планом
+    log = (repo / "PLAN-demo.md.runner.log").read_text("utf-8")
+    assert "stage impl | pi:dev | ok" in log and "pi stdout ok" in log
+    assert "stage check | gate:" in log and "out59" in log
+    assert "GATE-ERR detail" in log
+
+
+def test_z4b_stop_output_in_state(tmp_path, monkeypatch):
+    """TC-PR-025b (Д4): при STOP хвост вывода тоже в state-записи стадии."""
+    repo = make_repo(tmp_path)
+
+    def failing_gate(cmd, cwd, timeout):
+        return 1, "g-out", "gate failed: boom"
+    patch_executors(monkeypatch, repo, pi_calls=[], shell_fn=failing_gate,
+                    worktree=repo)
+    plan = write_plan(repo, "# PLAN-x\n\n```yaml\npipeline:\n"
+                            "  package: p\n  flow: 4\n  stages:\n"
+                            "    - id: a\n      run: gate:true\n```\n",
+                      name="PLAN-x.md")
+    assert pr.cmd_run(plan, dry_run=False) == 2
+    state = json.loads((repo / "PLAN-x.md.runner-state.json").read_text("utf-8"))
+    rec = state["stages"]["a"]
+    assert rec["status"] == "stopped"
+    assert rec["stdout_tail"] == "g-out"
+    assert rec["stderr_tail"] == "gate failed: boom"
+
+
+def test_z5_state_path_printed_run_and_stop(tmp_path, monkeypatch, capsys):
+    """TC-PR-026 (Д5): путь state-файла печатается в начале прогона и в
+    диагностике STOP — файл не «теряется» после прогона на реальном репо."""
+    repo = make_repo(tmp_path)
+    good = "# PLAN-x\n\n```yaml\npipeline:\n  package: p\n  flow: 4\n" \
+           "  stages:\n    - id: a\n      run: gate:true\n```\n"
+    plan = write_plan(repo, good, name="PLAN-x.md")
+    patch_executors(monkeypatch, repo, pi_calls=[], worktree=repo)
+    assert pr.cmd_run(plan, dry_run=False) == 0
+    spath = repo / "PLAN-x.md.runner-state.json"
+    assert f"RUNNER: state: {spath}" in capsys.readouterr().out
+
+    def failing_gate(cmd, cwd, timeout):
+        return 1, "", "boom"
+    sub = tmp_path / "stop-proj"
+    sub.mkdir(exist_ok=True)
+    repo2 = make_repo(sub)
+    plan2 = write_plan(repo2, good, name="PLAN-x.md")
+    monkeypatch.setattr(pr, "run_shell", failing_gate)
+    assert pr.cmd_run(plan2, dry_run=False) == 2
+    err = capsys.readouterr().err
+    assert f"state: {repo2 / 'PLAN-x.md.runner-state.json'}" in err
+
+
+def _foreign_state(spath: Path, **over) -> None:
+    spath.write_text(json.dumps({
+        "schema_version": pr.STATE_SCHEMA,
+        "plan": "/elsewhere/PLAN-demo.md",
+        "package": "other-pkg", "flow": 4,
+        "stages": {}, "history": [], **over,
+    }, ensure_ascii=False), encoding="utf-8")
+
+
+@pytest.mark.parametrize("over", [
+    {"package": "other-pkg"},                       # чужой package
+    {"plan": "/elsewhere/PLAN-demo.md"},            # чужой plan (скопировали)
+])
+def test_z5b_foreign_state_stop(tmp_path, monkeypatch, capsys, over):
+    """TC-PR-026b (Д5): runner-state чужого пакета/плана — RUNNER-STOP
+    exit 2, стадии не исполняются (молчаливый «докат не того пакета»
+    исключен)."""
+    repo = make_repo(tmp_path)
+    plan = write_plan(repo)
+    _foreign_state(pr.state_path_for(plan), **over)
+    calls: list = []
+    patch_executors(monkeypatch, repo, pi_calls=calls)
+    assert pr.cmd_run(plan, dry_run=False) == 2
+    err = capsys.readouterr().err
+    assert "RUNNER-STOP:" in err and "чужой" in err
+    assert calls == []
+
+
+def test_z5c_own_state_resumes(tmp_path, monkeypatch, capsys):
+    """TC-PR-026c (Д5): свой state (package/plan совпадают) — resume
+    работает, RUNNER-STOP нет (позитив к 026b)."""
+    repo = make_repo(tmp_path)
+    plan = write_plan(repo)
+    calls: list = []
+    patch_executors(monkeypatch, repo, pi_calls=calls)
+    assert pr.cmd_run(plan, dry_run=False) == 0   # state создан и совпадает
+    assert pr.cmd_run(plan, dry_run=False) == 0   # resume: всё skipped
+    assert "RUNNER-STOP" not in capsys.readouterr().err
+    assert len(calls) == 1                        # pi не повторялся
