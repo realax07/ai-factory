@@ -35,6 +35,10 @@ docs/guides/pipeline-manifest.md. Pi в тестах НЕ вызывается �
       pi/gate стадии, state/resume, НЕ-автоматическое гашение) и
       вердикт-ворота (verdict: file/contains, «Одобрить», pass/fail/файл
       отсутствует, негативы валидации).
+  (л) J62-остаток: optional-стадии (gate fail / verdict fail / pi fail /
+      таймаут у optional: true → skipped + WARNING, не STOP; обязательная
+      — STOP; mixed-манифест; resume не переисполняет skipped; валидация
+      optional).
 """
 from __future__ import annotations
 
@@ -1154,3 +1158,254 @@ def test_k5_verdict_validation_negatives():
     # без verdict — None (обратная совместимость)
     m2 = pr.parse_manifest(write_tmp_plan(VALID))
     assert m2["stages"][0]["verdict"] is None
+
+
+# -------------------------------------- (л) optional-стадии (J62-остаток)
+
+OPTIONAL_MANIFEST = """\
+# PLAN-x
+
+```yaml
+pipeline:
+  package: opt-pkg
+  flow: 1
+  stages:
+    - id: design
+      run: pi:ui-designer
+      zones: [design/**]
+      optional: true
+    - id: check
+      run: gate:true
+    - id: final
+      run: gate:true
+```
+"""
+
+
+def test_l1_optional_gate_fail_skips_and_continues(tmp_path, monkeypatch,
+                                                   capsys):
+    """TC-PR-035: optional gate:fail → stage skipped + WARNING, пакет едет
+    дальше (следующая стадия исполняется, exit 0, НЕ STOP)."""
+    text = (OPTIONAL_MANIFEST
+            .replace("    - id: design\n      run: pi:ui-designer\n"
+                     "      zones: [design/**]\n      optional: true\n",
+                     "    - id: opt_gate\n      run: gate:false\n"
+                     "      optional: true\n")
+            .replace("    - id: final\n", "    - id: after\n"))
+    repo = make_repo(tmp_path)
+    plan = write_plan(repo, text, name="PLAN-x.md")
+    calls: list = []
+
+    # gate:false → 1, gate:true → 0
+    def shell_by_cmd(cmd, cwd, timeout, stand_env=None):
+        calls.append(cmd)
+        if cmd.strip() == "false":
+            return 1, "", "gate failed"
+        return 0, "", ""
+
+    monkeypatch.setattr(pr, "run_shell", shell_by_cmd)
+    monkeypatch.setattr(pr, "ensure_worktree", lambda repo_, sid, br: repo_)
+    assert pr.cmd_run(plan, dry_run=False) == 0
+    assert len(calls) == 3  # opt_gate(false) + check + after — все исполнены
+    state = json.loads((repo / "PLAN-x.md.runner-state.json").read_text())
+    assert state["stages"]["opt_gate"]["status"] == "skipped"
+    assert state["stages"]["after"]["status"] == "done"
+    err = capsys.readouterr().err
+    assert "RUNNER-WARNING" in err and "skipped" in err
+    plan_text = plan.read_text(encoding="utf-8")
+    assert "WARNING" in plan_text and "SKIPPED" in plan_text
+
+
+def test_l2_optional_verdict_fail_skips(tmp_path, monkeypatch, capsys):
+    """TC-PR-036: optional pi-стадия с verdict fail (маркера нет) →
+    skipped, пакет докатан (обязательная same-семантика — STOP)."""
+    text = VERDICT_MANIFEST.replace(
+        "    - id: review\n      run: pi:code-reviewer\n"
+        "      zones: [test-model/reviews/**]\n",
+        "    - id: review\n      run: pi:ui-designer\n"
+        "      zones: [design/**]\n      optional: true\n")
+    repo = make_repo(tmp_path)
+    plan = write_plan(repo, text, name="PLAN-x.md")
+    patch_executors(monkeypatch, repo, [])  # pi ok, но verdict-файла нет
+    assert pr.cmd_run(plan, dry_run=False) == 0
+    state = json.loads((repo / "PLAN-x.md.runner-state.json").read_text())
+    assert state["stages"]["review"]["status"] == "skipped"
+    assert "verdict" in state["stages"]["review"]["detail"]
+    assert state["stages"]["next"]["status"] == "done"
+
+
+def test_l3_optional_pi_fail_skips(tmp_path, monkeypatch, capsys):
+    """TC-PR-037: optional pi exit≠0 → skipped + продолжение; pi-таймаут —
+    тоже skipped; обязательная стадия после — STOP как раньше."""
+    repo = make_repo(tmp_path)
+    calls: list = []
+
+    def pi_fails_first(args, cwd, env, timeout):
+        calls.append(args[4])  # роль из брифа не достать — пишем факт вызова
+        if len(calls) == 1:
+            return 3, "", "pi exploded"
+        return 0, "ok", ""
+
+    patch_executors(monkeypatch, repo, [])
+    monkeypatch.setattr(pr, "run_pi", pi_fails_first)
+    text = OPTIONAL_MANIFEST.replace(
+        "    - id: check\n      run: gate:true\n    - id: final\n",
+        "    - id: must\n      run: gate:true\n    - id: after\n")
+    plan = write_plan(repo, text, name="PLAN-x.md")
+    assert pr.cmd_run(plan, dry_run=False) == 0
+    state = json.loads((repo / "PLAN-x.md.runner-state.json").read_text())
+    assert state["stages"]["design"]["status"] == "skipped"
+    assert state["stages"]["design"]["exit_code"] == 3
+    assert state["stages"]["must"]["status"] == "done"
+    assert state["stages"]["after"]["status"] == "done"
+
+    # pi-таймаут optional → skipped тоже
+    calls.clear()
+
+    def pi_timeout(args, cwd, env, timeout):
+        raise subprocess.TimeoutExpired(cmd="pi", timeout=timeout,
+                                       output="partial out", stderr="perr")
+
+    monkeypatch.setattr(pr, "run_pi", pi_timeout)
+    plan2 = write_plan(repo, text, name="PLAN-x2.md")
+    assert pr.cmd_run(plan2, dry_run=False) == 0
+    state2 = json.loads((repo / "PLAN-x2.md.runner-state.json").read_text())
+    assert state2["stages"]["design"]["status"] == "skipped"
+    assert "таймаут" in state2["stages"]["design"]["detail"]
+    assert "partial out" in state2["stages"]["design"]["stdout_tail"]
+
+
+def test_l3b_optional_stage_gate_fail_skips(tmp_path, monkeypatch, capsys):
+    """TC-PR-037b: optional pi-стадия — pi ok, но stage-gate fail →
+    skipped (пакет едет дальше)."""
+    repo = make_repo(tmp_path)
+    text = OPTIONAL_MANIFEST.replace(
+        "      zones: [design/**]\n      optional: true\n",
+        '      zones: [design/**]\n      gate: "false"\n      optional: true\n')
+    plan = write_plan(repo, text, name="PLAN-x.md")
+    patch_executors(monkeypatch, repo, [],
+                    shell_fn=lambda cmd, cwd, timeout, stand_env=None:
+                    (1, "", "gate dead") if cmd.strip() == "false"
+                    else (0, "", ""))
+    assert pr.cmd_run(plan, dry_run=False) == 0
+    state = json.loads((repo / "PLAN-x.md.runner-state.json").read_text())
+    assert state["stages"]["design"]["status"] == "skipped"
+    assert "gate stage exit 1" in state["stages"]["design"]["detail"]
+    assert state["stages"]["check"]["status"] == "done"
+
+
+def test_l4_mandatory_stage_still_stops(tmp_path, monkeypatch, capsys):
+    """TC-PR-038 (регресс): та же стадия без optional — STOP exit 2,
+    следующая стадия НЕ исполняется."""
+    text = (OPTIONAL_MANIFEST
+            .replace("      zones: [design/**]\n      optional: true\n",
+                     "      zones: [design/**]\n")
+            .replace("    - id: final\n", "    - id: after\n"))
+    repo = make_repo(tmp_path)
+    plan = write_plan(repo, text, name="PLAN-x.md")
+    calls: list = []
+
+    def pi_fails(args, cwd, env, timeout):
+        calls.append("pi")
+        return 1, "", "pi exploded"
+
+    patch_executors(monkeypatch, repo, [])
+    monkeypatch.setattr(pr, "run_pi", pi_fails)
+
+    def shell_counts(cmd, cwd, timeout, stand_env=None):
+        calls.append(cmd)
+        return 0, "", ""
+
+    monkeypatch.setattr(pr, "run_shell", shell_counts)
+    assert pr.cmd_run(plan, dry_run=False) == 2
+    assert calls == ["pi"]  # check/after не исполнялись
+    state = json.loads((repo / "PLAN-x.md.runner-state.json").read_text())
+    assert state["stages"]["design"]["status"] == "stopped"
+    err = capsys.readouterr().err
+    assert "ЖДУ ПМ: STOP" in err
+
+
+def test_l5_mixed_manifest(tmp_path, monkeypatch, capsys):
+    """TC-PR-039: смешанный манифест — optional-стадии падают (skipped),
+    пакет едет; обязательная стадия падает → STOP exit 2; в state и
+    skipped, и stopped."""
+    text = ("""\
+# PLAN-x
+
+```yaml
+pipeline:
+  package: mixed-pkg
+  flow: 1
+  stages:
+    - id: design
+      run: pi:ui-designer
+      zones: [design/**]
+      optional: true
+    - id: design_check
+      run: pi:design-validator
+      zones: [test-model/reviews/**]
+      optional: true
+      verdict:
+        file: test-model/reviews/c9/design-check-001.md
+        contains: "Одобрить"
+    - id: dev
+      run: gate:false
+    - id: after
+      run: gate:true
+```
+""")
+    repo = make_repo(tmp_path)
+    plan = write_plan(repo, text, name="PLAN-x.md")
+    patch_executors(monkeypatch, repo, [],
+                    shell_fn=lambda cmd, cwd, timeout, stand_env=None:
+                    (1, "", "x") if cmd.strip() == "false" else (0, "", ""))
+    assert pr.cmd_run(plan, dry_run=False) == 2
+    state = json.loads((repo / "PLAN-x.md.runner-state.json").read_text())
+    assert state["stages"]["design"]["status"] == "done"  # pi ok — done
+    assert state["stages"]["design_check"]["status"] == "skipped"  # verdict fail
+    assert state["stages"]["dev"]["status"] == "stopped"
+    assert "after" not in state["stages"]
+    plan_text = plan.read_text(encoding="utf-8")
+    assert plan_text.count("WARNING") == 1  # одна optional-стадия упала
+
+
+def test_l6_resume_skipped_not_rerun(tmp_path, monkeypatch, capsys):
+    """TC-PR-040: resume — skipped-стадия не переисполняется (ретраев
+    нет), пакет докатывается."""
+    text = (OPTIONAL_MANIFEST
+            .replace("    - id: design\n      run: pi:ui-designer\n"
+                     "      zones: [design/**]\n      optional: true\n",
+                     "    - id: opt_gate\n      run: gate:false\n"
+                     "      optional: true\n")
+            .replace("    - id: final\n", "    - id: after\n"))
+    repo = make_repo(tmp_path)
+    plan = write_plan(repo, text, name="PLAN-x.md")
+
+    def shell_by_cmd(cmd, cwd, timeout, stand_env=None):
+        if cmd.strip() == "false":
+            return 1, "", "gate failed"
+        return 0, "", ""
+
+    patch_executors(monkeypatch, repo, [], shell_fn=shell_by_cmd)
+    assert pr.cmd_run(plan, dry_run=False) == 0
+    assert pr.cmd_run(plan, dry_run=False) == 0  # resume
+    out = capsys.readouterr().out
+    assert "opt_gate — уже выполнен (resume, пропуск)" in out
+    assert "докатан" in out
+
+
+def test_l7_optional_validation():
+    """TC-PR-041 (негатив/позитив): optional не bool — ManifestError;
+    optional: true/false парсится; без optional — False."""
+    base = ("# PLAN-x\n\n```yaml\npipeline:\n  package: p\n  flow: 1\n"
+            "  stages:\n    - id: a\n      run: gate:true\n")
+    with pytest.raises(pr.ManifestError):
+        pr.parse_manifest(write_tmp_plan(base + "      optional: \"yes\"\n```\n"))
+    with pytest.raises(pr.ManifestError):
+        pr.parse_manifest(write_tmp_plan(base + "      optional: 1\n```\n"))
+    m = pr.parse_manifest(write_tmp_plan(base + "      optional: true\n```\n"))
+    assert m["stages"][0]["optional"] is True
+    m = pr.parse_manifest(write_tmp_plan(base + "      optional: false\n```\n"))
+    assert m["stages"][0]["optional"] is False
+    m = pr.parse_manifest(write_tmp_plan(VALID))
+    assert m["stages"][0]["optional"] is False
