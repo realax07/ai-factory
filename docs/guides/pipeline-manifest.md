@@ -129,14 +129,29 @@ pipeline:
                               # Заказчику и вносит правки; repeat раннера —
                               # когда требования утверждены
     - id: create_change
-      run: hermes:pm          # СТОП-ТОЧКА: ПМ создает openspec/changes/
-                              # my-package/ (proposal/spec/design) и
-                              # валидирует openspec
+      run: pi:sa              # СА пишет proposal/spec/design/tasks (зоны
+      zones: [openspec/changes/my-package/**, sdd.md]   # openspec + sdd)
+      inputs: [requirements.md, docs/ba/answers_round1.md]
+      gate: openspec validate --strict
     - id: arch_review
       run: pi:architect
-      zones: [architecture/**, docs/**]
+      zones: [test-model/reviews/**, architecture/**, docs/**]
       inputs: [openspec/changes/my-package/proposal.md,
                openspec/changes/my-package/design.md]
+      verdict:
+        file: test-model/reviews/my-package/arch-review-001.md
+        contains: "Одобрить"
+    - id: design              # дизайн-макеты/токены ДО кода (J36)
+      run: pi:ui-designer
+      zones: [design/**]
+      inputs: [openspec/changes/my-package/design.md]
+    - id: design_check
+      run: pi:design-validator
+      zones: [test-model/reviews/**]
+      inputs: [design/]
+      verdict:
+        file: test-model/reviews/my-package/design-check-001.md
+        contains: "Одобрить"
     - id: dev
       run: pi:dev
       zones: [backend/**, frontend/**, services/**, src/**, tests/**]
@@ -194,8 +209,12 @@ pipeline:
 - `approve` — единственная точка воли Заказчика: утверждение требований.
   Раннер останавливается со статусом `waited`; повторный запуск — когда ПМ
   зафиксировал утвержденную спеку.
-- `create_change` — механика OpenSpec (proposal/spec/design + валидация)
-  остается за ПМ: v0 раннера не создает спеки сам.
+- `create_change` — pi:sa пишет change-пакет (зоны openspec + sdd), strict-валидация
+  как gate; arch_review — pi:architect с вердикт-воротами «Одобрить».
+- `design`/`design_check` — мокапы ДО кода и их валидация (J36): задачи без
+  фронт-дельты — стадии можно удалить (или отметка design-not-required).
+- Эскалация `pi:debug` (СРЕДА/КОД/ТЕСТ) — НЕ стадия: ПМ запускает при застревании
+  dev/qa-стадии параллельно источнику (J35).
 - `archive`/`release` — ручные: приемка артефактов, push, PR/merge, тег.
   Раннер факт ПМ-работы не проверяет — repeat запускается, когда шаг
   реально сделан (иначе — повторное «ЖДУ ПМ» без вреда: стадия уже `waited`).
