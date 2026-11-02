@@ -1,0 +1,1 @@
+/home/openclaw/.hermes/cache/scratch/pytest-of-openclaw/pytest-194/test_symlink_outside_repo_reje0/outside.txt
