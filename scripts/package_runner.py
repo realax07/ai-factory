@@ -87,8 +87,29 @@ gate/verdict). Обязательные стадии (без optional) — STOP 
 из ~/.pi/agent/models.json. hermes:-шаг и останов НЕ считаются ошибкой
 исполнения ПМ-слоя: ПМ — владелец входа/выхода пакета.
 
-flowctl.py не зависит от этого скрипта (отдельный слой); совместимость
-импортов не затронута.
+Ворота pi-стадии (J63): pi-стадия проходит жизненный цикл делегации —
+`flowctl prepare --repo <worktree>` (снимок фактов — из дерева пакета, где
+живет работа прошлых стадий; зона в реестре — по основному клону): план
+релиза, требования, политика зон роли, ZONE_CONFLICT; DENY/UNKNOWN → STOP с
+кодом → `flowctl run` → pi → `flowctl finish --gate-scope post_agent` (дифф ⊆
+суженная зона + гейты этапа; returned/blocked → STOP) → повторная сверка
+диффа с зоной → коммит стадии в ветку пакета → резервация finished → closed.
+Этап — по роли из STAGE_TABLE флоу (`action:` стадии выбирает другой этап
+роли; `task_id:` → --task, `approval_ref:` → --approval-ref). Роль без этапа
+во флоу — резервация зоны по политике роли + post-check диффа
+(ROLE_WITHOUT_STAGE, WARNING); роль вне политики — STOP ZONE_OUTSIDE_POLICY.
+optional-стадия при отказе — skipped, изменения попытки — в git stash, зона
+освобождается; обязательная — STOP, зона держится до resume (повтор стадии
+освобождает зону прошлой попытки). Реестр/state — как у делегаций (env
+PIPELINE_FLOW_REGISTRY / PIPELINE_FLOW_STATE переопределяют;
+PIPELINE_OPENSPEC_CMD — OpenSpec CLI гейта openspec_validate). Ролевой
+AGENTS-файл раннера после pi удаляется, SESSION.md не коммитится. Отчет
+стадии для finish — <план>.runner-reports/<stage>-<попытка>.md.
+
+flowctl.py не зависит от этого скрипта (отдельный слой); раннер — клиент
+движка (flowctl CLI, session_check), который ищется рядом, в
+AI_FACTORY_HOME и ~/ai-factory (нет — pi-стадия STOP
+FACTORY_ENGINE_MISSING).
 
 Usage:
     python3 scripts/package_runner.py <PLAN-файл> [--dry-run]
@@ -102,19 +123,49 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import itertools
 import json
 import os
 import re
 import subprocess
 import sys
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
 SCRIPTS = Path(__file__).resolve().parent
+# Движок ворот (flowctl/session_check/…) живет в фабрике и на проект не
+# копируется: раннер ищет его рядом с собой, затем в AI_FACTORY_HOME и
+# ~/ai-factory. Нет движка — pi-стадия получает STOP FACTORY_ENGINE_MISSING
+# (без ворот pi не запускается), gate/stand/hermes-стадии работают.
+for _engine in (SCRIPTS,
+                Path(os.environ.get("AI_FACTORY_HOME") or
+                     Path.home() / "ai-factory") / "scripts"):
+    if (_engine / "flowctl.py").is_file():
+        sys.path.insert(0, str(_engine))
+        break
+try:
+    import flowctl as fc  # noqa: E402  (registry_transition, пути state)
+    import flow_transition as ft  # noqa: E402  (STAGE_TABLE: роль → этап)
+    import role_zone_policy as rzp  # noqa: E402  (зоны ролей без этапа)
+    import session_check as sc  # noqa: E402  (резервация/post-check)
+    ENGINE_ERROR = ""
+except ImportError as _exc:  # раннер вне фабрики без AI_FACTORY_HOME
+    fc = ft = rzp = sc = None
+    ENGINE_ERROR = str(_exc)
+
 REPO_ROOT = SCRIPTS.parent
 ROLE_PACKS = REPO_ROOT / "skills" / "pm-factory" / "pi" / "role-packs"
 WORKTREE_SCRIPT = SCRIPTS / "session_worktree.sh"
 ZONE_GUARD = Path.home() / ".pi" / "agent" / "extensions" / "zone-guard.ts"
+FLOWCTL = Path(fc.__file__).resolve() if fc else SCRIPTS / "flowctl.py"
+# Ворота pi-стадии: владелец резервации в реестре сессий и область finish.
+FLOW_OWNER = "package_runner"
+FLOW_GATE_SCOPE = "post_agent"
+FLOWCTL_TIMEOUT = 600
+# SESSION.md — маркер сессии session_worktree.sh, в коммит стадии не идет.
+COMMIT_EXCLUDE = ("SESSION.md",)
+REPORTS_SUFFIX = ".runner-reports"
 DEFAULT_TIMEOUT = 1800
 DEFAULT_PROVIDER = "zai-glm"
 DEFAULT_MODEL = "glm-5.3"
@@ -206,10 +257,25 @@ def _yaml_scalar(s: str):
     return s
 
 
+def _yaml_strip_comment(line: str) -> str:
+    """Комментарий в конце строки (` # …` вне кавычек) срезается — паритет
+    с yaml.safe_load (`run: pi:sa  # пояснение` → `run: pi:sa`)."""
+    quote = ""
+    for i, ch in enumerate(line):
+        if quote:
+            if ch == quote:
+                quote = ""
+        elif ch in "\"'" and line[:i].rstrip()[-1:] in ("", ":", "-", "[", ","):
+            quote = ch  # кавычка открывает скаляр только в его начале
+        elif ch == "#" and (i == 0 or line[i - 1] in " \t"):
+            return line[:i]
+    return line
+
+
 def _yaml_rows(text: str) -> list[tuple[int, str]]:
     rows: list[tuple[int, str]] = []
     for raw in text.splitlines():
-        line = raw.rstrip()
+        line = _yaml_strip_comment(raw).rstrip()
         stripped = line.strip()
         if not stripped or stripped.startswith("#"):
             continue
@@ -394,6 +460,15 @@ def parse_manifest(plan_path: Path) -> dict:
                     raise ManifestError(
                         f"{where}.verdict.{field} обязателен "
                         "(непустая строка)")
+        for field in ("action", "task_id", "approval_ref"):
+            # Ворота pi-стадии: этап STAGE_TABLE (если роль участвует в
+            # нескольких), id задачи tasks.md, ссылка на решение Заказчика —
+            # прокидываются в flowctl prepare как есть.
+            val = raw.get(field)
+            if val is not None and not (isinstance(val, str) and val.strip()):
+                raise ManifestError(
+                    f"{where}.{field}: ожидается непустая строка, "
+                    f"получено: {val!r}")
         optional = raw.get("optional")
         if optional is not None and not isinstance(optional, bool):
             # Опциональная стадия (J62-остаток): отказ pi/gate/verdict —
@@ -415,6 +490,9 @@ def parse_manifest(plan_path: Path) -> dict:
                          "contains": verdict["contains"].strip()}
                         if isinstance(verdict, dict) else None),
             "optional": bool(optional),
+            "action": (raw.get("action") or "").strip(),
+            "task_id": (raw.get("task_id") or "").strip(),
+            "approval_ref": (raw.get("approval_ref") or "").strip(),
         }
         stages.append(stage)
     return {"package": package, "flow": flow, "stages": stages}
@@ -427,12 +505,18 @@ def normalize_zone(zone: str) -> str:
     Срезает хвостовые `/**`, `/*`, `**` и слэши; ведущий `./` снимается
     (паритет с guard'ом). Плоская форма проходит без изменений:
     `services/images/**` → `services/images`, `tests` → `tests`.
-    Голый `**`/`*` («весь репо») префиксом не выражается — остается
-    как есть (guard такую зону не совпадет; осознанное ограничение v0).
+    Glob в середине (зоны политики ролей: `code-reviews/*/review-*.md`)
+    → конкретный префикс до первого glob-сегмента (`code-reviews`): guard —
+    грубая граница, точную сверку диффа с зоной делает session_check
+    (ворота pi-стадии). Голый `**`/`*` («весь репо») префиксом не
+    выражается — остается как есть (guard такую зону не совпадет;
+    осознанное ограничение v0).
     """
     z = _ZONE_LEADING_DOT_RE.sub("", zone.strip())
-    z = _ZONE_GLOB_TAIL_RE.sub("", z)
-    return z.rstrip("/")
+    z = _ZONE_GLOB_TAIL_RE.sub("", z).rstrip("/")
+    prefix = "/".join(itertools.takewhile(
+        lambda seg: not any(ch in seg for ch in "*?["), z.split("/")))
+    return prefix or z
 
 
 def parse_stand_env(stdout: str) -> dict[str, str]:
@@ -692,6 +776,402 @@ def parse_timeout(raw: str | None) -> int:
     return val
 
 
+# ----------------------------------------------------------- flow gates
+# Ворота pi-стадии: тот же жизненный цикл, что у делегации delegate_task
+# (flowctl prepare → run → агент → finish), — pi-исполнитель не обходит
+# движок (DENY на входе) и реестр сессий (ZONE_CONFLICT между параллельными
+# пакетами/делегациями). Роль без этапа в STAGE_TABLE своего флоу (ba,
+# regress_runner, devops вне Ф3) — решение flowctl не выносится: только
+# резервация зоны по политике роли и post-check диффа (session_check),
+# WARNING ROLE_WITHOUT_STAGE. После приемки стадия коммитится в ветку
+# пакета, резервация закрывается (finished → closed): следующая стадия
+# стартует от чистого дерева, ее дифф — только ее работа.
+
+
+class GateDenied(Exception):
+    """Ворота pi-стадии не пропустили (код причины + диагностика)."""
+
+
+def flow_role(pack: str) -> str:
+    """Роль-пак → роль политики зон / STAGE_TABLE: code-reviewer → code_reviewer."""
+    return pack.replace("-", "_")
+
+
+def stage_action(role: str, flow: int, override: str = "") -> str | None:
+    """Этап STAGE_TABLE флоу, в котором участвует роль: первый по порядку
+    таблицы; `action:` манифеста выбирает другой этап той же роли. Роль без
+    этапа во флоу → None (ворота зоны без решения flowctl)."""
+    actions = [s.action for s in ft.STAGE_TABLE.get(flow, ())
+               if role in s.roles]
+    if override:
+        if override not in actions:
+            raise GateDenied(
+                f"STAGE_ACTION_INVALID: action {override!r} не этап роли "
+                f"{role} во Флоу {flow} (этапы роли: "
+                f"{', '.join(actions) or '—'})")
+        return override
+    return actions[0] if actions else None
+
+
+def flow_paths() -> tuple[Path, Path]:
+    """Реестр сессий и state flowctl: те же, что у делегаций (иначе
+    конфликт зон с ними не виден); env PIPELINE_FLOW_REGISTRY /
+    PIPELINE_FLOW_STATE переопределяют (тесты, второй инстанс фабрики)."""
+    registry = Path(os.environ.get("PIPELINE_FLOW_REGISTRY") or (
+        Path.home() / ".hermes" / "state" / "active_sessions.json"))
+    state = Path(os.environ.get("PIPELINE_FLOW_STATE")
+                 or fc.default_state_path(str(registry)))
+    return registry, state
+
+
+def run_flowctl(argv: list[str]) -> tuple[int, dict, str]:
+    """Точка подмены в тестах: flowctl <argv> --json → (rc, payload, stderr)."""
+    try:
+        proc = subprocess.run([sys.executable, str(FLOWCTL), *argv],
+                              capture_output=True, text=True,
+                              timeout=FLOWCTL_TIMEOUT)
+    except (subprocess.TimeoutExpired, OSError) as exc:
+        # Сбой вызова движка — отказ ворот (STOP с записью стадии), не
+        # traceback раннера.
+        return 2, {}, f"flowctl {argv[0]}: {type(exc).__name__}: {exc}"
+    try:
+        payload = json.loads(proc.stdout)
+    except ValueError:
+        payload = {}
+    return proc.returncode, payload if isinstance(payload, dict) else {}, \
+        proc.stderr
+
+
+def _flowctl_reason(payload: dict, stderr: str) -> str:
+    """Код причины отказа flowctl + блокирующие причины решения/дефекты
+    приемки (решение отказа prepare лежит в record.decision)."""
+    decision = (payload.get("decision")
+                or (payload.get("record") or {}).get("decision") or {})
+    reservation = payload.get("reservation") or {}
+    code = (payload.get("reason") or payload.get("verdict")
+            or reservation.get("reason") or decision.get("status")
+            or "UNKNOWN")
+    parts = [str(x) for x in reservation.get("details") or []]
+    parts += [str(x) for x in decision.get("details") or []]
+    if not parts:
+        parts = [str(x) for x in decision.get("blocking_reasons") or []]
+    parts += [str(x) for x in payload.get("field_diagnostics") or []]
+    for item in payload.get("defects") or []:
+        if isinstance(item, dict) and item.get("code") != "SKIPPED":
+            parts.append(str(item.get("detail") or item.get("code")))
+    for key in ("zone_violations", "details"):
+        parts += [str(x) for x in payload.get(key) or []]
+    if not parts and stderr.strip():
+        parts.append(stderr.strip().splitlines()[-1])
+    return code + (f" ({'; '.join(dict.fromkeys(parts))})" if parts else "")
+
+
+def _only_pr_gate_pending(payload: dict) -> bool:
+    """finish provisional, где единственное невыполненное — pr_validate
+    (нет PR-контекста: это ворота PR/CI, flow.yml, а не стадии). Любой
+    другой дефект (зона, FAIL гейта) — не принято."""
+    if payload.get("verdict") != "provisional":
+        return False
+    return all(isinstance(d, dict) and d.get("code") == "SKIPPED"
+               and str(d.get("detail", "")).startswith("pr_validate")
+               for d in payload.get("defects") or [])
+
+
+def _git_head(path: Path) -> str:
+    proc = subprocess.run(["git", "-C", str(path), "rev-parse", "HEAD"],
+                          capture_output=True, text=True)
+    return proc.stdout.strip() if proc.returncode == 0 else ""
+
+
+def _registry_status(registry: Path, delegation_id: str) -> str | None:
+    data, err = sc.registry_load(registry)
+    if err:
+        return None
+    session = next((s for s in data.get("sessions", [])
+                    if isinstance(s, dict)
+                    and s.get("delegation_id") == delegation_id), None)
+    return session.get("status") if session else None
+
+
+def _transition(registry: Path, delegation_id: str, to: str, reason: str,
+                evidence: str, expect_from: str) -> None:
+    """Смена статуса резервации; отказ — WARNING (зона может остаться
+    занятой — разбор ПМ: flowctl status/reconcile), не молча."""
+    tr = fc.registry_transition(registry, delegation_id, to, reason,
+                                evidence, expect_from=expect_from)
+    if not tr.get("ok"):
+        print(f"RUNNER-WARNING: резервация {delegation_id}: {expect_from} → "
+              f"{to} не выполнена ({tr.get('reason')}: "
+              f"{'; '.join(map(str, tr.get('details') or []))})",
+              file=sys.stderr)
+
+
+def gate_new(stage: dict, repo: Path, worktree: Path) -> dict:
+    """Запись ворот попытки — создается и сохраняется в runner-state ДО
+    prepare: сбой между prepare и сохранением не оставляет резервацию без
+    владельца (повтор стадии ее освободит)."""
+    if fc is None:
+        raise GateDenied(f"FACTORY_ENGINE_MISSING: движок ворот фабрики "
+                         f"(flowctl.py) не найден рядом с раннером, в "
+                         f"AI_FACTORY_HOME и ~/ai-factory ({ENGINE_ERROR})")
+    registry, fstate = flow_paths()
+    cid = uuid.uuid4().hex  # каждая попытка — своя запись цикла flowctl
+    return {"cid": cid, "delegation_id": f"deleg-{cid[:16]}",
+            "role": flow_role(stage["payload"]), "kind": "pending",
+            "registry": str(registry), "state": str(fstate),
+            "repo": str(repo), "base_sha": _git_head(worktree)}
+
+
+def gate_begin(manifest: dict, stage: dict, repo: Path, worktree: Path,
+               branch: str, gate: dict) -> dict:
+    """Вход pi-стадии: решение flowctl + резервация зоны. Отказ — GateDenied
+    (созданная резервация освобождается). Снимок фактов — из worktree
+    пакета: работа прошлых стадий живет в его ветке, не в основном клоне;
+    зона в реестре — по основному клону (session_check.git_main_root)."""
+    role = gate["role"]
+    flow = manifest["flow"]
+    registry = Path(gate["registry"])
+    action = stage_action(role, flow, stage.get("action", ""))
+    if action is None:
+        return _zone_begin(gate, stage, repo, worktree, branch, registry)
+    gate.update(kind="flowctl", action=action)
+    cid = gate["cid"]
+    common = ["--registry", gate["registry"], "--state", gate["state"],
+              "--json"]
+    argv = ["prepare", "--repo", str(worktree), "--project", repo.name,
+            "--flow", str(flow), "--change", manifest["package"],
+            "--action", action, "--role", role,
+            "--worktree", str(worktree), "--owner-pm", FLOW_OWNER,
+            "--correlation-id", cid, *common]
+    for zone in stage["zones"]:
+        argv += ["--path", zone]
+    if stage.get("task_id"):
+        argv += ["--task", stage["task_id"]]
+    if stage.get("approval_ref"):
+        argv += ["--approval-ref", stage["approval_ref"]]
+    # Паритет с flow-enforcer: Ф3 — scope = incident_ref, Ф5 — экспресс.
+    if flow == 3:
+        argv += ["--incident-ref", manifest["package"]]
+    if flow == 5:
+        argv += ["--small-change"]
+    rc, payload, err = run_flowctl(argv)
+    if rc != 0 or not payload.get("prepared"):
+        # prepare мог создать резервацию и отказать после нее (решение
+        # перестало быть ALLOW) — освобождаем, не оставляя сироту.
+        gate_abandon(gate, f"prepare отклонен ({action})")
+        raise GateDenied(f"flowctl prepare {action}: "
+                         f"{_flowctl_reason(payload, err)}")
+    gate["zones"] = ((payload.get("record") or {}).get("zones")
+                     or stage["zones"])
+    rc, payload, err = run_flowctl(["run", "--correlation-id", cid, *common])
+    if rc != 0:
+        gate_abandon(gate, "flowctl run отклонен")
+        raise GateDenied(f"flowctl run: {_flowctl_reason(payload, err)}")
+    return gate
+
+
+def _zone_begin(gate: dict, stage: dict, repo: Path, worktree: Path,
+                branch: str, registry: Path) -> dict:
+    """Роль без этапа во флоу: зона по политике роли + резервация."""
+    role = gate["role"]
+    gate["kind"] = "zone"
+    narrowed = rzp.narrow_zones(role, [sc.canonical(z)
+                                       for z in stage["zones"]])
+    if narrowed["violations"] or not narrowed["zones"]:
+        raise GateDenied(
+            f"ZONE_OUTSIDE_POLICY: зоны вне политики роли {role} "
+            f"({rzp.POLICY_SOURCE}): "
+            f"{', '.join(narrowed['violations'] or stage['zones'])}")
+    res = sc.reserve({
+        "repo": str(worktree), "delegation_id": gate["delegation_id"],
+        "role": role, "project": repo.name, "owner_pm": FLOW_OWNER,
+        "paths": narrowed["zones"],
+        "policy_version": narrowed["policy_version"],
+        "worktree": str(worktree), "branch": branch,
+        "base_sha": gate["base_sha"],
+    }, registry)
+    if not res.get("allowed"):
+        raise GateDenied(f"session_check reserve: {res.get('reason')} "
+                         f"({'; '.join(res.get('details') or [])})")
+    _transition(registry, gate["delegation_id"], "running",
+                           "package_runner: старт pi-стадии",
+                           f"stage {stage['id']}", expect_from="reserved")
+    gate["zones"] = narrowed["zones"]
+    print(f"RUNNER-WARNING: ROLE_WITHOUT_STAGE: роль {role} без этапа "
+          "STAGE_TABLE своего флоу — решение flowctl не выносится, только "
+          "зона по политике роли и post-check диффа", file=sys.stderr)
+    return gate
+
+
+def gate_end(gate: dict, worktree: Path, report: Path) -> tuple[bool, str]:
+    """Приемка pi-стадии: дифф ⊆ зона + гейты этапа (flowctl finish) или
+    post-check зоны (роль без этапа). (accepted, деталь)."""
+    registry = Path(gate["registry"])
+    if gate["kind"] == "zone":
+        res = sc.check({"delegation_id": gate["delegation_id"],
+                        "repo": str(worktree)}, registry)
+        if not res.get("ok"):
+            return False, (f"session_check check: {res.get('reason')} "
+                           f"({'; '.join(map(str, res.get('violations') or res.get('details') or []))})")
+        _transition(registry, gate["delegation_id"], "finished",
+                               "package_runner: дифф в зоне",
+                               f"report={report}", expect_from="running")
+        return True, "zone ok"
+    argv = ["finish", "--correlation-id", gate["cid"], "--report",
+            str(report), "--gate-scope", FLOW_GATE_SCOPE,
+            "--registry", gate["registry"], "--state", gate["state"],
+            "--json"]
+    # Команда OpenSpec CLI для гейта openspec_validate (дефолт flowctl —
+    # `npx openspec`; на машине с глобальным CLI — `openspec`).
+    if os.environ.get("PIPELINE_OPENSPEC_CMD"):
+        argv += ["--openspec-cmd", os.environ["PIPELINE_OPENSPEC_CMD"]]
+    rc, payload, err = run_flowctl(argv)
+    if rc == 0 and payload.get("verdict") == "accepted":
+        return True, "flowctl finish: accepted"
+    if _only_pr_gate_pending(payload):
+        # Дифф в зоне, гейты этапа PASS; pr_validate — ворота PR пакета в
+        # CI (flow.yml). Запись цикла flowctl остается provisional с
+        # пометкой раннера (gate_close); зона стадии освобождается
+        # (running → finished → closed). Повторный finish по такой записи
+        # движок отклоняет: резервация уже закрыта.
+        _transition(
+            Path(gate["registry"]), gate["delegation_id"], "finished",
+            "package_runner: provisional (pr_validate — на PR CI)",
+            f"report={report}", expect_from="running")
+        gate["pr_gate"] = "pending"
+        return True, "flowctl finish: provisional (pr_validate — на PR CI)"
+    return False, f"flowctl finish: {_flowctl_reason(payload, err)}"
+
+
+def gate_close(gate: dict, commit: str | None) -> None:
+    """Принятая и закоммиченная стадия освобождает зону (finished → closed);
+    запись цикла flowctl получает пометку раннера (коммит, отложенный
+    pr_validate) — аудит видит, чем закончилась provisional-запись."""
+    _transition(
+        Path(gate["registry"]), gate["delegation_id"], "closed",
+        "package_runner: стадия принята и закоммичена",
+        f"commit={commit or 'без изменений'}", expect_from="finished")
+    if gate.get("kind") != "flowctl":
+        return
+
+    def _mark(st: dict) -> None:
+        rec = st.get("runs", {}).get(gate["cid"])
+        if rec is not None:
+            rec["package_runner"] = {
+                "closed_at": utcnow_iso(), "commit": commit,
+                "pr_validate": ("на PR CI пакета (flow.yml)"
+                                if gate.get("pr_gate") else "не требовался"),
+            }
+
+    try:
+        fc.state_write_locked(Path(gate["state"]),
+                              fc.state_load(Path(gate["state"])), _mark)
+    except OSError as exc:
+        print(f"RUNNER-WARNING: пометка записи flowctl {gate['cid']} не "
+              f"записана: {exc}", file=sys.stderr)
+
+
+def gate_abandon(gate: dict, reason: str) -> None:
+    """Отказ/повтор стадии: зона освобождается, worktree и файлы сохранены
+    (ничего не удаляется молча). running → needs_attention → released;
+    finished (вердикт returned) → released."""
+    registry = Path(gate["registry"])
+    did = gate["delegation_id"]
+    status = _registry_status(registry, did)
+    if status == "running":
+        _transition(registry, did, "needs_attention",
+                               f"package_runner: {reason}",
+                               "pi-стадия не принята", expect_from="running")
+        status = "needs_attention"
+    if status in ("reserved", "needs_attention") \
+            and gate.get("kind") == "flowctl":
+        run_flowctl(["release", gate["cid"], "--reason",
+                     f"package_runner: {reason}",
+                     "--registry", gate["registry"], "--state", gate["state"],
+                     "--json"])
+    elif status in ("reserved", "needs_attention", "finished"):
+        _transition(registry, did, "released",
+                               f"package_runner: {reason}",
+                               "worktree сохранен", expect_from=status)
+
+
+def commit_stage(worktree: Path, message: str) -> str | None:
+    """Коммит принятой стадии в ветку пакета; нечего коммитить → None."""
+    excludes = [f":(exclude){p}" for p in COMMIT_EXCLUDE]
+    add = subprocess.run(["git", "-C", str(worktree), "add", "-A", "--", ".",
+                          *excludes], capture_output=True, text=True)
+    if add.returncode != 0:
+        raise RunnerStop(f"git add стадии не выполнен: "
+                         f"{add.stderr.strip() or add.stdout.strip()}")
+    if subprocess.run(["git", "-C", str(worktree), "diff", "--cached",
+                       "--quiet"]).returncode == 0:
+        return None
+    proc = subprocess.run(["git", "-C", str(worktree), "commit", "-q", "-m",
+                           message], capture_output=True, text=True)
+    if proc.returncode != 0:
+        raise RunnerStop(f"коммит стадии не создан: "
+                         f"{proc.stderr.strip() or proc.stdout.strip()}")
+    return _git_head(worktree)
+
+
+def zone_recheck(gate: dict, worktree: Path) -> list[str]:
+    """Повторная сверка диффа с зоной резервации прямо перед коммитом:
+    файлы, появившиеся после приемки (артефакты гейтов finish), в коммит
+    стадии без сверки не попадают. Возвращает пути вне зоны."""
+    data, err = sc.registry_load(Path(gate["registry"]))
+    session = next((s for s in (data or {}).get("sessions", [])
+                    if isinstance(s, dict)
+                    and s.get("delegation_id") == gate["delegation_id"]),
+                   None)
+    if err or session is None:
+        return [f"резервация {gate['delegation_id']} не читается "
+                f"({err or 'нет в реестре'})"]
+    zones = [sc.canonical(p) for p in session.get("zones") or []]
+    committed, uncommitted = sc.changed_paths(worktree,
+                                              session.get("base_sha"))
+    return [p for p in dict.fromkeys(committed + uncommitted)
+            if not sc.zone_holds(zones, p)]
+
+
+def shelve_attempt(worktree: Path, base_sha: str, label: str) -> str:
+    """optional-стадия не принята после входа: ее изменения (и коммиты
+    агента поверх base_sha) откладываются в git stash, а не остаются в
+    дереве следующей стадии и не удаляются молча. Возвращает пометку."""
+    head = _git_head(worktree)
+    if base_sha and head and head != base_sha:
+        reset = subprocess.run(["git", "-C", str(worktree), "reset", "-q",
+                                "--soft", base_sha],
+                               capture_output=True, text=True)
+        if reset.returncode != 0:
+            # Коммиты агента остались бы в ветке пакета без сверки зоны.
+            raise RunnerStop(f"изменения попытки не отложены (git reset "
+                             f"--soft {base_sha[:12]}): "
+                             f"{reset.stderr.strip() or reset.stdout.strip()}")
+    excludes = [f":(exclude){p}"
+                for p in (*COMMIT_EXCLUDE, "AGENTS.pi.md")]
+    proc = subprocess.run(
+        ["git", "-C", str(worktree), "stash", "push", "-u", "-m", label,
+         "--", ".", *excludes], capture_output=True, text=True)
+    out = (proc.stdout + proc.stderr).strip()
+    if proc.returncode != 0:
+        return f"stash не создан: {out}"
+    return "изменений нет" if "No local changes" in out else f"stash «{label}»"
+
+
+def write_report(plan_path: Path, stage: dict, attempt: int,
+                 stdout: str, stderr: str) -> Path:
+    """Отчет агента для finish (указатель на файлы — хвост вывода pi)."""
+    rdir = plan_path.with_name(plan_path.name + REPORTS_SUFFIX)
+    rdir.mkdir(parents=True, exist_ok=True)
+    path = rdir / f"{stage['id']}-{attempt}.md"
+    path.write_text(
+        f"# Отчет pi:{stage['payload']} — stage {stage['id']} "
+        f"(попытка {attempt})\n\n## stdout\n\n```\n"
+        f"{tail(stdout, STAGE_TAIL_LINES)}\n```\n\n## stderr\n\n```\n"
+        f"{tail(stderr, STAGE_TAIL_LINES)}\n```\n", encoding="utf-8")
+    return path
+
+
 # ---------------------------------------------------------------- main
 
 
@@ -825,6 +1305,11 @@ def cmd_run(plan_path: Path, dry_run: bool) -> int:
             print(f"  выполнено: {', '.join(sorted(done)) or '—'}")
             print(f"  осталось после ПМ-шага: {', '.join(pending) or '—'}")
             print(f"  state: {spath}")
+            if state.get("worktree"):
+                # Ворота следующих pi-стадий читают факты из дерева пакета:
+                # правки ПМ (утверждение требований и т.п.) — коммитом туда.
+                print(f"  worktree пакета (правки ПМ — коммитом в ветку "
+                      f"{state.get('branch')}): {state['worktree']}")
             journal_append(plan_path, f"{utcnow_iso()} | stage "
                            f"{stage['id']} | hermes:{stage['payload']} | "
                            "ЖДУ ПМ (стоп-точка)")
@@ -916,6 +1401,67 @@ def cmd_run(plan_path: Path, dry_run: bool) -> int:
         if not role_agents.is_file():
             return _stop(stage, f"роль-пак не найден: {role_agents}", None)
         role_text = role_agents.read_text(encoding="utf-8")
+
+        # Ворота входа (flowctl prepare/run или резервация зоны роли без
+        # этапа). Повтор стадии после STOP сначала освобождает зону своей
+        # прошлой попытки (worktree и файлы сохранены).
+        gates = state.setdefault("flow_gates", {})
+        prev_gate = gates.get(stage["id"])
+        if prev_gate and prev_gate.get("open"):
+            gate_abandon(prev_gate, "resume: повтор стадии после STOP")
+            prev_gate["open"] = False
+        attempt = (prev_gate or {}).get("attempt", 0) + 1
+        try:
+            gate = gate_new(stage, repo, worktree)
+            gate.update(open=True, attempt=attempt)
+            gates[stage["id"]] = gate
+            state_write(spath, state)  # до prepare: резервация не осиротеет
+            gate_begin(manifest, stage, repo, worktree, branch, gate)
+        except GateDenied as exc:
+            if gates.get(stage["id"]) is not None:
+                gates[stage["id"]]["open"] = False
+                state_write(spath, state)
+            if _fail(stage, f"ворота входа: {exc}", None):
+                return EXIT_STOP
+            continue
+        state_write(spath, state)
+        print(f"RUNNER: stage {stage['id']} — ворота входа пройдены "
+              f"({gate['kind']}: {gate.get('action') or gate['role']}, "
+              f"correlation {gate['cid']})")
+
+        def _reject(detail: str, exit_code: int | None = None,
+                    stdout: str = "", stderr: str = "") -> int:
+            """Отказ после входа: optional — изменения попытки откладываются
+            в git stash, зона освобождается, skipped; обязательная — STOP,
+            дерево и зона держатся до разбора ПМ/resume."""
+            if stage.get("optional"):
+                agents_file.unlink(missing_ok=True)  # файл раннера — не в stash
+                try:
+                    shelf = shelve_attempt(
+                        worktree, gate.get("base_sha", ""),
+                        f"package_runner: {manifest['package']}/{stage['id']} "
+                        f"попытка {gate['attempt']} (optional skipped)")
+                except RunnerStop as exc:
+                    state_write(spath, state)
+                    return _stop(stage, f"{detail}; {exc}", exit_code,
+                                 stdout, stderr)
+                gate["shelved"] = shelf
+                gate_abandon(gate, f"optional skipped: {detail}")
+                gate["open"] = False
+                detail = f"{detail}; изменения попытки: {shelf}"
+            elif _registry_status(Path(gate["registry"]),
+                                  gate["delegation_id"]) == "running":
+                _transition(
+                    Path(gate["registry"]), gate["delegation_id"],
+                    "needs_attention", f"package_runner: {detail}",
+                    "STOP раннера", expect_from="running")
+            state_write(spath, state)
+            return _fail(stage, detail, exit_code, stdout, stderr)
+
+        # Роль-пак → AGENTS.md в корень worktree (а если там уже есть
+        # AGENTS.md проекта — рядом как AGENTS.pi.md, проектные правила не
+        # затираются; дефект пилота BUG-026). Файл раннера убирается после
+        # pi: в дифф/коммит стадии он не попадает.
         agents_target = worktree / "AGENTS.md"
         if agents_target.exists():
             agents_file = worktree / "AGENTS.pi.md"
@@ -940,13 +1486,15 @@ def cmd_run(plan_path: Path, dry_run: bool) -> int:
         try:
             rc, out, err = run_pi(args, worktree, env, timeout)
         except subprocess.TimeoutExpired as exc:
-            if _fail(stage, f"таймаут pi ({timeout}с)", None,
-                     timeout_stream(exc.stdout),
-                     timeout_stream(exc.stderr)):
+            if _reject(f"таймаут pi ({timeout}с)", None,
+                       timeout_stream(exc.stdout),
+                       timeout_stream(exc.stderr)):
                 return EXIT_STOP
             continue
+        finally:
+            agents_file.unlink(missing_ok=True)
         if rc != 0:
-            if _fail(stage, f"pi exit {rc}", rc, out, err):
+            if _reject(f"pi exit {rc}", rc, out, err):
                 return EXIT_STOP
             continue
         # Опциональный gate-этап стадии (после успешного pi; отказ — STOP).
@@ -954,17 +1502,46 @@ def cmd_run(plan_path: Path, dry_run: bool) -> int:
             try:
                 grc, gout, gerr = run_shell(stage["gate"], worktree, timeout)
             except subprocess.TimeoutExpired as exc:
-                if _fail(stage, f"таймаут gate stage ({timeout}с)", None,
-                         timeout_stream(exc.stdout),
-                         timeout_stream(exc.stderr)):
+                if _reject(f"таймаут gate stage ({timeout}с)", None,
+                           timeout_stream(exc.stdout),
+                           timeout_stream(exc.stderr)):
                     return EXIT_STOP
                 continue
             if grc != 0:
-                if _fail(stage, f"gate stage exit {grc}", grc, gout, gerr):
+                if _reject(f"gate stage exit {grc}", grc, gout, gerr):
                     return EXIT_STOP
                 continue
             out += f"\n--- gate ---\n{gout}"
             err += f"\n--- gate ---\n{gerr}"
+        # Ворота выхода: дифф ⊆ зона + гейты этапа, затем коммит стадии в
+        # ветку пакета и закрытие резервации.
+        try:
+            report = write_report(plan_path, stage, attempt, out, err)
+        except OSError as exc:
+            if _reject(f"отчет стадии не записан: {exc}", None, out, err):
+                return EXIT_STOP
+            continue
+        accepted, detail = gate_end(gate, worktree, report)
+        if not accepted:
+            if _reject(f"ворота выхода: {detail}", None, out, err):
+                return EXIT_STOP
+            continue
+        outside = zone_recheck(gate, worktree)
+        if outside:
+            if _reject("перед коммитом: изменения вне зоны резервации: "
+                       + ", ".join(outside), None, out, err):
+                return EXIT_STOP
+            continue
+        try:
+            commit = commit_stage(
+                worktree, f"[pipeline] {manifest['package']}/{stage['id']}: "
+                f"pi:{stage['payload']} (correlation {gate['cid']})")
+        except RunnerStop as exc:
+            if _reject(str(exc), None, out, err):
+                return EXIT_STOP
+            continue
+        gate_close(gate, commit)
+        gate.update(open=False, commit=commit)
         state_record(state, stage["id"], "done", "pi ok", 0, out, err)
         state_write(spath, state)
         try:

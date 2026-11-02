@@ -108,11 +108,47 @@ def write_tmp_plan(text: str) -> Path:
         return Path(f.name)
 
 
+def agents_snapshot(cwd) -> dict:
+    """Ролевые файлы раннера в worktree на момент вызова pi (после pi
+    раннер их удаляет — в дифф/коммит стадии они не попадают)."""
+    return {name: (Path(cwd) / name).read_text("utf-8")
+            for name in ("AGENTS.md", "AGENTS.pi.md")
+            if (Path(cwd) / name).is_file()}
+
+
 def fake_pi(calls: list, rc: int = 0):
     def _run_pi(args, cwd, env, timeout):
-        calls.append({"args": args, "cwd": cwd, "env": env})
+        calls.append({"args": args, "cwd": cwd, "env": env,
+                      "agents": agents_snapshot(cwd)})
         return rc, "pi stdout ok", ""
     return _run_pi
+
+
+@pytest.fixture(autouse=True)
+def flow_gates_sandbox(request, tmp_path, monkeypatch):
+    """Реестр сессий, state flowctl и режим — во временном каталоге:
+    реальный ~/.hermes/state тесты раннера не трогают. Без маркера
+    real_flow_gates ворота pi-стадии подменены разрешающими (их собственная
+    проверка — секция (м))."""
+    st = tmp_path / "flow-state"
+    st.mkdir(exist_ok=True)
+    monkeypatch.setenv("PIPELINE_FLOW_REGISTRY", str(st / "active_sessions.json"))
+    monkeypatch.setenv("PIPELINE_FLOW_STATE", str(st / "flowctl_state.json"))
+    monkeypatch.setenv("FLOW_MODE_FILE", str(st / "flow_mode.json"))
+    if request.node.get_closest_marker("real_flow_gates"):
+        return
+    monkeypatch.setattr(pr, "gate_new", lambda s, r, w: {
+        "kind": "fake", "cid": "fake-cid", "delegation_id": "deleg-fake",
+        "role": pr.flow_role(s["payload"]), "registry": str(st / "reg.json"),
+        "state": str(st / "state.json"), "repo": str(r), "base_sha": ""})
+    monkeypatch.setattr(pr, "gate_begin", lambda m, s, r, w, b, g: g)
+    monkeypatch.setattr(pr, "zone_recheck", lambda g, w: [])
+    monkeypatch.setattr(pr, "shelve_attempt", lambda w, b, label: "fake")
+    monkeypatch.setattr(pr, "gate_end", lambda g, w, rep: (True, "fake ok"))
+    monkeypatch.setattr(pr, "gate_close", lambda g, c: None)
+    monkeypatch.setattr(pr, "gate_abandon", lambda g, why: None)
+    monkeypatch.setattr(pr, "_registry_status", lambda reg, did: None)
+    monkeypatch.setattr(pr, "commit_stage", lambda wt, msg: None)
 
 
 def patch_executors(monkeypatch, repo: Path, pi_calls: list,
@@ -120,7 +156,8 @@ def patch_executors(monkeypatch, repo: Path, pi_calls: list,
     """Подмена pi/shell/worktree; pi пишет вызовы в pi_calls (pi в тестах
     не вызывается)."""
     def fake_pi(args, cwd, env, timeout):
-        pi_calls.append({"args": args, "cwd": cwd, "env": env})
+        pi_calls.append({"args": args, "cwd": cwd, "env": env,
+                         "agents": agents_snapshot(cwd)})
         return 0, "pi stdout ok", ""
     monkeypatch.setattr(pr, "run_pi", fake_pi)
     if shell_fn is not None:
@@ -581,7 +618,8 @@ def test_e1_e2e_real_worktree_brief_env_agents(tmp_path, monkeypatch):
     # role-agents.md пака dev скопирован как AGENTS.md
     pack = (FACTORY / "skills/pm-factory/pi/role-packs/dev/role-agents.md"
             ).read_text("utf-8")
-    assert (wt / "AGENTS.md").read_text("utf-8") == pack
+    assert calls[0]["agents"]["AGENTS.md"] == pack
+    assert not (wt / "AGENTS.md").exists()   # убран после pi (не в дифф)
     # вызов pi: провайдер/модель/zone-guard/no-session, зоны из stage
     call = calls[0]
     args = call["args"]
@@ -680,7 +718,8 @@ def test_z3_existing_agents_md_not_overwritten(tmp_path, monkeypatch):
     assert (repo / "AGENTS.md").read_text("utf-8") == "ПРАВИЛА ПРОЕКТА v1"
     pack = (FACTORY / "skills/pm-factory/pi/role-packs/dev/role-agents.md"
             ).read_text("utf-8")
-    side = (repo / "AGENTS.pi.md").read_text("utf-8")
+    side = calls[0]["agents"]["AGENTS.pi.md"]
+    assert not (repo / "AGENTS.pi.md").exists()  # убран после pi
     assert side.startswith(pack)               # роль — целиком
     assert "Читай вместе с AGENTS.md" in side  # пометка для Pi
     brief = calls[0]["args"][calls[0]["args"].index("-p") + 1]
@@ -697,8 +736,8 @@ def test_z3b_no_agents_md_role_landed_as_agents_md(tmp_path, monkeypatch):
     assert pr.cmd_run(plan, dry_run=False) == 0
     pack = (FACTORY / "skills/pm-factory/pi/role-packs/dev/role-agents.md"
             ).read_text("utf-8")
-    assert (repo / "AGENTS.md").read_text("utf-8") == pack
-    assert not (repo / "AGENTS.pi.md").exists()
+    assert calls[0]["agents"] == {"AGENTS.md": pack}  # AGENTS.pi.md нет
+    assert not (repo / "AGENTS.md").exists()  # файл раннера убран после pi
     brief = calls[0]["args"][calls[0]["args"].index("-p") + 1]
     assert "в AGENTS.md" in brief and "AGENTS.pi.md" not in brief
 
@@ -1409,3 +1448,478 @@ def test_l7_optional_validation():
     assert m["stages"][0]["optional"] is False
     m = pr.parse_manifest(write_tmp_plan(VALID))
     assert m["stages"][0]["optional"] is False
+
+
+# ---------------- (м) ворота pi-стадии: flowctl prepare/run/finish + зона
+# Реальные flowctl/session_check во временном реестре (фикстура
+# flow_gates_sandbox), pi подменен функцией, пишущей файлы в worktree.
+
+
+def gated_plan(tmp_path: Path, stages: str, *, package: str = "express-x",
+               flow: int = 5) -> tuple[Path, Path]:
+    """Fixture-репо с PLAN-<package>.md (Флоу: N + манифест), закоммичен."""
+    repo = make_repo(tmp_path)
+    text = (f"# PLAN-{package}\n\n**Флоу: {flow}** — тестовый пакет.\n\n"
+            f"```yaml\npipeline:\n  package: {package}\n  flow: {flow}\n"
+            f"  stages:\n{stages}```\n")
+    plan = write_plan(repo, text, name=f"PLAN-{package}.md")
+    subprocess.run(["git", "-C", str(repo), "add", "-A"], check=True)
+    subprocess.run(["git", "-C", str(repo), "commit", "-qm", "plan"],
+                   check=True)
+    return repo, plan
+
+
+def patch_gated(monkeypatch, tmp_path: Path, writes: list, rc: int = 0):
+    """pi пишет файлы writes (относительно worktree); worktree — git
+    worktree с SESSION.md (как у session_worktree.sh)."""
+    wt = tmp_path / "wt"
+    calls: list = []
+
+    def fake_pi(args, cwd, env, timeout):
+        calls.append({"args": args, "env": env,
+                      "agents": agents_snapshot(cwd)})
+        for rel in writes:
+            p = Path(cwd) / rel
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text("X = 1\n", encoding="utf-8")
+        return rc, "pi stdout ok", ""
+
+    def fake_worktree(repo, sid, branch):
+        if not wt.exists():
+            subprocess.run(["git", "-C", str(repo), "worktree", "add", "-q",
+                            "-b", branch, str(wt)], check=True)
+            (wt / "SESSION.md").write_text("session\n", encoding="utf-8")
+        return wt
+
+    monkeypatch.setattr(pr, "run_pi", fake_pi)
+    monkeypatch.setattr(pr, "ensure_worktree", fake_worktree)
+    return wt, calls
+
+
+def registry_statuses() -> list[tuple[str, str]]:
+    reg, _ = pr.flow_paths()
+    if not reg.is_file():
+        return []
+    data = json.loads(reg.read_text(encoding="utf-8"))
+    return [(s["role"], s["status"]) for s in data.get("sessions", [])]
+
+
+def branch_files(wt: Path) -> list[str]:
+    out = subprocess.run(["git", "-C", str(wt), "log", "--format=",
+                          "--name-only", "HEAD~1..HEAD"],
+                         capture_output=True, text=True, check=True).stdout
+    return sorted(x for x in out.splitlines() if x.strip())
+
+
+DEV_STAGE = ("    - id: impl\n      run: pi:dev\n      zones: [src/**]\n"
+             "      task: сделать\n")
+
+
+@pytest.mark.real_flow_gates
+def test_m1_gated_stage_accepted_committed_closed(tmp_path, monkeypatch,
+                                                  capsys):
+    """TC-PR-042: pi-стадия проходит prepare/run/finish: дифф в зоне →
+    коммит стадии (только работа агента: без SESSION.md и AGENTS.md
+    раннера), резервация закрыта (closed), запись цикла flowctl —
+    express_task с provisional (pr_validate — на PR CI)."""
+    repo, plan = gated_plan(tmp_path, DEV_STAGE)
+    wt, calls = patch_gated(monkeypatch, tmp_path, ["src/x.py"])
+    assert pr.cmd_run(plan, dry_run=False) == 0
+    assert len(calls) == 1 and "AGENTS.md" in calls[0]["agents"]
+    assert branch_files(wt) == ["src/x.py"]
+    subj = subprocess.run(["git", "-C", str(wt), "log", "-1", "--format=%s"],
+                          capture_output=True, text=True).stdout
+    assert subj.startswith("[pipeline] express-x/impl: pi:dev")
+    assert registry_statuses() == [("dev", "closed")]
+    _, fstate = pr.flow_paths()
+    runs = json.loads(fstate.read_text(encoding="utf-8"))["runs"]
+    (rec,) = runs.values()
+    assert rec["action"] == "express_task" and rec["status"] == "provisional"
+    gate = pr.state_load(pr.state_path_for(plan))["flow_gates"]["impl"]
+    assert gate["open"] is False and gate["commit"]
+    assert "ворота входа пройдены" in capsys.readouterr().out
+
+
+@pytest.mark.real_flow_gates
+def test_m2_out_of_zone_stop_then_resume(tmp_path, monkeypatch, capsys):
+    """TC-PR-043: запись вне зоны — STOP (OUT_OF_ZONE), коммита нет, зона
+    держится (needs_attention); повтор после правки: прошлая попытка
+    освобождена (released), новая принята и закрыта."""
+    repo, plan = gated_plan(tmp_path, DEV_STAGE)
+    wt, _ = patch_gated(monkeypatch, tmp_path, ["src/x.py", "docs/x.md"])
+    head = pr._git_head(repo)
+    assert pr.cmd_run(plan, dry_run=False) == 2
+    err = capsys.readouterr().err
+    assert "ворота выхода" in err and "OUT_OF_ZONE" in err and "docs/x.md" in err
+    assert pr._git_head(wt) == head
+    assert registry_statuses() == [("dev", "needs_attention")]
+    (wt / "docs" / "x.md").unlink()           # ПМ убрал лишнее
+    patch_gated(monkeypatch, tmp_path, ["src/x.py"])
+    assert pr.cmd_run(plan, dry_run=False) == 0
+    assert registry_statuses() == [("dev", "released"), ("dev", "closed")]
+    assert branch_files(wt) == ["src/x.py"]
+
+
+@pytest.mark.real_flow_gates
+def test_m3_prepare_deny_stops_before_pi(tmp_path, monkeypatch, capsys):
+    """TC-PR-044: DENY prepare (Флоу 1 без change-пакета/требований) —
+    STOP до pi, резервации нет."""
+    repo, plan = gated_plan(tmp_path, DEV_STAGE, package="add-gadget",
+                            flow=1)
+    _, calls = patch_gated(monkeypatch, tmp_path, ["src/x.py"])
+    assert pr.cmd_run(plan, dry_run=False) == 2
+    err = capsys.readouterr().err
+    assert "ворота входа: flowctl prepare dev_task" in err
+    assert calls == []
+    assert registry_statuses() == []
+
+
+@pytest.mark.real_flow_gates
+def test_m4_zone_outside_policy_stops(tmp_path, monkeypatch, capsys):
+    """TC-PR-045: зона стадии шире политики роли (agents/README.md) —
+    STOP ZONE_OUTSIDE_POLICY до pi (роль без этапа во Флоу 5 —
+    code_reviewer; политика: code-reviews/*/review-*.md)."""
+    repo, plan = gated_plan(
+        tmp_path, "    - id: review\n      run: pi:code-reviewer\n"
+                  "      zones: [test-model/reviews/**]\n")
+    _, calls = patch_gated(monkeypatch, tmp_path, [])
+    assert pr.cmd_run(plan, dry_run=False) == 2
+    err = capsys.readouterr().err
+    assert "ZONE_OUTSIDE_POLICY" in err and "test-model/reviews/**" in err
+    assert calls == []
+
+
+@pytest.mark.real_flow_gates
+def test_m5_zone_conflict_with_foreign_session(tmp_path, monkeypatch, capsys):
+    """TC-PR-046: зона занята чужой сессией того же repo (делегация или
+    другой пакет) — STOP ZONE_CONFLICT до pi."""
+    repo, plan = gated_plan(tmp_path, DEV_STAGE)
+    reg, _ = pr.flow_paths()
+    res = pr.sc.reserve({
+        "repo": str(repo), "delegation_id": "deleg-foreign", "role": "dev",
+        "project": "proj", "owner_pm": "pm-main", "paths": ["src/**"],
+        "policy_version": pr.rzp.policy_version()}, reg)
+    assert res["allowed"]
+    _, calls = patch_gated(monkeypatch, tmp_path, ["src/x.py"])
+    assert pr.cmd_run(plan, dry_run=False) == 2
+    assert "ZONE_CONFLICT" in capsys.readouterr().err
+    assert calls == []
+
+
+@pytest.mark.real_flow_gates
+def test_m6_role_without_stage_zone_gate(tmp_path, monkeypatch, capsys):
+    """TC-PR-047: роль без этапа во флоу (regress_runner) — WARNING
+    ROLE_WITHOUT_STAGE, резервация по политике роли; запись в зоне —
+    коммит и closed; запись вне зоны — STOP по post-check."""
+    stages = ("    - id: regress\n      run: pi:regress-runner\n"
+              "      zones: [test-model/regress/express-x/**]\n")
+    repo, plan = gated_plan(tmp_path, stages)
+    wt, _ = patch_gated(monkeypatch, tmp_path,
+                        ["test-model/regress/express-x/regress-001.md"])
+    assert pr.cmd_run(plan, dry_run=False) == 0
+    assert "ROLE_WITHOUT_STAGE" in capsys.readouterr().err
+    assert branch_files(wt) == ["test-model/regress/express-x/regress-001.md"]
+    assert registry_statuses() == [("regress_runner", "closed")]
+
+
+@pytest.mark.real_flow_gates
+def test_m6b_role_without_stage_out_of_zone(tmp_path, monkeypatch, capsys):
+    """TC-PR-047b: роль без этапа пишет вне зоны — STOP (session_check)."""
+    stages = ("    - id: regress\n      run: pi:regress-runner\n"
+              "      zones: [test-model/regress/express-x/**]\n")
+    repo, plan = gated_plan(tmp_path, stages)
+    patch_gated(monkeypatch, tmp_path, ["tests/test_x.py"])
+    assert pr.cmd_run(plan, dry_run=False) == 2
+    err = capsys.readouterr().err
+    assert "session_check check" in err and "tests/test_x.py" in err
+
+
+@pytest.mark.real_flow_gates
+def test_m7_optional_stage_gate_denied_skips(tmp_path, monkeypatch, capsys):
+    """TC-PR-048: optional-стадия, не прошедшая ворота входа, — skipped
+    (пакет едет дальше), резервация не остается."""
+    stages = ("    - id: review\n      run: pi:code-reviewer\n"
+              "      zones: [test-model/reviews/**]\n      optional: true\n"
+              + DEV_STAGE)
+    repo, plan = gated_plan(tmp_path, stages)
+    patch_gated(monkeypatch, tmp_path, ["src/x.py"])
+    assert pr.cmd_run(plan, dry_run=False) == 0
+    st = pr.state_load(pr.state_path_for(plan))["stages"]
+    assert st["review"]["status"] == "skipped" and st["impl"]["status"] == "done"
+    assert registry_statuses() == [("dev", "closed")]
+
+
+def test_m8_stage_action_mapping():
+    """TC-PR-049: роль → этап STAGE_TABLE флоу; action: выбирает другой
+    этап роли; чужой этап — STAGE_ACTION_INVALID; роль без этапа — None."""
+    assert pr.flow_role("code-reviewer") == "code_reviewer"
+    assert pr.stage_action("dev", 1) == "dev_task"
+    assert pr.stage_action("dev", 5) == "express_task"
+    assert pr.stage_action("code_reviewer", 1) == "code_review"
+    assert pr.stage_action("code_reviewer", 1, "accept_review") == "accept_review"
+    with pytest.raises(pr.GateDenied, match="STAGE_ACTION_INVALID"):
+        pr.stage_action("dev", 1, "code_review")
+    assert pr.stage_action("ba", 1) is None
+    assert pr.stage_action("regress_runner", 4) is None
+
+
+@pytest.mark.parametrize("zone,expected", [
+    ("code-reviews/*/review-*.md", "code-reviews"),   # glob в середине
+    ("openspec/changes/*/tasks.md", "openspec/changes"),
+    ("requirements.md", "requirements.md"),
+    ("**", "**"),                                     # весь репо — как есть
+])
+def test_m9_normalize_policy_glob_zone(zone, expected):
+    """TC-PR-050: зона политики с glob в середине → конкретный префикс для
+    guard'а (точная сверка — session_check по диффу)."""
+    assert pr.normalize_zone(zone) == expected
+
+
+def test_m10_gate_manifest_keys_validation():
+    """TC-PR-051: action/task_id/approval_ref — непустые строки, парсятся
+    в stage; без ключей — пустые строки."""
+    base = ("# PLAN-x\n\n```yaml\npipeline:\n  package: p\n  flow: 1\n"
+            "  stages:\n    - id: a\n      run: pi:dev\n      zones: [src/**]\n")
+    m = pr.parse_manifest(write_tmp_plan(
+        base + "      action: dev_task\n      task_id: \"1.1\"\n"
+               "      approval_ref: decisions/x.md\n```\n"))
+    st = m["stages"][0]
+    assert (st["action"], st["task_id"], st["approval_ref"]) == (
+        "dev_task", "1.1", "decisions/x.md")
+    assert pr.parse_manifest(write_tmp_plan(base + "```\n"))["stages"][0][
+        "action"] == ""
+    with pytest.raises(pr.ManifestError):
+        pr.parse_manifest(write_tmp_plan(base + "      task_id: 7\n```\n"))
+
+
+def test_m11_yaml_trailing_comment_stripped():
+    """TC-PR-052: комментарий в конце строки срезается (паритет с
+    yaml.safe_load); `#` внутри кавычек и без пробела перед ним — данные."""
+    text = ("# PLAN-x\n\n```yaml\npipeline:\n  package: p  # пакет\n"
+            "  flow: 5\n  stages:\n"
+            "    - id: a\n      run: pi:sa   # СА пишет спеку\n"
+            "      zones: [src/**]  # зона\n"
+            "      task: \"шаг #1 # не комментарий\"\n"
+            "    - id: b\n      run: gate:echo a#b\n```\n")
+    m = pr.parse_manifest(write_tmp_plan(text))
+    a, b = m["stages"]
+    assert m["package"] == "p"
+    assert (a["payload"], a["zones"]) == ("sa", ["src/**"])
+    assert a["task"] == "шаг #1 # не комментарий"
+    assert b["payload"] == "echo a#b"
+
+
+def test_m12_guide_examples_parse_and_fit_policy():
+    """TC-PR-053: примеры манифеста гайда docs/guides/pipeline-manifest.md
+    разбираются раннером, зоны pi-стадий — в рамках политики ролей (иначе
+    стадия примера получает ZONE_OUTSIDE_POLICY на воротах)."""
+    import re
+    guide = (FACTORY / "docs/guides/pipeline-manifest.md").read_text("utf-8")
+    blocks = re.findall(r"```yaml\n.*?```", guide, re.DOTALL)
+    assert len(blocks) >= 2
+    for block in blocks:
+        m = pr.parse_manifest(write_tmp_plan("# P\n\n" + block + "\n"))
+        for st in m["stages"]:
+            if st["kind"] != "pi":
+                continue
+            role = pr.flow_role(st["payload"])
+            narrowed = pr.rzp.narrow_zones(
+                role, [pr.sc.canonical(z) for z in st["zones"]])
+            assert narrowed["violations"] == [], (st["id"], narrowed)
+
+
+REQ_APPROVED = ("# ТЗ\n\n> Статус: УТВЕРЖДЕН | Автор: ba_agent | "
+                "История: r1\n\n## Описание\n...\n\n## Аудитория\nПМ, dev.\n\n"
+                "## Функциональные требования\n- FR-1 виджет\n\n"
+                "## Нефункциональные требования\n- NFR-1 быстро\n\n"
+                "## Приоритеты\n- P1\n\n## Ограничения\n- без push\n\n"
+                "## Открытые вопросы\n- нет\n")
+
+
+@pytest.mark.real_flow_gates
+def test_m13_dependent_flow1_stages_see_package_branch(tmp_path, monkeypatch,
+                                                       capsys):
+    """TC-PR-054 (ревью #214, blocker): зависимые стадии Флоу 1 подряд —
+    create_change (pi:sa) коммитит change-пакет только в ветку пакета,
+    architecture_review (pi:architect) проходит prepare: снимок фактов
+    берется из worktree пакета, а не из основного клона (там пакета нет)."""
+    pkg = "add-gadget"
+    stages = (
+        "    - id: create_change\n      run: pi:sa\n"
+        "      approval_ref: 2026-11-02-start-add-gadget\n"
+        "      zones:\n"
+        f"        - openspec/changes/{pkg}/proposal.md\n"
+        f"        - openspec/changes/{pkg}/design.md\n"
+        f"        - openspec/changes/{pkg}/tasks.md\n"
+        f"        - openspec/changes/{pkg}/specs/**\n"
+        "        - sdd.md\n"
+        "    - id: arch_review\n      run: pi:architect\n"
+        "      zones:\n        - architecture/**\n"
+        f"        - test-model/reviews/{pkg}/review-001-architecture.md\n")
+    repo = make_repo(tmp_path)
+    (repo / "requirements.md").write_text(REQ_APPROVED, encoding="utf-8")
+    repo, plan = gated_plan(tmp_path, stages, package=pkg, flow=1)
+    sha = pr._git_head(repo)
+    dec = repo / "decisions" / "2026-11-02-start-add-gadget.md"
+    dec.parent.mkdir(exist_ok=True)
+    dec.write_text(
+        "# Решение: старт add-gadget\n\n```decision-record\n" + json.dumps({
+            "schema_version": "decision-record/1",
+            "decision_id": "2026-11-02-start-add-gadget",
+            "date": "2026-11-02",
+            "scope": {"project": "proj", "change_id": pkg, "phase": 1},
+            "action": "create_change", "commit": sha,
+            "source": "чат-лог: «погнали» 2026-11-02"},
+            ensure_ascii=False, indent=2) + "\n```\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(repo), "add", "-A"], check=True)
+    subprocess.run(["git", "-C", str(repo), "commit", "-qm", "decision"],
+                   check=True)
+    writes = {
+        "sa": [f"openspec/changes/{pkg}/proposal.md",
+               f"openspec/changes/{pkg}/design.md",
+               f"openspec/changes/{pkg}/tasks.md",
+               f"openspec/changes/{pkg}/specs/widget/spec.md", "sdd.md"],
+        "architect": ["architecture/map.md",
+                      f"test-model/reviews/{pkg}/review-001-architecture.md"],
+    }
+    wt, calls = patch_gated(monkeypatch, tmp_path, [])
+    seen: list = []
+
+    def fake_pi(args, cwd, env, timeout):
+        role = "sa" if "pi:sa" in args[-1] or "Роль: sa" in args[-1] \
+            else "architect"
+        seen.append(role)
+        for rel in writes[role]:
+            p = Path(cwd) / rel
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text("### Requirement: W\n#### Scenario: S\n- GIVEN a\n"
+                         "- WHEN b\n- THEN c\n" if rel.endswith("spec.md")
+                         else "# x\n", encoding="utf-8")
+        return 0, "ok", ""
+
+    monkeypatch.setattr(pr, "run_pi", fake_pi)
+    # OpenSpec CLI в тестовой среде нет — гейт openspec_validate этапа
+    # create_change гоняется заглушкой (сама передача — PIPELINE_OPENSPEC_CMD)
+    monkeypatch.setenv("PIPELINE_OPENSPEC_CMD", "true")
+    rc = pr.cmd_run(plan, dry_run=False)
+    err = capsys.readouterr().err
+    assert rc == 0, err
+    assert seen == ["sa", "architect"]
+    # основной клон change-пакета не видел — работа только в ветке пакета
+    assert not (repo / "openspec" / "changes" / pkg).exists()
+    assert registry_statuses() == [("sa", "closed"), ("architect", "closed")]
+
+
+@pytest.mark.real_flow_gates
+def test_m14_optional_failure_shelves_files(tmp_path, monkeypatch, capsys):
+    """TC-PR-055 (ревью #214, major): optional-стадия упала после записи —
+    ее файлы уходят в git stash, следующая стадия принимается без чужих
+    файлов в дифе."""
+    stages = ("    - id: draft\n      run: pi:dev\n      zones: [src/**]\n"
+              "      optional: true\n"
+              "    - id: impl\n      run: pi:dev\n      zones: [scripts/**]\n")
+    repo, plan = gated_plan(tmp_path, stages)
+    wt, _ = patch_gated(monkeypatch, tmp_path, [])
+    attempts: list = []
+
+    def fake_pi(args, cwd, env, timeout):
+        first = not attempts
+        attempts.append(1)
+        rel = "src/x.py" if first else "scripts/x.py"
+        p = Path(cwd) / rel
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text("X = 1\n", encoding="utf-8")
+        return (1 if first else 0), "out", ""
+
+    monkeypatch.setattr(pr, "run_pi", fake_pi)
+    assert pr.cmd_run(plan, dry_run=False) == 0
+    st = pr.state_load(pr.state_path_for(plan))
+    assert st["stages"]["draft"]["status"] == "skipped"
+    assert st["flow_gates"]["draft"]["shelved"].startswith("stash")
+    assert branch_files(wt) == ["scripts/x.py"]
+    stash = subprocess.run(["git", "-C", str(wt), "stash", "show",
+                            "--include-untracked", "--name-only"],
+                           capture_output=True, text=True).stdout
+    assert "src/x.py" in stash
+    assert registry_statuses() == [("dev", "released"), ("dev", "closed")]
+
+
+@pytest.mark.real_flow_gates
+def test_m15_finish_does_not_reopen_closed_zone(tmp_path, monkeypatch):
+    """TC-PR-056 (ревью #214, major): повторный flowctl finish по
+    provisional-записи, закрытой раннером, — blocked, зона не
+    переоткрывается (реестр остается closed); запись помечена раннером."""
+    repo, plan = gated_plan(tmp_path, DEV_STAGE)
+    wt, _ = patch_gated(monkeypatch, tmp_path, ["src/x.py"])
+    assert pr.cmd_run(plan, dry_run=False) == 0
+    gate = pr.state_load(pr.state_path_for(plan))["flow_gates"]["impl"]
+    report = tmp_path / "again.md"
+    report.write_text("x", encoding="utf-8")
+    rc, payload, _ = pr.run_flowctl([
+        "finish", "--correlation-id", gate["cid"], "--report", str(report),
+        "--pr-id", "1", "--registry", gate["registry"], "--state",
+        gate["state"], "--json"])
+    assert rc == 2 and payload["verdict"] == "blocked"
+    assert registry_statuses() == [("dev", "closed")]
+    _, fstate = pr.flow_paths()
+    rec = json.loads(fstate.read_text("utf-8"))["runs"][gate["cid"]]
+    assert rec["package_runner"]["commit"] == gate["commit"]
+
+
+@pytest.mark.real_flow_gates
+def test_m16_prepare_reservation_released_on_failure(tmp_path, monkeypatch,
+                                                     capsys):
+    """TC-PR-057 (ревью #214, minor): prepare создал резервацию, затем
+    отказ (rc≠0 / сбой run) — резервация освобождается, повтор не
+    получает ZONE_CONFLICT со своей сиротой."""
+    repo, plan = gated_plan(tmp_path, DEV_STAGE)
+    patch_gated(monkeypatch, tmp_path, ["src/x.py"])
+    real = pr.run_flowctl
+
+    def flaky(argv):
+        rc, payload, err = real(argv)
+        if argv[0] == "run":
+            return 2, {}, "flowctl run: TimeoutExpired: boom"
+        return rc, payload, err
+
+    monkeypatch.setattr(pr, "run_flowctl", flaky)
+    assert pr.cmd_run(plan, dry_run=False) == 2
+    assert "TimeoutExpired" in capsys.readouterr().err
+    assert registry_statuses() == [("dev", "released")]
+    monkeypatch.setattr(pr, "run_flowctl", real)
+    assert pr.cmd_run(plan, dry_run=False) == 0
+    assert registry_statuses() == [("dev", "released"), ("dev", "closed")]
+
+
+@pytest.mark.real_flow_gates
+def test_m17_recheck_blocks_files_after_finish(tmp_path, monkeypatch, capsys):
+    """TC-PR-058 (ревью #214, minor): файл вне зоны, появившийся после
+    приемки (артефакт гейта finish), не попадает в коммит стадии — STOP."""
+    repo, plan = gated_plan(tmp_path, DEV_STAGE)
+    wt, _ = patch_gated(monkeypatch, tmp_path, ["src/x.py"])
+    real_end = pr.gate_end
+
+    def end_then_artifact(gate, worktree, report):
+        res = real_end(gate, worktree, report)
+        (worktree / "gate-cache.txt").write_text("x", encoding="utf-8")
+        return res
+
+    monkeypatch.setattr(pr, "gate_end", end_then_artifact)
+    assert pr.cmd_run(plan, dry_run=False) == 2
+    assert "gate-cache.txt" in capsys.readouterr().err
+    subj = subprocess.run(["git", "-C", str(wt), "log", "-1", "--format=%s"],
+                          capture_output=True, text=True).stdout
+    assert not subj.startswith("[pipeline]")      # коммита стадии нет
+
+
+@pytest.mark.real_flow_gates
+def test_m18_engine_missing_stops_pi_stage(tmp_path, monkeypatch, capsys):
+    """TC-PR-059 (ревью #214, minor): раннер без движка фабрики (копия в
+    проекте без AI_FACTORY_HOME) — pi-стадия STOP FACTORY_ENGINE_MISSING,
+    pi без ворот не запускается."""
+    repo, plan = gated_plan(tmp_path, DEV_STAGE)
+    _, calls = patch_gated(monkeypatch, tmp_path, ["src/x.py"])
+    monkeypatch.setattr(pr, "fc", None)
+    assert pr.cmd_run(plan, dry_run=False) == 2
+    assert "FACTORY_ENGINE_MISSING" in capsys.readouterr().err
+    assert calls == []

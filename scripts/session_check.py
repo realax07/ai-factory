@@ -405,6 +405,19 @@ def git_toplevel(repo: Path) -> str | None:
     return out.strip() if rc == 0 else None
 
 
+def git_main_root(repo: Path) -> str | None:
+    """Корень основного дерева репозитория (общий для всех его worktree):
+    зоны записи принадлежат репозиторию, не дереву — сессия в worktree и
+    делегация в основном клоне делят одно пространство зон."""
+    rc, out, _ = git(repo, "rev-parse", "--path-format=absolute",
+                     "--git-common-dir")
+    if rc == 0 and out.strip():
+        common = Path(out.strip())
+        if common.name == ".git":
+            return str(common.parent)
+    return git_toplevel(repo)
+
+
 def git_branch(repo: Path) -> str | None:
     rc, out, _ = git(repo, "rev-parse", "--abbrev-ref", "HEAD")
     return out.strip() if rc == 0 else None
@@ -511,10 +524,12 @@ def reserve(req: dict, registry_path: Path | str) -> dict:
                 "details": problems, "delegation_id": req.get("delegation_id", "")}
 
     repo = Path(req["repo"])
-    toplevel = git_toplevel(repo)
+    toplevel = git_main_root(repo)
     if toplevel:
         req = dict(req)
-        req["repo"] = toplevel  # канонический repo — base сравнения зон
+        # канонический repo — base сравнения зон: основной клон, даже если
+        # передан путь его worktree (снимок фактов берется из дерева сессии)
+        req["repo"] = toplevel
 
     lock = _acquire_lock(registry_path)
     try:
