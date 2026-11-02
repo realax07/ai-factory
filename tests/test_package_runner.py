@@ -30,6 +30,11 @@ docs/guides/pipeline-manifest.md. Pi в тестах НЕ вызывается �
       AGENTS.md»); Д4 хвост stdout/stderr успешных стадий — в state
       (≤50 строк) и лог <план>.runner.log; Д5 путь state печатается в
       начале и при STOP, чужой state (package/plan) — RUNNER-STOP.
+  (и) J61: нормализация зон runner→guard (glob-хвосты срезаются).
+  (к) J62: stand-стадии (export-парсинг stdout стенда, env → последующие
+      pi/gate стадии, state/resume, НЕ-автоматическое гашение) и
+      вердикт-ворота (verdict: file/contains, «Одобрить», pass/fail/файл
+      отсутствует, негативы валидации).
 """
 from __future__ import annotations
 
@@ -118,7 +123,7 @@ def patch_executors(monkeypatch, repo: Path, pi_calls: list,
         monkeypatch.setattr(pr, "run_shell", shell_fn)
     else:
         monkeypatch.setattr(pr, "run_shell",
-                            lambda cmd, cwd, timeout: (0, "", ""))
+                            lambda cmd, cwd, timeout, stand_env=None: (0, "", ""))
     monkeypatch.setattr(pr, "ensure_worktree",
                         lambda repo_, sid, br: worktree or repo_)
 
@@ -184,7 +189,7 @@ def test_a4_depends_out_of_order_warns_not_stops(tmp_path, monkeypatch,
     plan = write_plan(repo, text, name="PLAN-x.md")
     calls: list = []
 
-    def fake_shell(cmd, cwd, timeout):
+    def fake_shell(cmd, cwd, timeout, stand_env=None):
         calls.append(cmd)
         return 0, "", ""
 
@@ -258,7 +263,7 @@ def test_d1_gate_fail_stop_exit2_no_retry(tmp_path, monkeypatch, capsys):
     pi_calls: list = []
     gate_calls: list = []
 
-    def failing_gate(cmd, cwd, timeout):
+    def failing_gate(cmd, cwd, timeout, stand_env=None):
         gate_calls.append(cmd)
         return 1, "out-line", "gate failed: details"
 
@@ -395,7 +400,7 @@ def test_j3b_timeout_gate_stage_keeps_output(tmp_path, monkeypatch, capsys):
                             "      zones: [src/**]\n"
                             "      gate: python3 check.py\n```\n")
 
-    def slow_gate(cmd, cwd, timeout):
+    def slow_gate(cmd, cwd, timeout, stand_env=None):
         raise subprocess.TimeoutExpired(cmd=cmd, timeout=timeout,
                                         output=b"GATE-PARTIAL\n")
     monkeypatch.setattr(pr, "run_pi",
@@ -415,7 +420,7 @@ def test_j4_stop_survives_journal_failure(tmp_path, monkeypatch, capsys):
                             "    - id: a\n      run: gate:true\n```\n",
                       name="PLAN-x.md")
 
-    def failing_gate(cmd, cwd, timeout):
+    def failing_gate(cmd, cwd, timeout, stand_env=None):
         return 1, "out", "gate failed: details"
 
     def broken_journal(plan_path, line):
@@ -456,7 +461,8 @@ def test_j6_package_hash_suffix_no_collision(tmp_path, monkeypatch):
         seen.append((sid, br))
         return repo_
     monkeypatch.setattr(pr, "ensure_worktree", capture_wt)
-    monkeypatch.setattr(pr, "run_shell", lambda cmd, cwd, t: (0, "", ""))
+    monkeypatch.setattr(pr, "run_shell",
+                        lambda cmd, cwd, t, stand_env=None: (0, "", ""))
     for pkg, sub_name in (("a b", "a_b"), ("a/b", "a_slash_b")):
         sub = tmp_path / sub_name
         sub.mkdir(exist_ok=True)
@@ -508,7 +514,7 @@ def test_j8_cleanup_hint_after_success_only(tmp_path, monkeypatch, capsys):
 
     # STOP: worktree сохраняется, подсказки очистки нет (свежий репо —
     # без resume-состояния первого сценария)
-    def failing_gate(cmd, cwd, timeout):
+    def failing_gate(cmd, cwd, timeout, stand_env=None):
         return 1, "", "boom"
     sub = tmp_path / "stop-proj"
     sub.mkdir(exist_ok=True)
@@ -557,7 +563,7 @@ def test_e1_e2e_real_worktree_brief_env_agents(tmp_path, monkeypatch):
     calls: list = []
     shell_cmds: list = []
 
-    def shell_probe(cmd, cwd, timeout):
+    def shell_probe(cmd, cwd, timeout, stand_env=None):
         shell_cmds.append((cmd, cwd))
         return 0, "", ""
 
@@ -701,7 +707,7 @@ def test_z4_success_output_in_state_and_log(tmp_path, monkeypatch):
     plan = write_plan(repo)
     calls: list = []
 
-    def loud_gate(cmd, cwd, timeout):
+    def loud_gate(cmd, cwd, timeout, stand_env=None):
         return 0, "\n".join(f"out{i}" for i in range(60)), "GATE-ERR detail"
 
     patch_executors(monkeypatch, repo, pi_calls=calls, shell_fn=loud_gate,
@@ -727,7 +733,7 @@ def test_z4b_stop_output_in_state(tmp_path, monkeypatch):
     """TC-PR-025b (Д4): при STOP хвост вывода тоже в state-записи стадии."""
     repo = make_repo(tmp_path)
 
-    def failing_gate(cmd, cwd, timeout):
+    def failing_gate(cmd, cwd, timeout, stand_env=None):
         return 1, "g-out", "gate failed: boom"
     patch_executors(monkeypatch, repo, pi_calls=[], shell_fn=failing_gate,
                     worktree=repo)
@@ -755,7 +761,7 @@ def test_z5_state_path_printed_run_and_stop(tmp_path, monkeypatch, capsys):
     spath = repo / "PLAN-x.md.runner-state.json"
     assert f"RUNNER: state: {spath}" in capsys.readouterr().out
 
-    def failing_gate(cmd, cwd, timeout):
+    def failing_gate(cmd, cwd, timeout, stand_env=None):
         return 1, "", "boom"
     sub = tmp_path / "stop-proj"
     sub.mkdir(exist_ok=True)
@@ -847,3 +853,304 @@ def test_j61_zone_glob_normalized_in_env(tmp_path, monkeypatch):
     # только в env
     brief = calls[0]["args"][calls[0]["args"].index("-p") + 1]
     assert "services/images/**" in brief
+
+
+# --------------- (к) J62: stand-стадии и вердикт-ворота раннера
+
+
+def test_k1_parse_stand_env_mock_stdout():
+    """TC-PR-028 (J62): parse_stand_env — строки «export VAR=value» из stdout
+    стенда (мок stdout, формат scripts/qa_stand_up.sh): ведущие пробелы,
+    кавычки, мусор без export игнорируется."""
+    stdout = (
+        "==> Схема + seed\n"
+        "[OK] nginx-конф отрендерен\n"
+        "  export EKOTOV_WIKI_BASE_URL=http://127.0.0.1:18443\n"
+        "  export EKOTOV_WIKI_DB_PATH=/tmp/qa-stand/app.db\n"
+        "\texported_not_a_var=1\n"
+        "export QUOTED=\"http://h:1\"\n"
+        "export SINGLE='x y'\n"
+        "echo export not_at_line_start=0\n"
+    )
+    env = pr.parse_stand_env(stdout)
+    assert env == {
+        "EKOTOV_WIKI_BASE_URL": "http://127.0.0.1:18443",
+        "EKOTOV_WIKI_DB_PATH": "/tmp/qa-stand/app.db",
+        "QUOTED": "http://h:1",
+        "SINGLE": "x y",
+    }
+    assert pr.parse_stand_env("никаких export здесь нет") == {}
+    assert pr.parse_stand_env("") == {}
+
+
+STAND_MANIFEST = """\
+# PLAN-x
+
+```yaml
+pipeline:
+  package: stand-pkg
+  flow: 1
+  stages:
+    - id: stand-up
+      run: stand:bash scripts/qa_stand_up.sh reset
+    - id: impl
+      run: pi:dev
+      zones: [backend/**]
+    - id: check
+      run: gate:python3 -m pytest tests/api -q
+```
+"""
+
+
+def test_k2_stand_exports_env_to_subsequent_stages(tmp_path, monkeypatch):
+    """TC-PR-029 (J62): stand-стадия — stdout парсится (export VAR=value),
+    env сохраняется в state и прокидывается во все последующие pi/gate
+    стадии; сам stand выполняется в worktree."""
+    repo = make_repo(tmp_path)
+    plan = write_plan(repo, STAND_MANIFEST, name="PLAN-x.md")
+    calls: list = []
+    shell_calls: list = []
+
+    def fake_shell(cmd, cwd, timeout, stand_env=None):
+        shell_calls.append({"cmd": cmd, "cwd": cwd, "stand_env": stand_env})
+        if cmd.startswith("bash scripts/qa_stand_up.sh"):
+            return 0, ("  export EKOTOV_WIKI_BASE_URL=http://127.0.0.1:18443\n"
+                       "  export EKOTOV_WIKI_DB_PATH=/tmp/qa-stand/app.db\n"), ""
+        return 0, "", ""
+
+    monkeypatch.setattr(pr, "run_shell", fake_shell)
+    monkeypatch.setattr(pr, "run_pi",
+                        lambda args, cwd, env, timeout:
+                        calls.append({"env": env}) or (0, "", ""))
+    monkeypatch.setattr(pr, "ensure_worktree", lambda repo_, sid, br: repo_)
+    assert pr.cmd_run(plan, dry_run=False) == 0
+    # stand — в worktree, без stand_env
+    assert shell_calls[0]["cmd"] == "bash scripts/qa_stand_up.sh reset"
+    assert shell_calls[0]["cwd"] == repo
+    assert shell_calls[0]["stand_env"] is None
+    # gate-стадия получила env стенда
+    gate_env_seen = shell_calls[1]["stand_env"]
+    assert gate_env_seen["EKOTOV_WIKI_BASE_URL"] == "http://127.0.0.1:18443"
+    assert gate_env_seen["EKOTOV_WIKI_DB_PATH"] == "/tmp/qa-stand/app.db"
+    # pi-стадия получила env стенда (и зоны не сломаны)
+    assert calls[0]["env"]["EKOTOV_WIKI_BASE_URL"] == "http://127.0.0.1:18443"
+    assert calls[0]["env"]["PI_ZONE_WRITE"] == "backend"
+    # env стенда сохранен в state (resume)
+    state = json.loads((repo / "PLAN-x.md.runner-state.json").read_text("utf-8"))
+    assert state["stand_env"] == gate_env_seen
+    assert state["stages"]["stand-up"]["status"] == "done"
+    assert "stand ok:" in state["stages"]["stand-up"]["detail"]
+    # журнал плана содержит stand-стадию
+    assert "stand:bash scripts/qa_stand_up.sh reset | ok" in \
+        plan.read_text("utf-8")
+
+
+def test_k2b_stand_teardown_not_automatic_hint(tmp_path, monkeypatch, capsys):
+    """TC-PR-029b (J62): после «докатан» — напоминание, что стенд НЕ гасится
+    автоматически (reaper/gc подберет сироту); в манифесте без stand — нет."""
+    repo = make_repo(tmp_path)
+    plan = write_plan(repo, STAND_MANIFEST, name="PLAN-x.md")
+    monkeypatch.setattr(pr, "run_shell",
+                        lambda cmd, cwd, timeout, stand_env=None:
+                        (0, "export EKOTOV_WIKI_BASE_URL=http://s:1\n", "")
+                        if cmd.startswith("bash scripts/qa_stand_up.sh")
+                        else (0, "", ""))
+    monkeypatch.setattr(pr, "run_pi",
+                        lambda args, cwd, env, timeout: (0, "", ""))
+    monkeypatch.setattr(pr, "ensure_worktree", lambda repo_, sid, br: repo_)
+    assert pr.cmd_run(plan, dry_run=False) == 0
+    out = capsys.readouterr().out
+    assert "НЕ выполняется автоматически" in out and "stand_reaper" in out
+
+
+def test_k3_stand_without_exports_stops(tmp_path, monkeypatch, capsys):
+    """TC-PR-030 (J62, негатив): stand-стадия без export в stdout — STOP
+    exit 2 (стенд не отчитался env); последующие стадии не исполняются."""
+    repo = make_repo(tmp_path)
+    plan = write_plan(repo, STAND_MANIFEST, name="PLAN-x.md")
+    pi_calls: list = []
+
+    def silent_stand(cmd, cwd, timeout, stand_env=None):
+        return 0, "стенд поднят (без export)\n", ""
+
+    monkeypatch.setattr(pr, "run_shell", silent_stand)
+    monkeypatch.setattr(pr, "run_pi", fake_pi(pi_calls))
+    monkeypatch.setattr(pr, "ensure_worktree", lambda repo_, sid, br: repo_)
+    assert pr.cmd_run(plan, dry_run=False) == 2
+    err = capsys.readouterr().err
+    assert "STOP" in err and "export" in err
+    state = json.loads((repo / "PLAN-x.md.runner-state.json").read_text("utf-8"))
+    assert state["stages"]["stand-up"]["status"] == "stopped"
+    assert pi_calls == []  # до pi дело не дошло
+
+
+def test_k3b_stand_fail_stops(tmp_path, monkeypatch, capsys):
+    """TC-PR-030b (J62, негатив): ненулевой exit stand — STOP exit 2."""
+    repo = make_repo(tmp_path)
+    plan = write_plan(repo, STAND_MANIFEST, name="PLAN-x.md")
+
+    def failing_stand(cmd, cwd, timeout, stand_env=None):
+        return 3, "", "stand: контур неполон"
+    monkeypatch.setattr(pr, "run_shell", failing_stand)
+    monkeypatch.setattr(pr, "ensure_worktree", lambda repo_, sid, br: repo_)
+    assert pr.cmd_run(plan, dry_run=False) == 2
+    assert "stand exit 3" in capsys.readouterr().err
+
+
+def test_k3c_stand_resume_keeps_env(tmp_path, monkeypatch, capsys):
+    """TC-PR-030c (J62): resume — stand_env из state докатывается в
+    последующие стадии без переисполнения stand-стадии."""
+    repo = make_repo(tmp_path)
+    plan = write_plan(repo, STAND_MANIFEST, name="PLAN-x.md")
+    stand_runs: list = []
+
+    def counting_stand(cmd, cwd, timeout, stand_env=None):
+        if cmd.startswith("bash scripts/qa_stand_up.sh"):
+            stand_runs.append(cmd)
+            return 0, "export EKOTOV_WIKI_BASE_URL=http://s:1\n", ""
+        return 0, "", ""
+    monkeypatch.setattr(pr, "run_shell", counting_stand)
+    monkeypatch.setattr(pr, "run_pi",
+                        lambda args, cwd, env, timeout: (0, "", ""))
+    monkeypatch.setattr(pr, "ensure_worktree", lambda repo_, sid, br: repo_)
+    # Первый прогон обрывается на gate-стадии (флаг одного сбоя)
+    gate_failed = {"once": False}
+
+    def gate_fail_first_run_only(cmd, cwd, timeout, stand_env=None):
+        if cmd.startswith("bash scripts/qa_stand_up.sh"):
+            return counting_stand(cmd, cwd, timeout)
+        if not gate_failed["once"]:
+            gate_failed["once"] = True
+            return 1, "", "gate boom"
+        return 0, "", ""
+    monkeypatch.setattr(pr, "run_shell", gate_fail_first_run_only)
+    assert pr.cmd_run(plan, dry_run=False) == 2
+    assert len(stand_runs) == 1
+    # resume: stand не переисполняется, gate повторно получает env стенда
+    monkeypatch.setattr(pr, "run_shell", counting_stand)
+    assert pr.cmd_run(plan, dry_run=False) == 0
+    assert len(stand_runs) == 1  # stand НЕ переисполнялся
+    out = capsys.readouterr().out
+    assert "уже выполнен" in out and "докатан" in out
+
+
+VERDICT_MANIFEST = """\
+# PLAN-x
+
+```yaml
+pipeline:
+  package: verdict-pkg
+  flow: 1
+  stages:
+    - id: review
+      run: pi:code-reviewer
+      zones: [test-model/reviews/**]
+      verdict:
+        file: test-model/reviews/c9/review-001.md
+        contains: "Одобрить"
+    - id: next
+      run: gate:true
+```
+"""
+
+
+def test_k4_verdict_gate_pass(tmp_path, monkeypatch, capsys):
+    """TC-PR-031 (J62): вердикт-ворота pass — pi написал файл с маркером
+    «Одобрить», пакет докатан."""
+    repo = make_repo(tmp_path)
+    plan = write_plan(repo, VERDICT_MANIFEST, name="PLAN-x.md")
+
+    def pi_writes_verdict(args, cwd, env, timeout):
+        vf = cwd / "test-model/reviews/c9/review-001.md"
+        vf.parent.mkdir(parents=True, exist_ok=True)
+        vf.write_text("## Ревью\n\n## Вердикт: Одобрить\n", encoding="utf-8")
+        return 0, "", ""
+    monkeypatch.setattr(pr, "run_pi", pi_writes_verdict)
+    monkeypatch.setattr(pr, "run_shell",
+                        lambda cmd, cwd, timeout, stand_env=None: (0, "", ""))
+    monkeypatch.setattr(pr, "ensure_worktree", lambda repo_, sid, br: repo_)
+    assert pr.cmd_run(plan, dry_run=False) == 0
+    assert "докатан" in capsys.readouterr().out
+
+
+def test_k4b_verdict_gate_fail_stop(tmp_path, monkeypatch, capsys):
+    """TC-PR-032 (J62): вердикт-ворота fail — маркера нет → STOP exit 2
+    «ЖДУ ПМ: возврат ревью», next-стадия не исполняется, stage stopped."""
+    repo = make_repo(tmp_path)
+    plan = write_plan(repo, VERDICT_MANIFEST, name="PLAN-x.md")
+
+    def pi_writes_return(args, cwd, env, timeout):
+        vf = cwd / "test-model/reviews/c9/review-001.md"
+        vf.parent.mkdir(parents=True, exist_ok=True)
+        vf.write_text("## Вердикт: Вернуть\n", encoding="utf-8")
+        return 0, "", ""
+    monkeypatch.setattr(pr, "run_pi", pi_writes_return)
+    monkeypatch.setattr(pr, "run_shell",
+                        lambda cmd, cwd, timeout, stand_env=None: (0, "", ""))
+    monkeypatch.setattr(pr, "ensure_worktree", lambda repo_, sid, br: repo_)
+    assert pr.cmd_run(plan, dry_run=False) == 2
+    err = capsys.readouterr().err
+    assert "ЖДУ ПМ: возврат ревью" in err
+    assert "маркер 'Одобрить' не найден" in err
+    state = json.loads((repo / "PLAN-x.md.runner-state.json").read_text("utf-8"))
+    assert state["stages"]["review"]["status"] == "stopped"
+    assert "next" not in state["stages"]
+
+
+def test_k4c_verdict_file_missing_stops(tmp_path, monkeypatch, capsys):
+    """TC-PR-032b (J62, негатив): файл вердикта не создан — STOP
+    «ЖДУ ПМ: возврат ревью» (прозаический вердикт «по памяти» не проходит)."""
+    repo = make_repo(tmp_path)
+    plan = write_plan(repo, VERDICT_MANIFEST, name="PLAN-x.md")
+    monkeypatch.setattr(pr, "run_pi",
+                        lambda args, cwd, env, timeout: (0, "", ""))
+    monkeypatch.setattr(pr, "run_shell",
+                        lambda cmd, cwd, timeout, stand_env=None: (0, "", ""))
+    monkeypatch.setattr(pr, "ensure_worktree", lambda repo_, sid, br: repo_)
+    assert pr.cmd_run(plan, dry_run=False) == 2
+    err = capsys.readouterr().err
+    assert "ЖДУ ПМ: возврат ревью" in err and "не читается" in err
+
+
+def test_k4d_verdict_gate_on_gate_stage(tmp_path, monkeypatch, capsys):
+    """TC-PR-033 (J62): вердикт-ворота на gate-стадии — тоже работают."""
+    text = VERDICT_MANIFEST.replace(
+        "    - id: review\n      run: pi:code-reviewer\n"
+        "      zones: [test-model/reviews/**]\n",
+        "    - id: review\n      run: gate:bash make-review.sh\n")
+    repo = make_repo(tmp_path)
+    plan = write_plan(repo, text, name="PLAN-x.md")
+
+    def gate_writes_verdict(cmd, cwd, timeout, stand_env=None):
+        vf = cwd / "test-model/reviews/c9/review-001.md"
+        vf.parent.mkdir(parents=True, exist_ok=True)
+        vf.write_text("## Вердикт: Одобрить\n", encoding="utf-8")
+        return 0, "", ""
+    monkeypatch.setattr(pr, "run_pi",
+                        lambda args, cwd, env, timeout: (0, "", ""))
+    monkeypatch.setattr(pr, "run_shell", gate_writes_verdict)
+    monkeypatch.setattr(pr, "ensure_worktree", lambda repo_, sid, br: repo_)
+    assert pr.cmd_run(plan, dry_run=False) == 0
+    assert "докатан" in capsys.readouterr().out
+
+
+def test_k5_verdict_validation_negatives():
+    """TC-PR-034 (J62, негативы): verdict не отображение / без file /
+    без contains — ManifestError; валидный verdict нормализуется."""
+    base = ("# PLAN-x\n\n```yaml\npipeline:\n  package: p\n  flow: 1\n"
+            "  stages:\n    - id: a\n      run: gate:true\n")
+    with pytest.raises(pr.ManifestError):
+        pr.parse_manifest(write_tmp_plan(base + "      verdict: approved\n```\n"))
+    with pytest.raises(pr.ManifestError):
+        pr.parse_manifest(write_tmp_plan(
+            base + "      verdict:\n        contains: \"Одобрить\"\n```\n"))
+    with pytest.raises(pr.ManifestError):
+        pr.parse_manifest(write_tmp_plan(
+            base + "      verdict:\n        file: review.md\n```\n"))
+    m = pr.parse_manifest(write_tmp_plan(
+        base + "      verdict:\n        file: r.md\n"
+               "        contains: \"Одобрить\"\n```\n"))
+    assert m["stages"][0]["verdict"] == {"file": "r.md", "contains": "Одобрить"}
+    # без verdict — None (обратная совместимость)
+    m2 = pr.parse_manifest(write_tmp_plan(VALID))
+    assert m2["stages"][0]["verdict"] is None
