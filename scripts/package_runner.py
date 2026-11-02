@@ -1139,9 +1139,16 @@ def shelve_attempt(worktree: Path, base_sha: str, label: str) -> str:
     дереве следующей стадии и не удаляются молча. Возвращает пометку."""
     head = _git_head(worktree)
     if base_sha and head and head != base_sha:
-        subprocess.run(["git", "-C", str(worktree), "reset", "-q", "--soft",
-                        base_sha], capture_output=True, text=True)
-    excludes = [f":(exclude){p}" for p in COMMIT_EXCLUDE]
+        reset = subprocess.run(["git", "-C", str(worktree), "reset", "-q",
+                                "--soft", base_sha],
+                               capture_output=True, text=True)
+        if reset.returncode != 0:
+            # Коммиты агента остались бы в ветке пакета без сверки зоны.
+            raise RunnerStop(f"изменения попытки не отложены (git reset "
+                             f"--soft {base_sha[:12]}): "
+                             f"{reset.stderr.strip() or reset.stdout.strip()}")
+    excludes = [f":(exclude){p}"
+                for p in (*COMMIT_EXCLUDE, "AGENTS.pi.md")]
     proc = subprocess.run(
         ["git", "-C", str(worktree), "stash", "push", "-u", "-m", label,
          "--", ".", *excludes], capture_output=True, text=True)
@@ -1428,10 +1435,16 @@ def cmd_run(plan_path: Path, dry_run: bool) -> int:
             в git stash, зона освобождается, skipped; обязательная — STOP,
             дерево и зона держатся до разбора ПМ/resume."""
             if stage.get("optional"):
-                shelf = shelve_attempt(
-                    worktree, gate.get("base_sha", ""),
-                    f"package_runner: {manifest['package']}/{stage['id']} "
-                    f"попытка {gate['attempt']} (optional skipped)")
+                agents_file.unlink(missing_ok=True)  # файл раннера — не в stash
+                try:
+                    shelf = shelve_attempt(
+                        worktree, gate.get("base_sha", ""),
+                        f"package_runner: {manifest['package']}/{stage['id']} "
+                        f"попытка {gate['attempt']} (optional skipped)")
+                except RunnerStop as exc:
+                    state_write(spath, state)
+                    return _stop(stage, f"{detail}; {exc}", exit_code,
+                                 stdout, stderr)
                 gate["shelved"] = shelf
                 gate_abandon(gate, f"optional skipped: {detail}")
                 gate["open"] = False
