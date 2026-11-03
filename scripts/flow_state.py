@@ -46,7 +46,7 @@ CHANGE_ID_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)+$")
 BUG_ID_RE = re.compile(r"^BUG-\d{3}$", re.IGNORECASE)
 # Флоу 4 (обслуживание): scope — `chore` или kebab-slug пакета (план
 # PLAN-<slug>.md, J43.1; решение Заказчика 2026-11-03, J64.3).
-CHORE_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$", re.IGNORECASE)
+CHORE_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 
 # Флоу 1 — kebab-case change-id; Флоу 2/3 — BUG-NNN; Флоу 4 — [chore];
 # Флоу 5 — экспресс-режим: идентификатор change + evidence ретроспективных
@@ -55,7 +55,7 @@ FLOW_EXPECTATIONS = {
     1: "kebab-case change-id (openspec/changes/<id>/)",
     2: "BUG-NNN (test-model/bugs/)",
     3: "BUG-NNN (test-model/bugs/)",
-    4: "[chore] (обслуживание, спека не меняется)",
+    4: "chore или kebab-slug пакета (обслуживание, спека не меняется)",
     5: "change-id + ретроспективные артефакты (requirements/спека/кейсы)",
 }
 

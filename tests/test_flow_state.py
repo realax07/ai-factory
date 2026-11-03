@@ -433,3 +433,13 @@ class TestCLI:
         assert r.returncode == 1
         s = json.loads(r.stdout)
         assert any(p["code"] == "PATH_OUTSIDE_REPO" for p in s["problems"])
+
+
+def test_j64_3_flow4_scope_case_sensitive(tmp_path):
+    """J64.3 (ревью): scope Флоу 4 — строчный kebab (план PLAN-<slug>.md
+    на Linux регистрозависим): `Chore-X`, `BUG-001` — FLOW_ID_INVALID."""
+    repo = make_repo(tmp_path)
+    reg = registry_file(tmp_path, '{"sessions": []}')
+    for bad in ("Chore-X", "BUG-001"):
+        s = inspect_json(repo, registry=reg, flow=4, change_id=bad)
+        assert any(p["code"] == "FLOW_ID_INVALID" for p in s["problems"]), bad

@@ -211,7 +211,7 @@ def main() -> int:
     ps.add_argument("--repo", default=".")
     ps.add_argument("--project", required=True)
     ps.add_argument("--flow", type=int, required=True, choices=[1, 2, 3, 4, 5])
-    ps.add_argument("--change", required=True)  # Флоу 4: ровно "chore"
+    ps.add_argument("--change", required=True)  # Флоу 4: chore или kebab-slug
     ps.add_argument("--task")
     ps.add_argument("--action")   # dev_task/review_task/ops_task/...
     ps.add_argument("--role")

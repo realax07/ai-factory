@@ -224,6 +224,21 @@ class TestFlow4PlanGate:
         assert not has_code(d, ft.AMBIGUOUS_STATE)  # J64.3: slug — валидный scope
         assert d.status == "ALLOW", d.details
 
+    def test_foreign_flow_plan_does_not_open_gate(self, tmp_path):
+        """J64.3 (ревью): scope Флоу 4 совпадает по форме с change-id Флоу 1 —
+        план, объявляющий другой флоу, план-ворота Флоу 4 не закрывает."""
+        repo = self._chore_repo(tmp_path, with_plan=False)
+        write(repo, "PLAN-add-widget.md",
+              "# PLAN-add-widget\n\n**Флоу: 1** — фича.\n")
+        commit_all(repo)
+        reg = make_registry(tmp_path)
+        d = ft.check_action(snapshot_for(repo, reg, flow=4,
+                                         change_id="add-widget"),
+                            act(requested_action="chore_task",
+                                paths=("scripts/*",)))
+        assert has_code(d, ft.PLAN_FLOW_UNDECLARED)
+        assert d.status != "ALLOW"
+
     def test_missing_plan_deny(self, tmp_path):
         """TC-J431-008: J43.1 flow-aware."""
         repo = self._chore_repo(tmp_path, with_plan=False)

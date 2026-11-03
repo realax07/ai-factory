@@ -372,12 +372,22 @@ def _plan_release(snapshot: dict, ctx: dict) -> list:
             continue
         ctx["evidence"].add(str(path))
         text = path.read_text(encoding="utf-8", errors="replace")
-        if not PLAN_FLOW_RE.search(text):
+        declared = {int(m) for m in PLAN_FLOW_RE.findall(text)}
+        if not declared:
             return [Finding(
                 PLAN_FLOW_UNDECLARED,
                 f"план релиза {path.name} не объявляет воркфлоу — нужна строка "
                 f"«Флоу: N» (N 1–5, допускается **жирное**) (J41; правило "
                 f"фабрики: план фиксирует, по какой схеме релиз ведется)")]
+        if flow not in declared:
+            # J64.3: scope Флоу 4 (kebab-slug) совпадает по форме с change-id
+            # Флоу 1 — план чужого флоу не закрывает план-ворота этого.
+            return [Finding(
+                PLAN_FLOW_UNDECLARED,
+                f"план релиза {path.name} объявляет Флоу "
+                f"{', '.join(map(str, sorted(declared)))}, запрошен Флоу "
+                f"{flow} — план чужого воркфлоу не закрывает ворота (J41; "
+                f"J64.3)")]
         return []
     return [Finding(
         PLAN_RELEASE_MISSING,
