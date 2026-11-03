@@ -110,6 +110,7 @@ import gate_runner as gr  # noqa: E402
 import pm_bounds_check as pmb  # noqa: E402  (Н14: J3-префиксы защищенных путей)
 import role_zone_policy as rzp  # noqa: E402
 import session_check as sc  # noqa: E402
+import factory_paths as fp  # noqa: E402  (J64.5: пути машины — только оттуда)
 
 OUTPUT_SCHEMA = "flowctl-output/1"
 STATE_SCHEMA = "flowctl-state/1"
@@ -301,7 +302,7 @@ def state_write_locked(path: Path, data: dict, mutate) -> None:
 
 def default_state_path(registry: str | None) -> Path:
     base = Path(registry) if registry else (
-        Path.home() / ".hermes" / "state" / "active_sessions.json"
+        fp.registry_path()
     )
     return base.parent / "flowctl_state.json"
 
@@ -571,7 +572,7 @@ def cmd_prepare(args) -> int:
         print(f"FLOWCTL-ERROR: не git-репозиторий: {repo}", file=sys.stderr)
         return 2
     registry_path = Path(args.registry) if args.registry else (
-        Path.home() / ".hermes" / "state" / "active_sessions.json")
+        fp.registry_path())
     correlation = args.correlation_id or uuid.uuid4().hex
     delegation_id = f"deleg-{correlation[:16]}"
 
@@ -1585,7 +1586,7 @@ def cmd_status(args) -> int:
     runs = [r for cid, r in sorted(state["runs"].items())
             if not args.correlation_id or cid == args.correlation_id]
     registry_path = Path(args.registry) if args.registry else (
-        Path.home() / ".hermes" / "state" / "active_sessions.json")
+        fp.registry_path())
     reg = sc.status(registry_path)
     _emit({
         "schema_version": OUTPUT_SCHEMA, "command": "status",
@@ -1606,7 +1607,7 @@ def cmd_status(args) -> int:
 
 def cmd_reconcile(args) -> int:
     registry_path = Path(args.registry) if args.registry else (
-        Path.home() / ".hermes" / "state" / "active_sessions.json")
+        fp.registry_path())
     state_path = Path(args.state) if args.state else default_state_path(
         args.registry)
     res = sc.reconcile(
@@ -1684,7 +1685,7 @@ def cmd_release(args) -> int:
         return 2
     reason = (args.reason or "").strip() or RELEASE_DEFAULT_REASON
     registry_path = Path(args.registry) if args.registry else (
-        Path.home() / ".hermes" / "state" / "active_sessions.json")
+        fp.registry_path())
     state_path = Path(args.state) if args.state else default_state_path(
         args.registry)
     state = state_load(state_path)
@@ -2427,7 +2428,7 @@ def cmd_integrate(args) -> int:
         print(f"FLOWCTL-ERROR: не git-репозиторий: {repo}", file=sys.stderr)
         return 2
     registry_path = Path(args.registry).expanduser() if args.registry else (
-        Path.home() / ".hermes" / "state" / "active_sessions.json")
+        fp.registry_path())
     data, err = sc.registry_load(registry_path)
     if err:
         # fail-closed: не умеем проверить отсутствие активных сессий —
@@ -2822,7 +2823,7 @@ def gc_plan(args) -> dict:
 
     # 2) Worktrees: done/closed-сессии реестра → снос; остальные — список.
     registry_path = Path(args.registry).expanduser() if args.registry else (
-        Path.home() / ".hermes" / "state" / "active_sessions.json")
+        fp.registry_path())
     remove_wt: list[dict] = []
     list_only: list[dict] = []
     wt_note = ""

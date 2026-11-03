@@ -13,9 +13,10 @@ import re
 import sys
 import time
 from pathlib import Path
+import factory_paths as fp  # noqa: E402  (J64.5: пути машины — только оттуда)
 
-LOG = Path("/home/openclaw/.hermes/logs/errors.log")
-STATE = Path("/home/openclaw/.hermes/state/chat-degrade-watchdog.json")
+LOG = fp.hermes_home() / "logs" / "errors.log"
+STATE = fp.state_dir() / "chat-degrade-watchdog.json"
 # Clean EOF (сервер молча закрыл поток) — транзиторный само-ретраящийся сбой
 # вызовов сабагентов, НЕ деградация чата: не алертим. Настоящий сигнал —
 # runaway repetition (зацикливание модели на длинном контексте) и Stream cut.

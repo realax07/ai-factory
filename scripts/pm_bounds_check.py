@@ -40,6 +40,7 @@ import re
 import subprocess
 import sys
 from pathlib import Path
+import factory_paths as fp  # noqa: E402  (J64.5: пути машины — только оттуда)
 
 FACTORY = Path(__file__).resolve().parent.parent
 
@@ -184,7 +185,7 @@ def load_pm_projects(sessions_path: Path) -> tuple[set[str], list[str]]:
         project = s.get("project", "")
         if not project or project == CONVEYOR_PROJECT:
             continue
-        candidate = Path.home() / project
+        candidate = fp.projects_root() / project
         if candidate.is_dir() and (candidate / ".git").exists():
             repos.add(str(candidate))
     return repos, problems
@@ -292,7 +293,7 @@ def main() -> int:
     ap.add_argument("--repo", default=str(FACTORY), help="git-репозиторий для --commits")
     ap.add_argument("--commits", help="коммит(ы) через запятую")
     ap.add_argument("--sessions", nargs="?", const=str(
-        Path.home() / ".hermes/state/active_sessions.json"),
+        fp.registry_path()),
         help="путь к active_sessions.json")
     ap.add_argument("--product-commits", metavar="RANGE",
         help="git-диапазон (например origin/main..main или A..B) в продуктовом "
@@ -322,7 +323,7 @@ def main() -> int:
             require_review=args.require_review)
     if args.all_projects:
         sessions_path = Path(args.sessions).expanduser() if args.sessions else (
-            Path.home() / ".hermes/state/active_sessions.json")
+            fp.registry_path())
         repos, registry_problems = load_pm_projects(sessions_path)
         if not args.sessions:
             # при явном --sessions реестр уже проверен выше — не дублируем

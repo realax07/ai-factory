@@ -24,7 +24,10 @@ import json
 import sys
 from pathlib import Path
 
-DEFAULT_FILES = ("flow_check.py", "pr_validate.py", "impact_rules.json")
+# J64.5: factory_paths.py — модуль путей, который импортируют flow_check/
+# pr_validate (без него они берут запасной дефолт — сверяем, чтобы видеть).
+DEFAULT_FILES = ("flow_check.py", "pr_validate.py", "impact_rules.json",
+                 "factory_paths.py")
 FACTORY_REL_SCRIPTS = "scripts"
 
 

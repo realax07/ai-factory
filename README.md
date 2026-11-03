@@ -35,6 +35,24 @@ python3 scripts/factory_bootstrap.py            # окружение + state + �
 
 Bootstrap: проверяет окружение (python ≥ 3.10, git, npx для openspec), создает state-каталоги (`~/.hermes/state/`, реестр, `flow_mode.json` с **дефолтом shadow**), ставит крон вотчдога (session_watchdog */2 + delegate_watchdog */5), гоняет приемочные тесты (990). Секреты НЕ переносит — кладутся вручную в `~/.hermes/.env`. Режим enforcing включается явно (`flow_mode.py set enforcing`), после shadow-прогона. Подсказку по плагину flow-enforcer (J43) ставит factory_init (см. ниже).
 
+### Пути машины (J64.5)
+
+Все пути машины вычисляет `scripts/factory_paths.py` — переезд фабрики на
+другую машину/пользователя = переменные окружения, не правка скриптов.
+Текущие значения: `python3 scripts/factory_paths.py`.
+
+| env | Что | Дефолт |
+|---|---|---|
+| `AF_STATE_DIR` | память движка ворот: реестр сессий, flowctl_state, flow_mode, инциденты (от `HERMES_HOME` не зависит) | `~/.hermes/state` |
+| `HERMES_HOME` | данные исполнителя Hermes: state.db, sessions, кеш делегаций, логи | `~/.hermes` |
+| `AI_FACTORY_HOME` | репозиторий фабрики | `~/ai-factory` |
+| `AF_PROJECTS_ROOT` | каталог проектов (`<root>/<project>`) | `~` |
+| `PI_AGENT_DIR` | конфиг Pi (models.json, extensions/zone-guard.ts) | `~/.pi/agent` |
+
+Точечные переопределения прежних версий работают как раньше
+(`FLOW_MODE_FILE`, `FLOW_ENFORCER_STATE_DIR`, `FLOW_ENFORCER_REGISTRY`,
+`PIPELINE_FLOW_REGISTRY` / `PIPELINE_FLOW_STATE`).
+
 ### Настройка GitHub (вручную, один раз на репозиторий)
 
 Обязательная часть установки — без этого внешний контур не замкнут (машина честно рапортует `external_enforcement: UNKNOWN`):
