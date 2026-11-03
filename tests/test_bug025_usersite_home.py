@@ -16,7 +16,8 @@ PYTHONUSERBASE; HOME и HERMES_HOME по-прежнему временные.
   TC-BUG-025-002  изоляция сохранена: HOME subprocess — временный, не реальный
   TC-BUG-025-003  subprocess `python -m pytest --version` запускается (rc 0)
   TC-BUG-025-004  pytest_unconfigure восстанавливает PYTHONUSERBASE
-                  (не заданный до сьюта — снимается, заданный — прежний)
+                  (не заданный до сьюта — снимается, заданный — прежний;
+                  пустая строка трактуется как «не задано»)
 """
 from __future__ import annotations
 
@@ -55,7 +56,9 @@ def test_home_isolation_kept(request):
 
 def test_subprocess_pytest_starts():
     """TC-BUG-025-003: прямой симптом — `python -m pytest` в subprocess
-    импортирует свои зависимости."""
+    импортирует свои зависимости. Информативен только там, где pytest стоит
+    в user-site (VPS); в CI и venv зеленый и без фикса — дефект там ловит
+    TC-BUG-025-001."""
     proc = subprocess.run([sys.executable, "-m", "pytest", "--version"],
                           capture_output=True, text=True, env=os.environ.copy())
     assert proc.returncode == 0, proc.stderr
@@ -73,17 +76,23 @@ def test_unconfigure_restores_userbase(monkeypatch, tmp_path):
     mod = _load_conftest()
     monkeypatch.setenv("HOME", str(tmp_path / "real"))
 
+    def cycle(expected_during):
+        cfg = types.SimpleNamespace()
+        mod.pytest_configure(cfg)
+        try:
+            assert os.environ["PYTHONUSERBASE"] == expected_during
+        finally:  # unconfigure удаляет временный HOME даже при падении assert
+            mod.pytest_unconfigure(cfg)
+
     monkeypatch.delenv("PYTHONUSERBASE", raising=False)
-    cfg = types.SimpleNamespace()
-    mod.pytest_configure(cfg)
-    assert os.environ["PYTHONUSERBASE"] == site.getuserbase()
-    mod.pytest_unconfigure(cfg)
+    cycle(site.getuserbase())
     assert "PYTHONUSERBASE" not in os.environ
     assert os.environ["HOME"] == str(tmp_path / "real")
 
+    monkeypatch.setenv("PYTHONUSERBASE", "")  # пустое = не задано
+    cycle(site.getuserbase())
+    assert os.environ["PYTHONUSERBASE"] == ""
+
     monkeypatch.setenv("PYTHONUSERBASE", str(tmp_path / "ub"))
-    cfg = types.SimpleNamespace()
-    mod.pytest_configure(cfg)
-    assert os.environ["PYTHONUSERBASE"] == str(tmp_path / "ub")
-    mod.pytest_unconfigure(cfg)
+    cycle(str(tmp_path / "ub"))
     assert os.environ["PYTHONUSERBASE"] == str(tmp_path / "ub")

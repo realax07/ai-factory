@@ -124,7 +124,8 @@ def pytest_configure(config):
     config._factory_home = (home, os.environ.get("HOME"),
                             os.environ.get("HERMES_HOME"),
                             os.environ.get("PYTHONUSERBASE"))
-    os.environ.setdefault("PYTHONUSERBASE", site.getuserbase())
+    if not os.environ.get("PYTHONUSERBASE"):  # "" Python считает «не задано»
+        os.environ["PYTHONUSERBASE"] = site.getuserbase()
     os.environ["HOME"] = str(home)
     os.environ["HERMES_HOME"] = str(home / ".hermes")
 

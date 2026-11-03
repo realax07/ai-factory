@@ -28,7 +28,7 @@ J64.2 (PR #217) подменяет HOME и HERMES_HOME на временный �
 
 `tests/conftest.py`, `pytest_configure`: до подмены HOME реальный user base
 (`site.getuserbase()`) фиксируется в `PYTHONUSERBASE` (если переменная уже
-задана — не трогается); `pytest_unconfigure` восстанавливает прежнее
+задана непустой — не трогается); `pytest_unconfigure` восстанавливает прежнее
 значение. HOME и HERMES_HOME остаются временными — изоляция state не
 меняется.
 
