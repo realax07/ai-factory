@@ -15,10 +15,25 @@ tmp_path ДО коммита репо. Файл печатает маркер в
 видно, где фикс-план подложен (прозрачность приемки). Тесты, которые проверяют
 само J41-правило (test_j41_plan_release.py), отключают фикстуру
 (@pytest.mark.no_plan_fixture) и создают планы вручную.
+
+isolated_home (J64.2): autouse — HOME и HERMES_HOME каждого теста во
+временном каталоге. Прогон сьюта на машине фабрики не пишет в боевой
+~/.hermes (state, логи энфорсера, ~/.hermes/scripts), на чистой машине не
+создает его. Проверено прогоном с HOME=<пустой каталог>: каталог остается
+пустым.
+
+Сторож дерева (J64.1): сьют не оставляет файлов в репозитории фабрики —
+`git status --porcelain` после прогона сравнивается с исходным; новые пути
+→ сьют красный с перечнем (прецедент: каталог `prepared: true/` с
+симлинками на /home/openclaw/... попал в main, коммит 6d4d365).
 """
 from __future__ import annotations
 
+import os
+import shutil
+import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -66,3 +81,69 @@ def plan_release_fixture(request, tmp_path):
     plan_path.write_text(PLAN_FIXTURE_TEXT, encoding="utf-8")
     print(f"[j41-fixture] PLAN подложен: {plan_path}", file=sys.stderr)
     yield
+
+
+@pytest.fixture(autouse=True)
+def isolated_home(tmp_path_factory, monkeypatch):
+    """HOME/HERMES_HOME теста — временный каталог (J64.2)."""
+    home = tmp_path_factory.mktemp("home")
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("HERMES_HOME", str(home / ".hermes"))
+    yield home
+
+
+FACTORY_ROOT = Path(__file__).resolve().parent.parent
+
+
+def _tree_status() -> set[str] | None:
+    proc = subprocess.run(
+        ["git", "-C", str(FACTORY_ROOT), "status", "--porcelain", "-uall"],
+        capture_output=True, text=True)
+    if proc.returncode != 0:
+        return None  # не git-дерево (архив исходников) — сторож молчит
+    return {line for line in proc.stdout.splitlines() if line.strip()}
+
+
+def pytest_configure(config):
+    """HOME/HERMES_HOME сессии — временный каталог ДО импорта тестовых
+    модулей (J64.2): константы уровня импорта (Path.home() / ".hermes" в
+    delegate_watchdog, flow_mode, session_archive …) тоже не указывают на
+    боевой ~/.hermes. isolated_home дополнительно разводит тесты между собой."""
+    home = Path(tempfile.mkdtemp(prefix="af-test-home-"))
+    config._factory_home = (home, os.environ.get("HOME"),
+                            os.environ.get("HERMES_HOME"))
+    os.environ["HOME"] = str(home)
+    os.environ["HERMES_HOME"] = str(home / ".hermes")
+
+
+def pytest_unconfigure(config):
+    saved = getattr(config, "_factory_home", None)
+    if saved is None:
+        return
+    home, old_home, old_hermes = saved
+    for key, old in (("HOME", old_home), ("HERMES_HOME", old_hermes)):
+        if old is None:
+            os.environ.pop(key, None)
+        else:
+            os.environ[key] = old
+    shutil.rmtree(home, ignore_errors=True)
+
+
+def pytest_sessionstart(session):
+    session.config._factory_tree_before = _tree_status()
+
+
+def pytest_sessionfinish(session, exitstatus):
+    """Сторож дерева (J64.1): новые пути в репозитории после сьюта — FAIL."""
+    before = getattr(session.config, "_factory_tree_before", None)
+    after = _tree_status()
+    if before is None or after is None:
+        return
+    leaked = sorted(after - before)
+    if leaked:
+        print("\nFACTORY-TREE-LEAK: сьют оставил изменения в репозитории "
+              "фабрики (тест пишет вне tmp_path):\n  "
+              + "\n  ".join(leaked), file=sys.stderr)
+        if session.exitstatus == pytest.ExitCode.OK:
+            # прочие коды (прерывание, ошибка использования …) не затираем
+            session.exitstatus = pytest.ExitCode.TESTS_FAILED
