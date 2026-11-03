@@ -29,8 +29,11 @@ isolated_home (J64.2): autouse — HOME и HERMES_HOME каждого теста
 """
 from __future__ import annotations
 
+import os
+import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -101,6 +104,31 @@ def _tree_status() -> set[str] | None:
     return {line for line in proc.stdout.splitlines() if line.strip()}
 
 
+def pytest_configure(config):
+    """HOME/HERMES_HOME сессии — временный каталог ДО импорта тестовых
+    модулей (J64.2): константы уровня импорта (Path.home() / ".hermes" в
+    delegate_watchdog, flow_mode, session_archive …) тоже не указывают на
+    боевой ~/.hermes. isolated_home дополнительно разводит тесты между собой."""
+    home = Path(tempfile.mkdtemp(prefix="af-test-home-"))
+    config._factory_home = (home, os.environ.get("HOME"),
+                            os.environ.get("HERMES_HOME"))
+    os.environ["HOME"] = str(home)
+    os.environ["HERMES_HOME"] = str(home / ".hermes")
+
+
+def pytest_unconfigure(config):
+    saved = getattr(config, "_factory_home", None)
+    if saved is None:
+        return
+    home, old_home, old_hermes = saved
+    for key, old in (("HOME", old_home), ("HERMES_HOME", old_hermes)):
+        if old is None:
+            os.environ.pop(key, None)
+        else:
+            os.environ[key] = old
+    shutil.rmtree(home, ignore_errors=True)
+
+
 def pytest_sessionstart(session):
     session.config._factory_tree_before = _tree_status()
 
@@ -116,4 +144,6 @@ def pytest_sessionfinish(session, exitstatus):
         print("\nFACTORY-TREE-LEAK: сьют оставил изменения в репозитории "
               "фабрики (тест пишет вне tmp_path):\n  "
               + "\n  ".join(leaked), file=sys.stderr)
-        session.exitstatus = pytest.ExitCode.TESTS_FAILED
+        if session.exitstatus == pytest.ExitCode.OK:
+            # прочие коды (прерывание, ошибка использования …) не затираем
+            session.exitstatus = pytest.ExitCode.TESTS_FAILED
