@@ -367,18 +367,34 @@ def _plan_release(snapshot: dict, ctx: dict) -> list:
             "план релиза не проверяем: scope без repo/change — пересобери "
             "inspect (J41; контракт §2)")]
     paths = plan_release_paths(Path(repo), str(change_id), flow)
+    # J64.3: scope Флоу 4 (kebab-slug) совпадает по форме с change-id Флоу 1
+    # — план чужого флоу не закрывает план-ворота этого. Кандидаты
+    # перебираются все: чужой план в корне не перекрывает легитимный план
+    # своего флоу (openspec/changes/<id>/PLAN.md, test-model/bugs/PLAN.md).
+    found: list[tuple[Path, set[int]]] = []
     for path in paths:
         if not path.is_file():
             continue
         ctx["evidence"].add(str(path))
         text = path.read_text(encoding="utf-8", errors="replace")
-        if not PLAN_FLOW_RE.search(text):
-            return [Finding(
-                PLAN_FLOW_UNDECLARED,
-                f"план релиза {path.name} не объявляет воркфлоу — нужна строка "
-                f"«Флоу: N» (N 1–5, допускается **жирное**) (J41; правило "
-                f"фабрики: план фиксирует, по какой схеме релиз ведется)")]
-        return []
+        declared = {int(m) for m in PLAN_FLOW_RE.findall(text)}
+        if flow in declared:
+            return []
+        found.append((path, declared))
+    undeclared = [p for p, d in found if not d]
+    if undeclared:
+        return [Finding(
+            PLAN_FLOW_UNDECLARED,
+            f"план релиза {undeclared[0].name} не объявляет воркфлоу — нужна "
+            f"строка «Флоу: N» (N 1–5, допускается **жирное**) (J41; правило "
+            f"фабрики: план фиксирует, по какой схеме релиз ведется)")]
+    if found:
+        path, declared = found[0]
+        return [Finding(
+            PLAN_FLOW_UNDECLARED,
+            f"план релиза {path.name} объявляет Флоу "
+            f"{', '.join(map(str, sorted(declared)))}, запрошен Флоу {flow} — "
+            f"план чужого воркфлоу не закрывает ворота (J41; J64.3)")]
     return [Finding(
         PLAN_RELEASE_MISSING,
         f"план релиза не найден (Флоу {flow}): ни одного из: "

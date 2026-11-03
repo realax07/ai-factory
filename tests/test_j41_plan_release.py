@@ -251,8 +251,9 @@ class TestPlanFlowUndeclared:
         assert has_code(d, ft.PLAN_FLOW_UNDECLARED)
 
     def test_flow_plain_and_bold_both_accepted(self, tmp_path):
-        """regex держит оба формата: «Флоу: 2» и «**Флоу: 2**» (шапка J41)."""
-        for header in ("Флоу: 2\n", "**Флоу: 3**\n"):
+        """regex держит оба формата: «Флоу: 1» и «**Флоу: 1**» (шапка J41).
+        J64.3: N должен совпадать с флоу запроса (create_change — Флоу 1)."""
+        for header in ("Флоу: 1\n", "**Флоу: 1**\n"):
             repo = make_repo(tmp_path, name="proj-" + header.strip())
             write(repo, "PLAN-add-widget.md", "# PLAN\n\n" + header)
             commit_all(repo)
@@ -261,6 +262,22 @@ class TestPlanFlowUndeclared:
                                 act(requested_action="create_change",
                                     actor_role="sa"))
             assert not has_code(d, ft.PLAN_FLOW_UNDECLARED), header
+
+
+    def test_foreign_root_plan_does_not_shadow_package_plan(self, tmp_path):
+        """J64.3 (ревью R1): план чужого флоу в корне не перекрывает
+        легитимный openspec/changes/<id>/PLAN.md своего флоу."""
+        repo = make_repo(tmp_path, name="proj-shadow")
+        write(repo, "PLAN-add-widget.md", "# PLAN\n\n**Флоу: 4**\n")
+        write(repo, "openspec/changes/add-widget/PLAN.md",
+              "# PLAN\n\n**Флоу: 1**\n")
+        commit_all(repo)
+        reg = make_registry(tmp_path)
+        d = ft.check_action(snapshot_for(repo, reg),
+                            act(requested_action="create_change",
+                                actor_role="sa"))
+        assert not has_code(d, ft.PLAN_FLOW_UNDECLARED)
+        assert not has_code(d, ft.PLAN_RELEASE_MISSING)
 
 
 # --------------------------------- (в) валидный план — plan-findings нет

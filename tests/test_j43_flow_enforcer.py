@@ -472,9 +472,9 @@ class TestJ431FlowAwareEnforce:
 
     def test_v_flow4_with_plan_allows_via_no_change_filter(
             self, tmp_path, plugin_env):
-        """(в) Ф4 chore-slug + план → ALLOW: prepare отклоняет ровно из-за
-        отсутствия change-пакета/scope-id, PLAN-<slug>.md существует →
-        post-filter трактует как ALLOW с логом 'flow-4 no-change scope ok'."""
+        """(в) Ф4 chore-slug + план → ALLOW. J64.3: prepare разрешает сам
+        (scope-id chore-slug валиден в flow_state) — post-filter энфорсера
+        для Ф4 больше не нужен и в логе не появляется."""
         repo = _make_repo(tmp_path, "proj", {
             "PLAN-chore-cleanup.md": PLAN_FLOW4,
             "scripts/tool.py": "X = 1\n",
@@ -483,7 +483,7 @@ class TestJ431FlowAwareEnforce:
             "delegate_task", flow4_goal(repo), "j3")
         assert res is None, f"ожидался ALLOW, получен block: {res}"
         events = [e.get("event") for e in _log_entries(plugin_env)]
-        assert "flow-4 no-change scope ok" in events
+        assert "flow-4 no-change scope ok" not in events
 
     def test_v2_flow4_without_plan_blocks_plan_missing(self, tmp_path):
         repo = _make_repo(tmp_path, "proj", {

@@ -472,11 +472,12 @@ class TestN12Diagnostics:
         reg = make_registry(tmp_path)
         state = tmp_path / "state" / "flowctl_state.json"
         r = run_flowctl(*prepare_argv(repo, reg, state, tmp_path,
-                                      flow=4, change="mysmallfix",
+                                      flow=4, change="my_small_fix",
                                       action="chore_task", task=None))
         assert r.returncode == 1
         hints = json.loads(r.stdout).get("field_diagnostics") or []
-        assert any("Флоу 4" in h and "[chore]" in h for h in hints), hints
+        # J64.3: формат Флоу 4 — chore или kebab-slug («mysmallfix» валиден)
+        assert any("Флоу 4" in h and "kebab-slug" in h for h in hints), hints
 
     def test_invalid_flow_json_diagnostic_not_argparse(self, tmp_path):
         """TC-AUD-012: Невалидный --flow — JSON-диагностика FLOW_ID_INVALID (не сырой

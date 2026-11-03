@@ -221,7 +221,9 @@ class TestInputValidation:
         reg = make_registry(tmp_path)
         s = snapshot_for(repo, reg, flow=2, change_id="add-widget")
         d = ft.check_action(s, act(requested_action="bug_fix"))
-        assert d.status == "UNKNOWN"
+        # J64.3: план fixture (Флоу 1) не закрывает ворота Флоу 2 —
+        # дополнительно DENY, поэтому статус не обязательно UNKNOWN.
+        assert d.status in ("UNKNOWN", "DENY")
         assert has_code(d, ft.AMBIGUOUS_STATE)
 
 
