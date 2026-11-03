@@ -22,6 +22,13 @@ isolated_home (J64.2): autouse — HOME и HERMES_HOME каждого теста
 создает его. Проверено прогоном с HOME=<пустой каталог>: каталог остается
 пустым.
 
+User-site при подмене HOME (BUG-025): Python вычисляет user-site из HOME,
+поэтому дочерний интерпретатор (subprocess `python -m pytest` в regress-
+тьерах) с фейковым HOME терял ~/.local/lib/... — на VPS там pytest/pluggy
+(pip --user), 18 фейлов j51/j52/j54. До подмены HOME реальный user base
+фиксируется в PYTHONUSERBASE: импорты дочерних процессов живут, state
+по-прежнему изолирован (HOME и HERMES_HOME — временные).
+
 Сторож дерева (J64.1): сьют не оставляет файлов в репозитории фабрики —
 `git status --porcelain` после прогона сравнивается с исходным; новые пути
 → сьют красный с перечнем (прецедент: каталог `prepared: true/` с
@@ -31,6 +38,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import site
 import subprocess
 import sys
 import tempfile
@@ -108,10 +116,15 @@ def pytest_configure(config):
     """HOME/HERMES_HOME сессии — временный каталог ДО импорта тестовых
     модулей (J64.2): константы уровня импорта (Path.home() / ".hermes" в
     delegate_watchdog, flow_mode, session_archive …) тоже не указывают на
-    боевой ~/.hermes. isolated_home дополнительно разводит тесты между собой."""
+    боевой ~/.hermes. isolated_home дополнительно разводит тесты между собой.
+
+    PYTHONUSERBASE (BUG-025) — реальный user base, вычисленный ДО подмены
+    HOME: subprocess-интерпретаторы видят те же user-site пакеты."""
     home = Path(tempfile.mkdtemp(prefix="af-test-home-"))
     config._factory_home = (home, os.environ.get("HOME"),
-                            os.environ.get("HERMES_HOME"))
+                            os.environ.get("HERMES_HOME"),
+                            os.environ.get("PYTHONUSERBASE"))
+    os.environ.setdefault("PYTHONUSERBASE", site.getuserbase())
     os.environ["HOME"] = str(home)
     os.environ["HERMES_HOME"] = str(home / ".hermes")
 
@@ -120,8 +133,9 @@ def pytest_unconfigure(config):
     saved = getattr(config, "_factory_home", None)
     if saved is None:
         return
-    home, old_home, old_hermes = saved
-    for key, old in (("HOME", old_home), ("HERMES_HOME", old_hermes)):
+    home, old_home, old_hermes, old_userbase = saved
+    for key, old in (("HOME", old_home), ("HERMES_HOME", old_hermes),
+                     ("PYTHONUSERBASE", old_userbase)):
         if old is None:
             os.environ.pop(key, None)
         else:
