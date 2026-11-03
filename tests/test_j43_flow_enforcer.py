@@ -672,3 +672,8 @@ def test_j64_18_deny_message_keeps_reason_codes_first():
     assert "PLAN_RELEASE_MISSING" in summary
     assert "PLAN_RELEASE_MISSING" not in out.strip()[-2000:]  # хвост без кода
     assert enforcer.decision_summary("не json") == ""
+    # неожиданная форма — без исключения (сообщение ПМ не теряется)
+    assert enforcer.decision_summary(
+        json.dumps({"reason": "X", "record": "строка",
+                    "decision": ["список"], "zone_violations": "a"})
+    ) == "причина: X"

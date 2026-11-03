@@ -1178,15 +1178,22 @@ def decision_summary(out: str) -> str:
         data = None
     if not isinstance(data, dict):
         return ""
+    def _as_list(value) -> list:
+        return value if isinstance(value, list) else []
+
     lines = []
     if data.get("reason"):
         lines.append(f"причина: {data['reason']}")
-    decision = data.get("decision") or (data.get("record") or {}).get(
-        "decision") or {}
-    if decision.get("status"):
+    record = data.get("record") if isinstance(data.get("record"), dict) else {}
+    decision = data.get("decision") or record.get("decision") or {}
+    if not isinstance(decision, dict):
+        decision = {}
+    if decision.get("status") and decision["status"] != data.get("reason"):
         lines.append(f"решение: {decision['status']}")
-    lines += [f"- {d}" for d in decision.get("details") or []]
-    lines += [f"- {v}" for v in data.get("zone_violations") or []]
+    lines += [f"- {d}" for d in _as_list(decision.get("details"))]
+    lines += [f"- {v}" for v in _as_list(data.get("zone_violations"))]
+    lines += [f"- защищенный путь: {p}"
+              for p in _as_list(data.get("protected_paths"))]
     return "\n".join(lines)
 
 
