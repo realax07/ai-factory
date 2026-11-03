@@ -264,6 +264,22 @@ class TestPlanFlowUndeclared:
             assert not has_code(d, ft.PLAN_FLOW_UNDECLARED), header
 
 
+    def test_foreign_root_plan_does_not_shadow_package_plan(self, tmp_path):
+        """J64.3 (ревью R1): план чужого флоу в корне не перекрывает
+        легитимный openspec/changes/<id>/PLAN.md своего флоу."""
+        repo = make_repo(tmp_path, name="proj-shadow")
+        write(repo, "PLAN-add-widget.md", "# PLAN\n\n**Флоу: 4**\n")
+        write(repo, "openspec/changes/add-widget/PLAN.md",
+              "# PLAN\n\n**Флоу: 1**\n")
+        commit_all(repo)
+        reg = make_registry(tmp_path)
+        d = ft.check_action(snapshot_for(repo, reg),
+                            act(requested_action="create_change",
+                                actor_role="sa"))
+        assert not has_code(d, ft.PLAN_FLOW_UNDECLARED)
+        assert not has_code(d, ft.PLAN_RELEASE_MISSING)
+
+
 # --------------------------------- (в) валидный план — plan-findings нет
 
 
