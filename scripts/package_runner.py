@@ -138,9 +138,10 @@ SCRIPTS = Path(__file__).resolve().parent
 # копируется: раннер ищет его рядом с собой, затем в AI_FACTORY_HOME и
 # ~/ai-factory. Нет движка — pi-стадия получает STOP FACTORY_ENGINE_MISSING
 # (без ворот pi не запускается), gate/stand/hermes-стадии работают.
-for _engine in (SCRIPTS,
-                Path(os.environ.get("AI_FACTORY_HOME") or
-                     Path.home() / "ai-factory") / "scripts"):
+sys.path.insert(0, str(SCRIPTS))
+import factory_paths as fp  # noqa: E402  (J64.5: пути машины — только оттуда)
+
+for _engine in (SCRIPTS, fp.factory_home() / "scripts"):
     if (_engine / "flowctl.py").is_file():
         sys.path.insert(0, str(_engine))
         break
@@ -157,7 +158,7 @@ except ImportError as _exc:  # раннер вне фабрики без AI_FACT
 REPO_ROOT = SCRIPTS.parent
 ROLE_PACKS = REPO_ROOT / "skills" / "pm-factory" / "pi" / "role-packs"
 WORKTREE_SCRIPT = SCRIPTS / "session_worktree.sh"
-ZONE_GUARD = Path.home() / ".pi" / "agent" / "extensions" / "zone-guard.ts"
+ZONE_GUARD = fp.pi_agent_dir() / "extensions" / "zone-guard.ts"
 FLOWCTL = Path(fc.__file__).resolve() if fc else SCRIPTS / "flowctl.py"
 # Ворота pi-стадии: владелец резервации в реестре сессий и область finish.
 FLOW_OWNER = "package_runner"
@@ -177,7 +178,10 @@ LOG_SUFFIX = ".runner.log"
 # pytest коллекция цепляет tests/web (нужен стенд, E6-класс) и падает с
 # collection error (дефект пилота BUG-026). Скоуп тестов — ответственность
 # самой gate-команды (см. docs/guides/pipeline-manifest.md).
-GATE_ENV_STRIP = ("EKOTOV_WIKI_BASE_URL", "EKOTOV_WIKI_DB_PATH")
+# J64.5: список — из манифеста проекта (`pipeline.gate_env_strip`); дефолт —
+# переменные стенда пилота ekotov-wiki (совместимость манифестов без ключа).
+GATE_ENV_STRIP_DEFAULT = ("EKOTOV_WIKI_BASE_URL", "EKOTOV_WIKI_DB_PATH")
+GATE_ENV_STRIP = GATE_ENV_STRIP_DEFAULT  # cmd_run ставит список манифеста
 # Glob-хвост зон манифеста: zone-guard матчит зоны ПРЕФИКСОМ
 # (norm === z || norm.startsWith(z + "/")), поэтому glob-форма
 # `services/images/**` как префикс `services/images/***/` не матчится
@@ -495,7 +499,15 @@ def parse_manifest(plan_path: Path) -> dict:
             "approval_ref": (raw.get("approval_ref") or "").strip(),
         }
         stages.append(stage)
-    return {"package": package, "flow": flow, "stages": stages}
+    strip = pipe.get("gate_env_strip")
+    if strip is not None and not (isinstance(strip, list) and all(
+            isinstance(x, str) and x.strip() for x in strip)):
+        # J64.5: env стенда проекта, срезаемый у gate-команд, — из манифеста.
+        raise ManifestError("pipeline.gate_env_strip: ожидается список имен "
+                            "переменных окружения")
+    return {"package": package, "flow": flow, "stages": stages,
+            "gate_env_strip": ([x.strip() for x in strip]
+                               if strip is not None else None)}
 
 
 def normalize_zone(zone: str) -> str:
@@ -726,7 +738,8 @@ def run_pi(args: list[str], cwd: Path, env: dict,
 
 def gate_env(stand_env: dict | None = None) -> dict:
     """Env для gate-команд: наследуется от раннера, но переменные стенда
-    (E6) срезаются (эквивалент env -u EKOTOV_WIKI_BASE_URL EKOTOV_WIKI_DB_PATH).
+    (E6) срезаются (эквивалент env -u по списку GATE_ENV_STRIP: манифест
+    `pipeline.gate_env_strip`, иначе GATE_ENV_STRIP_DEFAULT).
     Скоуп тестов — ответственность самой gate-команды. stand_env (J62) —
     переменные, отчитавшиеся stand-стадией пакета: накладываются ПОСЛЕ
     срезки (осознанный export манифеста проходит, случайное наследование
@@ -817,8 +830,8 @@ def flow_paths() -> tuple[Path, Path]:
     """Реестр сессий и state flowctl: те же, что у делегаций (иначе
     конфликт зон с ними не виден); env PIPELINE_FLOW_REGISTRY /
     PIPELINE_FLOW_STATE переопределяют (тесты, второй инстанс фабрики)."""
-    registry = Path(os.environ.get("PIPELINE_FLOW_REGISTRY") or (
-        Path.home() / ".hermes" / "state" / "active_sessions.json"))
+    registry = Path(os.environ.get("PIPELINE_FLOW_REGISTRY")
+                    or fp.registry_path())
     state = Path(os.environ.get("PIPELINE_FLOW_STATE")
                  or fc.default_state_path(str(registry)))
     return registry, state
@@ -1182,6 +1195,10 @@ def write_report(plan_path: Path, stage: dict, attempt: int,
 def cmd_run(plan_path: Path, dry_run: bool) -> int:
     try:
         manifest = parse_manifest(plan_path)
+        global GATE_ENV_STRIP
+        strip = manifest.get("gate_env_strip")
+        GATE_ENV_STRIP = tuple(GATE_ENV_STRIP_DEFAULT if strip is None
+                               else strip)  # [] — не срезать ничего
     except ManifestError as exc:
         print(f"RUNNER-STOP: манифест: {exc}", file=sys.stderr)
         return 2

@@ -627,7 +627,7 @@ def product_repo_paths() -> list[str]:
         for part in (x.strip() for x in raw.split(",") if x.strip()):
             cand = Path(part).expanduser()
             if not cand.is_absolute():
-                cand = Path.home() / part
+                cand = projects_root() / part
             out.append(str(cand))
         return out
     try:
@@ -642,7 +642,7 @@ def product_repo_paths() -> list[str]:
         project = str(s.get("project") or "")
         if not project or project == CONVEYOR_PROJECT:
             continue
-        cand = Path.home() / project
+        cand = projects_root() / project
         if (cand.is_dir() and (cand / ".git").exists()
                 and str(cand) not in repos):
             repos.append(str(cand))
@@ -817,14 +817,29 @@ class FlowMarkerError(ValueError):
     """Очевидная ошибка маркера → block FLOW_MARKER_INVALID (J43.1)."""
 
 
+# Пути машины (J64.5): те же env и дефолты, что scripts/factory_paths.py.
+# Плагин ставится копией в ~/.hermes/plugins и работает в процессе Hermes —
+# модуль фабрики не импортирует; паритет держит тест
+# (tests/test_factory_paths.py::test_enforcer_paths_parity).
+def _env_path(name: str, default: Path) -> Path:
+    raw = os.environ.get(name, "").strip()
+    return Path(raw).expanduser() if raw else default
+
+
 def state_dir() -> Path:
-    return Path(os.environ.get(
-        "FLOW_ENFORCER_STATE_DIR", str(Path.home() / ".hermes" / "state")))
+    """Логи энфорсера и реестр по умолчанию: FLOW_ENFORCER_STATE_DIR, иначе
+    память движка (AF_STATE_DIR → <HERMES_HOME>/state)."""
+    hermes = _env_path("HERMES_HOME", Path.home() / ".hermes")
+    return _env_path("FLOW_ENFORCER_STATE_DIR",
+                     _env_path("AF_STATE_DIR", hermes / "state"))
 
 
 def factory_home() -> Path:
-    return Path(os.environ.get(
-        "AI_FACTORY_HOME", str(Path.home() / "ai-factory"))).expanduser()
+    return _env_path("AI_FACTORY_HOME", Path.home() / "ai-factory")
+
+
+def projects_root() -> Path:
+    return _env_path("AF_PROJECTS_ROOT", Path.home())
 
 
 def mode() -> str:

@@ -55,9 +55,10 @@ import re
 import subprocess
 import sys
 from pathlib import Path
+import factory_paths as fp  # noqa: E402  (J64.5: пути машины — только оттуда)
 
-STATE = Path.home() / ".hermes" / "state" / "flowctl_state.json"
-REGISTRY = Path.home() / ".hermes" / "state" / "active_sessions.json"
+STATE = fp.flowctl_state_path()
+REGISTRY = fp.registry_path()
 
 # Минимальные обязательные гейты финиша по флоу (дополнительные добавляет
 # flowctl из политики; обертка гарантирует нижнюю границу).

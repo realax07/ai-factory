@@ -37,6 +37,7 @@ import sys
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+import factory_paths as fp  # noqa: E402  (J64.5: пути машины — только оттуда)
 
 SCHEMA_VERSION = "flow-snapshot/1"
 
@@ -929,7 +930,7 @@ def inspect(
         facts.append(task_fact(repo, change_id, task_id, problems))
 
     reg_path = Path(registry) if registry else (
-        Path.home() / ".hermes" / "state" / "active_sessions.json"
+        fp.registry_path()
     )
     reg_fact, registry_digest = registry_fact(reg_path, problems)
     facts.append(reg_fact)

@@ -22,8 +22,9 @@ import os
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+import factory_paths as fp  # noqa: E402  (J64.5: пути машины — только оттуда)
 
-DEFAULT_MODE_FILE = Path.home() / ".hermes/state/flow_mode.json"
+DEFAULT_MODE_FILE = fp.state_dir() / "flow_mode.json"
 VALID_MODES = ("shadow", "enforcing")
 # Статусы решений flow_transition, которые enforcing останавливает
 # (shadow — только вычисляет, не исполняет).

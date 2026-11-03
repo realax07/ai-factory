@@ -30,9 +30,10 @@ import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+import factory_paths as fp  # noqa: E402  (J64.5: пути машины — только оттуда)
 
 FACTORY = Path(__file__).resolve().parent.parent
-HERMES_HOME = Path(os.environ.get("HERMES_HOME", Path.home() / ".hermes"))
+HERMES_HOME = fp.hermes_home()
 STATE = HERMES_HOME / "state"
 MODE_FILE = STATE / "flow_mode.json"
 ARCHIVE_DIR = STATE / "session-archive"

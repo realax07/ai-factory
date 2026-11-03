@@ -11,6 +11,7 @@ import json
 import re
 import sys
 from pathlib import Path
+import factory_paths as fp  # noqa: E402  (J64.5: пути машины — только оттуда)
 
 CHANGE_ID = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)+$")  # kebab-case, >= 2 слов
 TC_REF = re.compile(r"TC-[a-zA-Z0-9]+(?:-[a-zA-Z0-9]+)*-\d{3}")
@@ -360,7 +361,7 @@ def check(repo: Path) -> int:
     # --- factory-init: рассинхрон промптов с эталоном фабрики (если фабрика на машине) ---
     project_agents = repo / "agents"
     if project_agents.is_dir():
-        factory_agents = Path.home() / "ai-factory/agents"
+        factory_agents = fp.factory_home() / "agents"
         if factory_agents.is_dir():
             import hashlib
             stale = []

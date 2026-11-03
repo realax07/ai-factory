@@ -22,6 +22,7 @@ import urllib.request
 from pathlib import Path
 
 import session_check as _sc  # noqa: E402  (единая валидация change-id, J51)
+import factory_paths as fp  # noqa: E402  (J64.5: пути машины — только оттуда)
 
 # --- Наборы обязательных артефактов по типам (контракты) ---
 
@@ -138,11 +139,11 @@ def check_change(repo: Path, change_id: str, marker: str = "") -> list[str]:
     # привязки к pr_tasks: подделка артефакта ловится даже когда задачи не
     # упомянуты в тексте PR.
     import sqlite3 as _sq
-    _db = Path.home() / ".hermes" / "state.db"
+    _db = fp.hermes_home() / "state.db"
     _dev_delegs: set = set()
     try:
         import json as _json
-        _fstate = _json.loads((Path.home() / ".hermes" / "state" / "flowctl_state.json").read_text(encoding="utf-8"))
+        _fstate = _json.loads(fp.flowctl_state_path().read_text(encoding="utf-8"))
         for _r in _fstate.get("runs", {}).values():
             _sc = _r.get("scope") or {}
             if _sc.get("change") == change_id and _sc.get("task"):

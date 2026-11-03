@@ -44,8 +44,10 @@ pipeline:
     `settings.example.json` пака (дефолт `zai-glm`/`glm-5.3`); ключ pi берет
     сам из `~/.pi/agent/models.json` — раннер секретов не касается.
   - `gate:<команда>` — shell-команда в worktree; ненулевой exit → STOP
-    (exit 2, диагностика; воротные отказы НЕ ретраятся). Env стенда (E6 —
-    `EKOTOV_WIKI_BASE_URL`, `EKOTOV_WIKI_DB_PATH`) срезается у gate-команды
+    (exit 2, диагностика; воротные отказы НЕ ретраятся). Env стенда (E6;
+    список — ключ манифеста `pipeline.gate_env_strip: [VAR, …]`, без ключа —
+    `EKOTOV_WIKI_BASE_URL`, `EKOTOV_WIKI_DB_PATH` пилота, `[]` — не срезать
+    ничего, J64.5) срезается у gate-команды
     (эквивалент `env -u`): с ним pytest коллекция цепляет `tests/web`
     (нужен стенд) и падает с collection error. **Gate-команда сама отвечает
     за скоуп тестов** — пример узкого gate::

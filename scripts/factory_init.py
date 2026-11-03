@@ -54,6 +54,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import factory_paths as fp  # noqa: E402  (J64.5: пути машины — только оттуда)
+
 FACTORY = Path(__file__).resolve().parent.parent
 PLUGIN_NAME = "flow-enforcer"
 
@@ -71,8 +73,7 @@ def install_plugin(skip: bool = False) -> bool:
         print("  плагин flow-enforcer: пропуск (--skip-plugin)")
         return True
 
-    hermes_home = Path(os.environ.get(
-        "HERMES_HOME", str(Path.home() / ".hermes")))
+    hermes_home = fp.hermes_home()
     src = FACTORY / "plugins" / PLUGIN_NAME
     dst = hermes_home / "plugins" / PLUGIN_NAME
     if not src.is_dir():
@@ -286,6 +287,7 @@ def print_recommended_crons() -> None:
 
 
 COPY_FILES = [
+    "scripts/factory_paths.py",  # J64.5: пути машины — импортируют скрипты ниже
     "scripts/flow_check.py",
     "scripts/pr_validate.py",
     "scripts/codegraph.py",
@@ -619,8 +621,7 @@ def main() -> int:
     if args.skip_crons:
         print("  кроны: пропуск (--skip-crons)")
     else:
-        hermes_scripts = Path(os.environ.get(
-            "HERMES_HOME", str(Path.home() / ".hermes"))) / "scripts"
+        hermes_scripts = fp.hermes_home() / "scripts"
         crons = install_crons(hermes_scripts)
         if crons["errors"]:
             ok = False
