@@ -33,6 +33,8 @@ def make_factory(tmp_path: Path) -> Path:
     (f / "scripts" / "flow_check.py").write_text("FLOW = 1\n", encoding="utf-8")
     (f / "scripts" / "pr_validate.py").write_text("PV = 1\n", encoding="utf-8")
     (f / "scripts" / "impact_rules.json").write_text("{}\n", encoding="utf-8")
+    # J64.5: модуль путей — в списке сверки зеркал (DEFAULT_FILES)
+    (f / "scripts" / "factory_paths.py").write_text("FP = 1\n", encoding="utf-8")
     return f
 
 
@@ -41,7 +43,8 @@ def make_project(root: Path, factory: Path, name: str,
                  drop: tuple[str, ...] = ()) -> Path:
     p = root / name
     (p / "scripts").mkdir(parents=True)
-    for fname in ("flow_check.py", "pr_validate.py", "impact_rules.json"):
+    for fname in ("flow_check.py", "pr_validate.py", "impact_rules.json",
+                  "factory_paths.py"):
         if fname in drop:
             continue
         content = (overrides or {}).get(

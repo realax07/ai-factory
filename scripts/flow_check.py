@@ -9,9 +9,26 @@ Usage: python3 scripts/flow_check.py <path-to-repo>
 """
 import json
 import re
+import os
 import sys
 from pathlib import Path
-import factory_paths as fp  # noqa: E402  (J64.5: пути машины — только оттуда)
+try:
+    import factory_paths as fp  # noqa: E402  (J64.5: пути машины — только оттуда)
+except ImportError:  # автономная копия в проекте без factory_paths.py (AGENTS.md:
+    # в проект копируются flow_check/pr_validate + flow.yml) — те же env и
+    # дефолты, что factory_paths; CI проекта не падает на импорте.
+    from types import SimpleNamespace as _NS
+
+    def _fp_env(name: str, default: str) -> Path:
+        return Path(os.environ.get(name, "").strip() or default).expanduser()
+
+    fp = _NS(
+        factory_home=lambda: _fp_env("AI_FACTORY_HOME", "~/ai-factory"),
+        hermes_home=lambda: _fp_env("HERMES_HOME", "~/.hermes"),
+        state_dir=lambda: _fp_env("AF_STATE_DIR", "~/.hermes/state"),
+        flowctl_state_path=lambda: _fp_env(
+            "AF_STATE_DIR", "~/.hermes/state") / "flowctl_state.json",
+    )
 
 CHANGE_ID = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)+$")  # kebab-case, >= 2 слов
 TC_REF = re.compile(r"TC-[a-zA-Z0-9]+(?:-[a-zA-Z0-9]+)*-\d{3}")

@@ -50,10 +50,12 @@ def test_defaults_follow_home(clean_env):
 def test_each_env_overrides_its_path(clean_env, monkeypatch, tmp_path):
     """TC-FP-002: каждая переменная окружения переопределяет свой путь."""
     monkeypatch.setenv("HERMES_HOME", str(tmp_path / "h"))
-    assert fp.state_dir() == tmp_path / "h" / "state"   # state — внутри HERMES_HOME
-    monkeypatch.setenv("AF_STATE_DIR", str(tmp_path / "s"))
-    assert fp.state_dir() == tmp_path / "s"             # ... пока не отвязан
+    # память движка от HERMES_HOME НЕ зависит (ревью J64.5: иначе процесс с
+    # другим HERMES_HOME терял flow_mode и раздваивал реестр)
+    assert fp.state_dir() == clean_env / ".hermes" / "state"
     assert fp.hermes_home() == tmp_path / "h"
+    monkeypatch.setenv("AF_STATE_DIR", str(tmp_path / "s"))
+    assert fp.state_dir() == tmp_path / "s"
     monkeypatch.setenv("AI_FACTORY_HOME", str(tmp_path / "f"))
     monkeypatch.setenv("AF_PROJECTS_ROOT", str(tmp_path / "p"))
     monkeypatch.setenv("PI_AGENT_DIR", str(tmp_path / "pi"))
@@ -61,7 +63,7 @@ def test_each_env_overrides_its_path(clean_env, monkeypatch, tmp_path):
     assert fp.projects_root() == tmp_path / "p"
     assert fp.pi_agent_dir() == tmp_path / "pi"
     monkeypatch.setenv("AF_STATE_DIR", "  ")                # пустое = дефолт
-    assert fp.state_dir() == tmp_path / "h" / "state"
+    assert fp.state_dir() == clean_env / ".hermes" / "state"
 
 
 @pytest.mark.parametrize("env", [
@@ -149,3 +151,46 @@ def test_runner_gate_command_env_stripped_per_manifest(tmp_path, monkeypatch):
     monkeypatch.setenv("KEEP", "1")
     monkeypatch.setattr(pr, "ensure_worktree", lambda r, s, b: repo)
     assert pr.cmd_run(plan, dry_run=False) == 0
+
+
+@pytest.mark.parametrize("script", ["flow_check.py", "pr_validate.py"])
+def test_autonomous_copy_without_factory_paths(tmp_path, clean_env, script):
+    """TC-FP-008 (ревью J64.5, major): копия flow_check/pr_validate в проекте
+    без factory_paths.py работает (запасной дефолт), а не падает на импорте."""
+    import shutil
+    proj = tmp_path / "proj"
+    (proj / "scripts").mkdir(parents=True)
+    shutil.copy2(FACTORY / "scripts" / script, proj / "scripts" / script)
+    if script == "pr_validate.py":   # pr_validate импортирует session_check
+        shutil.copy2(FACTORY / "scripts" / "session_check.py",
+                     proj / "scripts" / "session_check.py")
+        shutil.copy2(FACTORY / "scripts" / "flow_mode.py",
+                     proj / "scripts" / "flow_mode.py")
+    proc = subprocess.run([sys.executable, f"scripts/{script}", "--help"],
+                          cwd=proj, capture_output=True, text=True)
+    assert "ModuleNotFoundError" not in proc.stderr, proc.stderr
+    assert "factory_paths" not in proc.stderr, proc.stderr
+
+
+def test_fallback_matches_factory_paths(clean_env, monkeypatch, tmp_path):
+    """TC-FP-009: запасные пути автономных копий = factory_paths (те же env
+    и дефолты)."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "fc_copy", FACTORY / "scripts" / "flow_check.py")
+    src = (FACTORY / "scripts" / "flow_check.py").read_text("utf-8")
+    assert "except ImportError" in src and "AF_STATE_DIR" in src
+    for env in ({}, {"AI_FACTORY_HOME": "f", "AF_STATE_DIR": "s",
+                     "HERMES_HOME": "h"}):
+        for name, value in env.items():
+            monkeypatch.setenv(name, str(tmp_path / value))
+        ns = {}
+        block = src[src.index("    from types import SimpleNamespace"):
+                    src.index("    )\n", src.index("fp = _NS(")) + 6]
+        exec("import os\nfrom pathlib import Path\n"
+             + "\n".join(l[4:] for l in block.splitlines()), ns)
+        alt = ns["fp"]
+        assert alt.factory_home() == fp.factory_home()
+        assert alt.hermes_home() == fp.hermes_home()
+        assert alt.state_dir() == fp.state_dir()
+        assert alt.flowctl_state_path() == fp.flowctl_state_path()

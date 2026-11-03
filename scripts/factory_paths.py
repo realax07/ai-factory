@@ -9,7 +9,7 @@
 
 | Функция            | Что это                                   | env                | Дефолт            |
 |--------------------|-------------------------------------------|--------------------|-------------------|
-| `state_dir()`      | память движка ворот: реестр сессий,       | `AF_STATE_DIR`     | `<hermes>/state`  |
+| `state_dir()`      | память движка ворот: реестр сессий,       | `AF_STATE_DIR`     | `~/.hermes/state` |
 |                    | flowctl_state, режим flow_mode, инциденты |                    |                   |
 | `hermes_home()`    | данные исполнителя Hermes: state.db       | `HERMES_HOME`      | `~/.hermes`       |
 |                    | (async_delegations), sessions, кеш, логи  |                    |                   |
@@ -17,9 +17,13 @@
 | `projects_root()`  | где лежат проекты (`<root>/<project>`)    | `AF_PROJECTS_ROOT` | `~`               |
 | `pi_agent_dir()`   | конфиг исполнителя Pi (models, extensions)| `PI_AGENT_DIR`     | `~/.pi/agent`     |
 
-`state_dir()` по умолчанию лежит внутри `hermes_home()` — так сложилось
-исторически (фабрика выросла на Hermes). Это разные сущности: память
-движка не зависит от исполнителя, поэтому у нее своя переменная.
+`state_dir()` по умолчанию — `~/.hermes/state` (историческое место: фабрика
+выросла на Hermes), но от `HERMES_HOME` он НЕ зависит: память движка общая
+для всех процессов (шелл ПМ, крон, процесс Hermes, раннер). Если бы она
+следовала `HERMES_HOME`, процесс с другим `HERMES_HOME` (например, профиль
+Hermes) не нашел бы flow_mode.json — режим молча стал бы shadow — и реестр
+резерваций раздвоился бы (ревью J64.5). Переопределение — только явно,
+через `AF_STATE_DIR`.
 
 Функции вычисляются в момент вызова (env и HOME читаются каждый раз):
 скрипты с константами уровня модуля фиксируют значение при импорте, как и
@@ -46,7 +50,7 @@ def hermes_home() -> Path:
 
 def state_dir() -> Path:
     """Память движка ворот: реестр сессий, flowctl_state, flow_mode, инциденты."""
-    return _env_path("AF_STATE_DIR", hermes_home() / "state")
+    return _env_path("AF_STATE_DIR", Path.home() / ".hermes" / "state")
 
 
 def registry_path() -> Path:

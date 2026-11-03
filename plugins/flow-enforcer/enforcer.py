@@ -828,10 +828,10 @@ def _env_path(name: str, default: Path) -> Path:
 
 def state_dir() -> Path:
     """Логи энфорсера и реестр по умолчанию: FLOW_ENFORCER_STATE_DIR, иначе
-    память движка (AF_STATE_DIR → <HERMES_HOME>/state)."""
-    hermes = _env_path("HERMES_HOME", Path.home() / ".hermes")
-    return _env_path("FLOW_ENFORCER_STATE_DIR",
-                     _env_path("AF_STATE_DIR", hermes / "state"))
+    память движка (AF_STATE_DIR → ~/.hermes/state; от HERMES_HOME не
+    зависит — см. factory_paths.state_dir)."""
+    engine = _env_path("AF_STATE_DIR", Path.home() / ".hermes" / "state")
+    return _env_path("FLOW_ENFORCER_STATE_DIR", engine)
 
 
 def factory_home() -> Path:

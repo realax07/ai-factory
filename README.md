@@ -43,7 +43,7 @@ Bootstrap: проверяет окружение (python ≥ 3.10, git, npx дл
 
 | env | Что | Дефолт |
 |---|---|---|
-| `AF_STATE_DIR` | память движка ворот: реестр сессий, flowctl_state, flow_mode, инциденты | `$HERMES_HOME/state` |
+| `AF_STATE_DIR` | память движка ворот: реестр сессий, flowctl_state, flow_mode, инциденты (от `HERMES_HOME` не зависит) | `~/.hermes/state` |
 | `HERMES_HOME` | данные исполнителя Hermes: state.db, sessions, кеш делегаций, логи | `~/.hermes` |
 | `AI_FACTORY_HOME` | репозиторий фабрики | `~/ai-factory` |
 | `AF_PROJECTS_ROOT` | каталог проектов (`<root>/<project>`) | `~` |

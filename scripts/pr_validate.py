@@ -22,7 +22,23 @@ import urllib.request
 from pathlib import Path
 
 import session_check as _sc  # noqa: E402  (единая валидация change-id, J51)
-import factory_paths as fp  # noqa: E402  (J64.5: пути машины — только оттуда)
+try:
+    import factory_paths as fp  # noqa: E402  (J64.5: пути машины — только оттуда)
+except ImportError:  # автономная копия в проекте без factory_paths.py (AGENTS.md:
+    # в проект копируются flow_check/pr_validate + flow.yml) — те же env и
+    # дефолты, что factory_paths; CI проекта не падает на импорте.
+    from types import SimpleNamespace as _NS
+
+    def _fp_env(name: str, default: str) -> Path:
+        return Path(os.environ.get(name, "").strip() or default).expanduser()
+
+    fp = _NS(
+        factory_home=lambda: _fp_env("AI_FACTORY_HOME", "~/ai-factory"),
+        hermes_home=lambda: _fp_env("HERMES_HOME", "~/.hermes"),
+        state_dir=lambda: _fp_env("AF_STATE_DIR", "~/.hermes/state"),
+        flowctl_state_path=lambda: _fp_env(
+            "AF_STATE_DIR", "~/.hermes/state") / "flowctl_state.json",
+    )
 
 # --- Наборы обязательных артефактов по типам (контракты) ---
 

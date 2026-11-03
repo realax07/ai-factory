@@ -65,6 +65,16 @@ pipeline:
 
 ## Внимание при выкатке
 
-`HERMES_HOME` раньше учитывали только bootstrap/init; теперь — все скрипты.
-Если на VPS `HERMES_HOME` задан не на `~/.hermes`, вотчдоги и ворота начнут
-читать оттуда — сверить `python3 scripts/factory_paths.py` до мержа.
+- Память движка (`state_dir`: реестр сессий, flowctl_state, flow_mode) —
+  всегда `~/.hermes/state`, от `HERMES_HOME` НЕ зависит (ревью: иначе
+  процесс с другим `HERMES_HOME` терял flow_mode → молча shadow, и реестр
+  раздваивался). Переопределение — только явно `AF_STATE_DIR`.
+- `HERMES_HOME` теперь учитывают все скрипты для данных Hermes (state.db,
+  sessions, кеш делегаций, логи). Если на VPS он задан не на `~/.hermes`,
+  вотчдоги начнут читать оттуда — сверить `python3 scripts/factory_paths.py`
+  из шелла, из крона и из процесса Hermes.
+- `chat_degrade_watchdog`: был прошит `/home/openclaw/...`, теперь от HOME —
+  совпадает, если крон запускается от пользователя openclaw.
+- Автономные копии в проектах (`flow_check`, `pr_validate`, `flow_mode`)
+  без `factory_paths.py` работают с запасным дефолтом (те же env/дефолты);
+  `check_mirrors` сверяет и `factory_paths.py`.
