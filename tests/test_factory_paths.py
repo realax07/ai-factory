@@ -172,21 +172,20 @@ def test_autonomous_copy_without_factory_paths(tmp_path, clean_env, script):
     assert "factory_paths" not in proc.stderr, proc.stderr
 
 
-def test_fallback_matches_factory_paths(clean_env, monkeypatch, tmp_path):
+@pytest.mark.parametrize("script", ["flow_check.py", "pr_validate.py"])
+def test_fallback_matches_factory_paths(clean_env, monkeypatch, tmp_path,
+                                        script):
     """TC-FP-009: запасные пути автономных копий = factory_paths (те же env
-    и дефолты)."""
-    import importlib.util
-    spec = importlib.util.spec_from_file_location(
-        "fc_copy", FACTORY / "scripts" / "flow_check.py")
-    src = (FACTORY / "scripts" / "flow_check.py").read_text("utf-8")
+    и дефолты) — для каждого скрипта с запасным блоком."""
+    src = (FACTORY / "scripts" / script).read_text("utf-8")
     assert "except ImportError" in src and "AF_STATE_DIR" in src
+    block = src[src.index("    from types import SimpleNamespace"):
+                src.index("    )\n", src.index("fp = _NS(")) + 6]
     for env in ({}, {"AI_FACTORY_HOME": "f", "AF_STATE_DIR": "s",
                      "HERMES_HOME": "h"}):
         for name, value in env.items():
             monkeypatch.setenv(name, str(tmp_path / value))
         ns = {}
-        block = src[src.index("    from types import SimpleNamespace"):
-                    src.index("    )\n", src.index("fp = _NS(")) + 6]
         exec("import os\nfrom pathlib import Path\n"
              + "\n".join(l[4:] for l in block.splitlines()), ns)
         alt = ns["fp"]
@@ -194,3 +193,23 @@ def test_fallback_matches_factory_paths(clean_env, monkeypatch, tmp_path):
         assert alt.hermes_home() == fp.hermes_home()
         assert alt.state_dir() == fp.state_dir()
         assert alt.flowctl_state_path() == fp.flowctl_state_path()
+
+
+def test_flow_mode_fallback_matches(tmp_path, clean_env):
+    """TC-FP-010: flow_mode без factory_paths рядом — тот же файл режима,
+    что и с модулем (дефолт и AF_STATE_DIR)."""
+    import os
+    import shutil
+    lone = tmp_path / "lone"
+    lone.mkdir()
+    shutil.copy2(FACTORY / "scripts" / "flow_mode.py", lone / "flow_mode.py")
+    probe = "import flow_mode; print(flow_mode.DEFAULT_MODE_FILE)"
+    for extra in ({}, {"AF_STATE_DIR": str(tmp_path / "s")}):
+        env = {**os.environ, **extra}
+        alone = subprocess.run([sys.executable, "-c", probe], cwd=lone,
+                               env=env, capture_output=True, text=True,
+                               check=True).stdout.strip()
+        withfp = subprocess.run(
+            [sys.executable, "-c", probe], cwd=FACTORY / "scripts", env=env,
+            capture_output=True, text=True, check=True).stdout.strip()
+        assert alone == withfp

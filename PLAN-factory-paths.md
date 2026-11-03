@@ -78,3 +78,6 @@ pipeline:
 - Автономные копии в проектах (`flow_check`, `pr_validate`, `flow_mode`)
   без `factory_paths.py` работают с запасным дефолтом (те же env/дефолты);
   `check_mirrors` сверяет и `factory_paths.py`.
+- `check_mirrors` теперь требует `factory_paths.py` в проекте: проекты, куда
+  модуль еще не доставлен (ekotov-wiki, child_bot), в сверке зеркал станут
+  `missing` (exit 1) — доставить модуль зеркалом вместе с обновлением копий.
