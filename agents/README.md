@@ -19,11 +19,11 @@
 |---|---|---|---|
 | Бизнес-аналитик | plan-write | `requirements.md`, `docs/ba/answers_roundN.md` | нет |
 | Системный аналитик | auto-edit | `openspec/changes/<id>/**` (вкл. requirements.md, research.md — решение 2026-10-05 ekotov-wiki), `sdd.md` | нет |
-| Разработчик | auto-edit | файлы своей задачи, чекбокс в `tasks.md`, своя ветка `feature/*` | своей ветки — да; main — нет |
+| Разработчик | auto-edit | файлы своей задачи, чекбокс в `tasks.md`, своя ветка `feature/*`; код фабрики — `scripts/**`, `plugins/**` (J64.18) | своей ветки — да; main — нет |
 | Код-ревьюер | auto-edit | `code-reviews/<change-id>/review-*.md` | нет |
 | QA: автор кейсов | auto-edit | `test-model/new/<change-id>/` | нет |
 | QA: ревьюер кейсов | auto-edit | `test-model/reviews/`, перенос в `test-model/approved/` | нет |
-| QA: автоматизатор | auto-edit | `tests/**`, `test-model/bugs/`, dev-зависимости | нет |
+| QA: автоматизатор | auto-edit | `tests/**`, `test-model/bugs/`, `pytest.ini` (J64.18), dev-зависимости | нет |
 | QA: impact-аналитик | auto-edit | `test-model/impact/<change-id>.md` | нет (роль создается при первом change с MODIFIED-дельтами, H5) |
 | QA: регресс-аналитик | auto-edit | `test-model/regression/manifest.md` | нет (роль создается при первом релизе, G5) |
 | Дизайнер UI | auto-edit | `design/**` проекта | нет (роль создается 2026-09-22 для R2/задачи 2.5, Д-5; мокапы и токены, продукт-код не пишет) |
@@ -65,7 +65,7 @@
 - **Выход:** код в ветке + PR (gh) + чекбокс задачи. Ревьюеру — процедура проверки в ТЗ.
 - **Ключевые границы:** спека — арбитр (расхождение = эскалация, не правка); не реализует вне tasks.md; не пишет QA-артефакты; push main запрещен.
 - **Принимает:** вердикт code_reviewer (approve → merge ПМ; return → доработка в той же ветке).
-- **Смежная зона:** изменения пайплайна (flow_check, flow.yml, scripts/) — тоже его зона; deploy/** и прод — сабагент devops (J26). Ворота **J50**: UI-дельта пакета ⇒ web-тесты в дифе PR или `[no-ui-tests]` с основанием.
+- **Смежная зона:** изменения пайплайна фабрики (flow_check, scripts/, plugins/) — тоже его зона; CI-workflows (`.github/workflows/**`), deploy/** и прод — сабагент devops (J26, J64.18); `pytest.ini` — автоматизатор. Ворота **J50**: UI-дельта пакета ⇒ web-тесты в дифе PR или `[no-ui-tests]` с основанием.
 
 ### 4. Код-ревьюер — [code_reviewer_agent.md](code_reviewer_agent.md)
 
@@ -129,7 +129,7 @@
 
 | Поле | Значение |
 |---|---|
-| Режим | auto-edit; зона `deploy/**` проекта, `ops/**` фабрики; push НЕТ |
+| Режим | auto-edit; зона `deploy/**` проекта, `ops/**` фабрики, `.github/workflows/**` (CI-ворота, J64.18); push НЕТ |
 | Запуск | Деплой/инфра-задачи (E9): runbook, deploy-скрипты, откаты |
 | Скиллы | `ekotov-wiki-ops` (проект wiki), `hermes-agent` (фабрика) |
 

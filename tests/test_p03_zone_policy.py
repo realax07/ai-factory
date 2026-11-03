@@ -74,6 +74,19 @@ class TestRoleZonePolicyUnit:
         assert r["violations"] == ["src/**"]
         assert r["policy_version"] == rzp.policy_version()
 
+    def test_j64_18_pipeline_paths_owners(self):
+        """J64.18: каждый путь пайплайна — ровно у своей роли: плагины
+        фабрики — dev, CI-workflows — devops, pytest.ini — qa_automation."""
+        owners = {"plugins/flow-enforcer/enforcer.py": "dev",
+                  ".github/workflows/flow.yml": "devops",
+                  "pytest.ini": "qa_automation"}
+        for path, owner in owners.items():
+            for role in ("dev", "devops", "qa_automation", "code_reviewer",
+                         "pm"):
+                ok = rzp.narrow_zones(role, [path])["violations"] == []
+                assert ok == (role == owner), (path, role)
+        assert "J64.18" in rzp.policy_version()
+
     def test_policy_version_is_stable_string(self):
         v = rzp.policy_version()
         assert "agents/README.md" in v and v == rzp.policy_version()

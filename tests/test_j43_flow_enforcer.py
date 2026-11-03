@@ -656,3 +656,19 @@ def test_k5_bootstrap_hint(tmp_path, monkeypatch, capsys):
     (home / "plugins" / "flow-enforcer").mkdir()
     fb.plugin_hint()
     assert "установлен" in capsys.readouterr().out
+
+
+def test_j64_18_deny_message_keeps_reason_codes_first():
+    """J64.18: код причины отказа prepare — в начале сообщения ПМ, даже когда
+    сырой JSON длиннее обреза хвоста (ключи отсортированы: decision в
+    начале JSON и раньше уходил за обрез при росте policy_version)."""
+    out = json.dumps({
+        "decision": {"status": "DENY", "details": [
+            "PLAN_RELEASE_MISSING: план релиза не найден (Флоу 4)"]},
+        "record": {"policy_version": "x" * 5000},
+    }, sort_keys=True)
+    summary = enforcer.decision_summary(out)
+    assert "решение: DENY" in summary
+    assert "PLAN_RELEASE_MISSING" in summary
+    assert "PLAN_RELEASE_MISSING" not in out.strip()[-2000:]  # хвост без кода
+    assert enforcer.decision_summary("не json") == ""

@@ -39,7 +39,9 @@ POLICY_TABLE_DATE = "2026-10-23"
 # pm (PLAN-*.md, docs/**) расширены относительно запиненной таблицы —
 # редакция политики фиксируется в version-строке, чтобы резервации/сверки
 # diff до и после поправки были различимы (контракт policy_version).
-POLICY_AMENDMENT = "; поправка Н13: 2026-10-23 (integrator/pm-зоны, таблица синхронизирована)"
+POLICY_AMENDMENT = ("; поправка Н13: 2026-10-23 (integrator/pm-зоны, таблица синхронизирована)"
+                    "; поправка J64.18: 2026-11-03 (dev: plugins/**; devops: "
+                    ".github/workflows/**; qa_automation: pytest.ini)")
 POLICY_VERSION = f"{POLICY_TABLE_DIGEST}; дата: {POLICY_TABLE_DATE}{POLICY_AMENDMENT}"
 POLICY_SOURCE = "agents/README.md"
 
@@ -85,6 +87,10 @@ ROLE_ZONE_POLICY: dict[str, tuple[str, ...]] = {
         "tests/**",
         "test-model/bugs/*",
         "feature/*",
+        # J64.18 (решение Заказчика 2026-11-03): плагины фабрики (энфорсер) —
+        # код, зона dev; в проектах-болванках каталога нет. CI проекта —
+        # зона devops, конфиг автотестов — qa_automation (ниже).
+        "plugins/**",
     ),
     "code_reviewer": (
         "code-reviews/*/review-*.md",
@@ -104,6 +110,9 @@ ROLE_ZONE_POLICY: dict[str, tuple[str, ...]] = {
     "qa_automation": (
         "tests/**",
         "test-model/bugs/*",
+        # J64.18 (решение Заказчика 2026-11-03): конфиг автотестов — микро-
+        # харнесс роли автоматизатора (свои зоны и скиллы), не dev.
+        "pytest.ini",
     ),
     "qa_impact_analyst": (
         "test-model/impact/*.md",
@@ -125,6 +134,9 @@ ROLE_ZONE_POLICY: dict[str, tuple[str, ...]] = {
     "devops": (
         "deploy/**",
         "ops/**",
+        # J64.18 (решение Заказчика 2026-11-03): CI-ворота проекта —
+        # техническая зона devops (фабрика ставит их болванкой factory_init).
+        ".github/workflows/**",
     ),
     # Н13 (аудит 2026-10-23): integrator легален в merge_task, но имел ПУСТУЮ
     # политику — merge-артефакты некому резервировать (любой prepare под
