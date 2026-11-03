@@ -30,16 +30,21 @@ import session_check as sc
 # agents/README.md (строка-заголовок «| Агент | Режим | …» до последней
 # строки-ряда включительно, join "\n", без завершающего перевода строки,
 # UTF-8) в указанном коммите.
+# J64.18: перепин — таблица изменена (строки dev/автоматизатор), коммит
+# 55dd7e5 содержит новую редакцию (тест TC-R3-003 сверяет digest с ним, а в
+# shallow-клоне CI — с текущим файлом).
 POLICY_TABLE_DIGEST = (
-    "agents/README.md@1b6040b:таблица-записи (роль→зона), sha256 "
-    "fc87330d1b8344bce8fcdbb4bb4b31707f2125f2e7096494b453bd513a3876b1"
+    "agents/README.md@55dd7e5:таблица-записи (роль→зона), sha256 "
+    "ac13f1604d128c45107853942f4c2deb0f1e0cebc1af3bded91c7908ec471551"
 )
-POLICY_TABLE_DATE = "2026-10-23"
+POLICY_TABLE_DATE = "2026-11-03"
 # Поправка Н13 (аудит 2026-10-23): зоны integrator (merge-артефакты),
 # pm (PLAN-*.md, docs/**) расширены относительно запиненной таблицы —
 # редакция политики фиксируется в version-строке, чтобы резервации/сверки
 # diff до и после поправки были различимы (контракт policy_version).
-POLICY_AMENDMENT = "; поправка Н13: 2026-10-23 (integrator/pm-зоны, таблица синхронизирована)"
+POLICY_AMENDMENT = ("; поправка Н13: 2026-10-23 (integrator/pm-зоны, таблица синхронизирована)"
+                    "; поправка J64.18: 2026-11-03 (dev: plugins/**; devops: "
+                    ".github/workflows/**; qa_automation: pytest.ini)")
 POLICY_VERSION = f"{POLICY_TABLE_DIGEST}; дата: {POLICY_TABLE_DATE}{POLICY_AMENDMENT}"
 POLICY_SOURCE = "agents/README.md"
 
@@ -85,6 +90,10 @@ ROLE_ZONE_POLICY: dict[str, tuple[str, ...]] = {
         "tests/**",
         "test-model/bugs/*",
         "feature/*",
+        # J64.18 (решение Заказчика 2026-11-03): плагины фабрики (энфорсер) —
+        # код, зона dev; в проектах-болванках каталога нет. CI проекта —
+        # зона devops, конфиг автотестов — qa_automation (ниже).
+        "plugins/**",
     ),
     "code_reviewer": (
         "code-reviews/*/review-*.md",
@@ -104,6 +113,9 @@ ROLE_ZONE_POLICY: dict[str, tuple[str, ...]] = {
     "qa_automation": (
         "tests/**",
         "test-model/bugs/*",
+        # J64.18 (решение Заказчика 2026-11-03): конфиг автотестов — микро-
+        # харнесс роли автоматизатора (свои зоны и скиллы), не dev.
+        "pytest.ini",
     ),
     "qa_impact_analyst": (
         "test-model/impact/*.md",
@@ -125,6 +137,9 @@ ROLE_ZONE_POLICY: dict[str, tuple[str, ...]] = {
     "devops": (
         "deploy/**",
         "ops/**",
+        # J64.18 (решение Заказчика 2026-11-03): CI-ворота проекта —
+        # техническая зона devops (фабрика ставит их болванкой factory_init).
+        ".github/workflows/**",
     ),
     # Н13 (аудит 2026-10-23): integrator легален в merge_task, но имел ПУСТУЮ
     # политику — merge-артефакты некому резервировать (любой prepare под

@@ -1166,6 +1166,37 @@ def parse_decision_output(out: str) -> dict | None:
     return data.get("decision") if isinstance(data, dict) else None
 
 
+def decision_summary(out: str) -> str:
+    """Коды и детали отказа prepare — в начало сообщения ПМ (J64.18):
+    хвост сырого JSON обрезается по длине, а ключи отсортированы — причины
+    (decision, reason) стоят в начале и при росте полей (policy_version)
+    уходили за обрез, ПМ видел отказ без кода."""
+    idx = out.find("{")
+    try:
+        data = json.loads(out[idx:]) if idx >= 0 else None
+    except ValueError:
+        data = None
+    if not isinstance(data, dict):
+        return ""
+    def _as_list(value) -> list:
+        return value if isinstance(value, list) else []
+
+    lines = []
+    if data.get("reason"):
+        lines.append(f"причина: {data['reason']}")
+    record = data.get("record") if isinstance(data.get("record"), dict) else {}
+    decision = data.get("decision") or record.get("decision") or {}
+    if not isinstance(decision, dict):
+        decision = {}
+    if decision.get("status") and decision["status"] != data.get("reason"):
+        lines.append(f"решение: {decision['status']}")
+    lines += [f"- {d}" for d in _as_list(decision.get("details"))]
+    lines += [f"- {v}" for v in _as_list(data.get("zone_violations"))]
+    lines += [f"- защищенный путь: {p}"
+              for p in _as_list(data.get("protected_paths"))]
+    return "\n".join(lines)
+
+
 def scope_file_candidates(flow: int, repo: Path, scope: str) -> list[Path]:
     """Scope-файлы Флоу 2/4/5 (J43.1): независимое подтверждение, что работа
     этого scope существует, хотя change-пакета нет и не должно быть."""
@@ -1425,8 +1456,9 @@ def flow_enforce(tool_name: str, args: dict, task_id: str = "",
         return {"action": "block", "message": (
             f"FLOW-ENFORCER: flowctl prepare отклонил делегацию "
             f"(exit {rc}, flow={flow}, role={markers['role']}, "
-            f"repo={markers['repo']}, scope={markers['scope']}). "
-            f"Вывод ворот:\n"
+            f"repo={markers['repo']}, scope={markers['scope']}).\n"
+            f"{decision_summary(out)}\n"
+            f"Вывод ворот (хвост):\n"
             f"{out.strip()[-2000:]}")}
     except FlowMarkerError as exc:
         log_event({"event": "flow_marker_invalid", "task_id": task_id,
