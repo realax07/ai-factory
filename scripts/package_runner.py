@@ -1021,6 +1021,10 @@ def gate_end(gate: dict, worktree: Path, report: Path) -> tuple[bool, str]:
             str(report), "--gate-scope", FLOW_GATE_SCOPE,
             "--registry", gate["registry"], "--state", gate["state"],
             "--json"]
+    # pm_bounds_check (гейт этапов Флоу 4 и др., J3) — только в явном
+    # режиме: для стадии раннера — sessions (реестр, где лежит резервация
+    # стадии; коммитов стадии на момент finish еще нет).
+    argv += ["--pm-mode", "sessions", "--pm-registry", gate["registry"]]
     # Команда OpenSpec CLI для гейта openspec_validate (дефолт flowctl —
     # `npx openspec`; на машине с глобальным CLI — `openspec`).
     if os.environ.get("PIPELINE_OPENSPEC_CMD"):

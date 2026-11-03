@@ -178,12 +178,6 @@ create_change).
   `flowctl_state.json`); env `PIPELINE_FLOW_REGISTRY` /
   `PIPELINE_FLOW_STATE` переопределяют. Отчет стадии для finish —
   `<план>.runner-reports/<stage>-<попытка>.md`.
-- **Известное ограничение — Флоу 4:** `flow_state` принимает scope Флоу 4
-  только буквальным `chore` (`CHORE_RE`), а пакеты обслуживания называются
-  `<slug>` (план `PLAN-<slug>.md`, J43.1). Реальный prepare такого пакета —
-  UNKNOWN `AMBIGUOUS_STATE`; раннер не подменяет scope и останавливается с
-  этим кодом (энфорсер в dry-run гасит тот же отказ постфильтром). Решение —
-  за Заказчиком.
 
 ### Опциональные стадии (`optional: true`)
 

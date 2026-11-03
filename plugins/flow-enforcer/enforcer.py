@@ -247,8 +247,8 @@ def action_for_role(role: str, flow: int) -> str:
 NO_CHANGE_DETAIL_PATTERNS = (
     # тексты ворот Флоу 1 о отсутствующем/несозданном change-пакете
     "change-пакет openspec/changes/",
-    # Ф4: scope=chore-slug легален маркеру, но не формату [chore] flow_state
-    "scope не соответствует выбранному флоу",
+    # (Ф4-костыль «scope не соответствует выбранному флоу» снят — J64.3:
+    # flow_state.CHORE_RE принимает chore-slug, отказ — только по существу.)
 )
 
 # Последовательность этапов (J43.1, FLOW_ENFORCER_SEQUENCE=1): действие →

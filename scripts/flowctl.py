@@ -182,7 +182,7 @@ def ambiguous_field_hints(scope: dict) -> list[str]:
                      "(kebab-case change-id, например add-widget)")
     elif flow == 4 and not flow_state.CHORE_RE.match(change):
         hints.append(f"scope={change} не соответствует формату Флоу 4 "
-                     "([chore])")
+                     "(chore или kebab-slug)")
     elif flow == 5 and not flow_state.CHANGE_ID_RE.match(change):
         hints.append(f"scope={change} не соответствует формату Флоу 5 "
                      "(change-id)")

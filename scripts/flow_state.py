@@ -44,7 +44,9 @@ FLOW_IDS = (1, 2, 3, 4, 5)
 
 CHANGE_ID_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)+$")
 BUG_ID_RE = re.compile(r"^BUG-\d{3}$", re.IGNORECASE)
-CHORE_RE = re.compile(r"^chore$", re.IGNORECASE)
+# Флоу 4 (обслуживание): scope — `chore` или kebab-slug пакета (план
+# PLAN-<slug>.md, J43.1; решение Заказчика 2026-11-03, J64.3).
+CHORE_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$", re.IGNORECASE)
 
 # Флоу 1 — kebab-case change-id; Флоу 2/3 — BUG-NNN; Флоу 4 — [chore];
 # Флоу 5 — экспресс-режим: идентификатор change + evidence ретроспективных
@@ -839,7 +841,7 @@ def check_flow_identifier(repo: Path, flow: int, change_id: str, problems: list)
         if not CHORE_RE.match(change_id):
             problems.append(Problem(
                 code="FLOW_ID_INVALID",
-                detail=f"Флоу 4 (обслуживание) требует маркер [chore], получено: {change_id!r}",
+                detail=f"Флоу 4 (обслуживание) требует scope chore или kebab-slug, получено: {change_id!r}",
                 source="scope",
             ))
     elif flow == 5:

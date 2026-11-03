@@ -210,10 +210,9 @@ class TestFlow4PlanGate:
         return repo
 
     def test_plan_slug_in_root_allows(self, tmp_path):
-        """TC-J431-007: План Флоу 4 закрывает план-ворота: PLAN_RELEASE_MISSING нет.
-        (Сам ALLOW для slug дает post-filter энфорсера — prepare при slug
-        честно дает UNKNOWN/AMBIGUOUS_STATE о формате scope-id [chore];
-        см. test_v_flow4_with_plan_allows_via_no_change_filter.)"""
+        """TC-J431-007: План Флоу 4 закрывает план-ворота: PLAN_RELEASE_MISSING нет;
+        J64.3: scope-id chore-slug валиден — решение ALLOW без AMBIGUOUS_STATE
+        (раньше ALLOW «дорисовывал» post-filter энфорсера)."""
         repo = self._chore_repo(tmp_path)
         reg = make_registry(tmp_path)
         d = ft.check_action(snapshot_for(repo, reg, flow=4,
@@ -222,7 +221,8 @@ class TestFlow4PlanGate:
                                 paths=("scripts/*",)))
         assert not has_code(d, ft.PLAN_RELEASE_MISSING)
         assert not has_code(d, ft.PLAN_FLOW_UNDECLARED)
-        assert has_code(d, ft.AMBIGUOUS_STATE)  # scope-id: slug ≠ [chore]
+        assert not has_code(d, ft.AMBIGUOUS_STATE)  # J64.3: slug — валидный scope
+        assert d.status == "ALLOW", d.details
 
     def test_missing_plan_deny(self, tmp_path):
         """TC-J431-008: J43.1 flow-aware."""

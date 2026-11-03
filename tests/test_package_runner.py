@@ -1923,3 +1923,15 @@ def test_m18_engine_missing_stops_pi_stage(tmp_path, monkeypatch, capsys):
     assert pr.cmd_run(plan, dry_run=False) == 2
     assert "FACTORY_ENGINE_MISSING" in capsys.readouterr().err
     assert calls == []
+
+
+@pytest.mark.real_flow_gates
+def test_m19_flow4_slug_package_passes_gates(tmp_path, monkeypatch):
+    """TC-PR-060 (J64.3): пакет Флоу 4 со slug-именем (план PLAN-<slug>.md)
+    проходит реальные ворота — раньше prepare давал UNKNOWN AMBIGUOUS_STATE
+    (CHORE_RE = ^chore$), и раннер останавливался."""
+    repo, plan = gated_plan(tmp_path, DEV_STAGE, package="chore-x", flow=4)
+    wt, _ = patch_gated(monkeypatch, tmp_path, ["src/x.py"])
+    assert pr.cmd_run(plan, dry_run=False) == 0
+    assert branch_files(wt) == ["src/x.py"]
+    assert registry_statuses() == [("dev", "closed")]

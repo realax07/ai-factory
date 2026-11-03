@@ -359,12 +359,18 @@ class TestFlowIdentifiers:
         assert fact(s, "test_model.present")["value"]["bugs"] is True
 
     def test_flow4_requires_chore(self, tmp_path):
+        """J64.3: scope Флоу 4 — chore или kebab-slug пакета (PLAN-<slug>.md);
+        не-kebab (пробелы, слэши, подчеркивания) — FLOW_ID_INVALID."""
         repo = make_repo(tmp_path)
         reg = registry_file(tmp_path, '{"sessions": []}')
-        s = inspect_json(repo, registry=reg, flow=4, change_id="add-widget")
-        assert any(p["code"] == "FLOW_ID_INVALID" for p in s["problems"])
-        s2 = inspect_json(repo, registry=reg, flow=4, change_id="chore")
-        assert not any(p["code"] == "FLOW_ID_INVALID" for p in s2["problems"])
+        for bad in ("add widget", "x/y", "add_widget", "-lead"):
+            s = inspect_json(repo, registry=reg, flow=4, change_id=bad)
+            assert any(p["code"] == "FLOW_ID_INVALID"
+                       for p in s["problems"]), bad
+        for ok in ("chore", "add-widget", "cleanup"):
+            s2 = inspect_json(repo, registry=reg, flow=4, change_id=ok)
+            assert not any(p["code"] == "FLOW_ID_INVALID"
+                           for p in s2["problems"]), ok
 
     def test_flow5_retro_missing(self, tmp_path):
         repo = make_repo(tmp_path, req=None)
