@@ -152,43 +152,60 @@ SINGLE_RE = {
     "paths": re.compile(r"\bpaths:\s*(\S+)"),
 }
 
-# Формат scope Флоу 2 (BUG-AF-RECHECK: синхронно с правилом имен репортов
-# test-model/bugs/): единая грамматика — регекс-строка BUG_ID_PATTERN из
-# scripts/flow_check.py (MIN-3 ревью BUG-AF-RECHECK: один источник истины;
-# покрывает BUG-001, BUG-AF-RECHECK-001 и репорты с суффиксом-slug вида
-# BUG-001-search-card-click.md; lowercase/кириллица/пробелы — отклонение,
-# поэтому БЕЗ re.IGNORECASE). Фабрика недоступна → встроенная fallback-копия
-# (синхронизируется тестом tests/test_recheck2_fixes.py).
-def _bug_id_pattern() -> str:
+# Грамматика scope флоу (J65.3): единый источник — scripts/flow_ids.py
+# фабрики (Ф1 change-id, Ф2 имя репорта BUG-…, Ф3 incident-ref S<1-3>-<slug>,
+# Ф4/Ф5 kebab-slug). Плагин работает копией внутри Hermes и не зависит от
+# доступности фабрики: фабрика недоступна → встроенная fallback-копия,
+# совпадение с модулем проверяет тест (tests/test_j65_flow_ids.py).
+_FLOW_IDS_FALLBACK = {
+    "CHANGE_ID_PATTERN": r"^[a-z0-9]+(?:-[a-z0-9]+)+$",
+    "SLUG_PATTERN": r"^[a-z0-9]+(?:-[a-z0-9]+)*$",
+    "BUG_ID_PATTERN": r"^BUG-(?:[A-Z0-9]+-)*\d{3}(?:-[a-z0-9][a-z0-9.-]*)?$",
+    "SEVERITY_PREFIXES": ("S1", "S2", "S3"),
+}
+
+
+def _flow_ids_grammar() -> dict:
     try:
         scripts_dir = str(factory_home() / "scripts")
         if scripts_dir not in sys.path:
             sys.path.insert(0, scripts_dir)
-        import flow_check
-        return flow_check.BUG_ID_PATTERN
+        import flow_ids
+        return {k: getattr(flow_ids, k) for k in _FLOW_IDS_FALLBACK}
     except Exception:  # noqa: BLE001 — плагин не зависит от доступности фабрики
-        return r"^BUG-(?:[A-Z0-9]+-)*\d{3}(?:-[a-z0-9][a-z0-9.-]*)?$"
+        return dict(_FLOW_IDS_FALLBACK)
 
 
-BUG_ID_RE = re.compile(_bug_id_pattern())
+_GRAMMAR = _flow_ids_grammar()
 
-# J48 (add-incident-protocol, D1/I-1): severity-allowlist Флоу 3 — единый
-# источник истины flow_transition.SEVERITY_PREFIXES (расширение одной правкой);
-# фабрика недоступна → встроенная fallback-копия (синхронизируется тестом).
+
 def _severity_prefixes() -> tuple:
-    try:
-        scripts_dir = str(factory_home() / "scripts")
-        if scripts_dir not in sys.path:
-            sys.path.insert(0, scripts_dir)
-        import flow_transition
-        return tuple(flow_transition.SEVERITY_PREFIXES)
-    except Exception:  # noqa: BLE001 — плагин не зависит от доступности фабрики
-        return ("S1", "S2", "S3")
+    """Severity-allowlist Флоу 3 (J48 I-1; источник — flow_ids)."""
+    return tuple(_GRAMMAR["SEVERITY_PREFIXES"])
 
 
-SEVERITY_PREFIX_RE = re.compile(
-    "^(?:" + "|".join(re.escape(p) for p in _severity_prefixes()) + ")-")
+_SEVERITY_ALT = "|".join(re.escape(p) for p in _severity_prefixes())
+CHANGE_ID_RE = re.compile(_GRAMMAR["CHANGE_ID_PATTERN"])
+SLUG_RE = re.compile(_GRAMMAR["SLUG_PATTERN"])
+BUG_ID_RE = re.compile(_GRAMMAR["BUG_ID_PATTERN"])
+SEVERITY_PREFIX_RE = re.compile("^(?:" + _SEVERITY_ALT + ")-")
+INCIDENT_REF_RE = re.compile(
+    "^(?:" + _SEVERITY_ALT + r")-[a-z0-9]+(?:-[a-z0-9]+)*$")
 FLOW_IDS = (1, 2, 3, 4, 5)
+
+
+def marker_scope_valid(flow: int, scope: str) -> bool:
+    """scope маркера делегации по грамматике flow_ids с legacy=False:
+    Ф3 — только incident-ref с severity (J48: классификация до реакции)."""
+    if flow == 1:
+        return bool(CHANGE_ID_RE.match(scope))
+    if flow == 2:
+        return bool(BUG_ID_RE.match(scope))
+    if flow == 3:
+        return bool(INCIDENT_REF_RE.match(scope))
+    if flow in (4, 5):
+        return bool(SLUG_RE.match(scope))
+    return False
 
 # Действие по роли: этапы STAGE_TABLE Флоу 1 (flow_transition.py).
 ROLE_ACTIONS = {
@@ -987,8 +1004,8 @@ def validate_scope_for_flow(flow: int, scope: str) -> None:
     репорта test-model/bugs/, расширен 5c21489: BUG-001 и BUG-AF-RECHECK-001
     оба валидны); Ф3 S<1|2|3>-<краткий-ид> (J48: severity-классификация
     инцидента обязательна до реакции, FR-1/FR-4; невалидный формат —
-    FLOW_MARKER_INVALID); Ф1 change-id / Ф4 chore-slug /
-    Ф5 slug — непустая строка (пустой отсечен при разборе)."""
+    FLOW_MARKER_INVALID); Ф1 kebab change-id, Ф4/Ф5 kebab-slug (J65.3:
+    грамматика flow_ids — тот же отказ, что дал бы движок, но на спавне)."""
     if not scope:
         raise FlowMarkerError(
             "пустой scope — scope обязателен (Ф1 change-id, "
@@ -999,7 +1016,7 @@ def validate_scope_for_flow(flow: int, scope: str) -> None:
             f"Флоу 2 требует scope формата BUG-<КОМПЛЕКС>-NNN "
             f"(BUG-001 или BUG-AF-RECHECK-001; A-Z0-9, дефис-разделитель), "
             f"получено {scope!r} (репорт test-model/bugs/<scope>.md)")
-    if flow == 3 and not SEVERITY_PREFIX_RE.match(scope):
+    if flow == 3 and not marker_scope_valid(3, scope):
         # J48 (D1/FR-4): severity внутри incident_ref — маркер обязан нести
         # классификацию; неклассифицированный инцидент не запускает реакцию
         # (очевидная ошибка маркера → FLOW_MARKER_INVALID).
@@ -1007,6 +1024,15 @@ def validate_scope_for_flow(flow: int, scope: str) -> None:
             f"Флоу 3 требует scope формата S<1|2|3>-<краткий-ид> — "
             f"severity-классификация инцидента обязательна до реакции "
             f"(J48; FR-1/FR-4; получено {scope!r})")
+    if flow == 1 and not marker_scope_valid(1, scope):
+        raise FlowMarkerError(
+            f"Флоу 1 требует scope — kebab-case change-id, например "
+            f"add-widget (получено {scope!r})")
+    if flow in (4, 5) and not marker_scope_valid(flow, scope):
+        raise FlowMarkerError(
+            f"Флоу {flow} требует scope — kebab-slug, например "
+            f"{'repo-cleanup' if flow == 4 else 'fix-typo'} "
+            f"(получено {scope!r})")
 
 
 def resolve_flow(markers: dict) -> tuple[int, bool]:
