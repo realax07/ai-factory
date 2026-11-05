@@ -91,6 +91,101 @@ def describe() -> dict[str, str]:
     }
 
 
-if __name__ == "__main__":
+# --------------------------------------------------- doctor (J65.12)
+# Перед мержем правок путей (J64.5) их сверяли руками: запустить этот модуль
+# из шелла, из крона и из процесса Hermes и сравнить. `--doctor` снимает
+# снимок контекста в JSON (env, пути, проверки), `--compare` сверяет снимки:
+# пути, разошедшиеся между контекстами, — первая причина «ворота в кроне
+# видят другой реестр».
+
+DOCTOR_ENV = ("HOME", "HERMES_HOME", "AF_STATE_DIR", "AI_FACTORY_HOME",
+              "AF_PROJECTS_ROOT", "PI_AGENT_DIR", "FLOW_MODE_FILE",
+              "FLOW_ENFORCER_STATE_DIR", "PYTHONUSERBASE")
+
+
+def doctor(label: str) -> dict:
+    """Снимок контекста: env, пути и проверки существования."""
+    import getpass
+    import sys
+    paths = describe()
+    checks = {
+        "state_dir_exists": Path(paths["state_dir"]).is_dir(),
+        "registry_exists": Path(paths["registry"]).is_file(),
+        "factory_has_flowctl":
+            (Path(paths["factory_home"]) / "scripts" / "flowctl.py").is_file(),
+        "hermes_home_exists": Path(paths["hermes_home"]).is_dir(),
+        # J64.5: память движка не зависит от HERMES_HOME — расхождение
+        # нормально, но видно в снимке.
+        "state_under_hermes_home":
+            Path(paths["state_dir"]).is_relative_to(Path(paths["hermes_home"])),
+    }
+    try:
+        user = getpass.getuser()
+    except Exception:  # noqa: BLE001 — нет пользователя в окружении (контейнер)
+        user = None
+    return {
+        "label": label,
+        "user": user,
+        "python": sys.executable,
+        "env": {k: os.environ.get(k) for k in DOCTOR_ENV},
+        "paths": paths,
+        "checks": checks,
+    }
+
+
+def compare(snapshots: list[dict]) -> list[str]:
+    """Пути, различающиеся между снимками: «<путь>: <label>=<значение> …»."""
+    diffs = []
+    for key in describe():
+        values = {s.get("label", "?"): s.get("paths", {}).get(key)
+                  for s in snapshots}
+        if len(set(values.values())) > 1:
+            diffs.append(f"{key}: " + ", ".join(
+                f"{lbl}={val}" for lbl, val in values.items()))
+    return diffs
+
+
+def main(argv: list[str] | None = None) -> int:
+    import argparse
+    import json
+    ap = argparse.ArgumentParser(description="Пути машины фабрики (J64.5)")
+    ap.add_argument("--doctor", metavar="LABEL",
+                    help="снимок контекста (shell/cron/hermes) в JSON")
+    ap.add_argument("--out", help="файл или каталог снимка (по умолчанию stdout)")
+    ap.add_argument("--compare", nargs="+", metavar="SNAPSHOT",
+                    help="сверить снимки --doctor; exit 1 при расхождении путей")
+    args = ap.parse_args(argv)
+
+    if args.compare:
+        snaps = [json.loads(Path(p).read_text(encoding="utf-8"))
+                 for p in args.compare]
+        diffs = compare(snaps)
+        labels = ", ".join(s.get("label", "?") for s in snaps)
+        if diffs:
+            print(f"РАСХОЖДЕНИЕ путей между контекстами ({labels}):")
+            for d in diffs:
+                print(f"  {d}")
+            return 1
+        print(f"OK — пути совпадают во всех контекстах ({labels})")
+        return 0
+
+    if args.doctor:
+        text = json.dumps(doctor(args.doctor), ensure_ascii=False, indent=2)
+        if args.out:
+            out = Path(args.out).expanduser()
+            if out.is_dir() or args.out.endswith("/"):
+                out.mkdir(parents=True, exist_ok=True)
+                out = out / f"factory-paths-{args.doctor}.json"
+            out.write_text(text + "\n", encoding="utf-8")
+            print(f"снимок записан: {out}")
+        else:
+            print(text)
+        return 0
+
     for key, value in describe().items():
         print(f"{key:14} {value}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

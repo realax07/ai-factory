@@ -53,6 +53,33 @@ Bootstrap: проверяет окружение (python ≥ 3.10, git, npx дл
 (`FLOW_MODE_FILE`, `FLOW_ENFORCER_STATE_DIR`, `FLOW_ENFORCER_REGISTRY`,
 `PIPELINE_FLOW_REGISTRY` / `PIPELINE_FLOW_STATE`).
 
+**Сверка путей между контекстами (J65.12).** Шелл, крон и процесс Hermes
+могут видеть разные env — тогда ворота в кроне читают другой реестр.
+Снимок в каждом контексте и сверка:
+
+```bash
+python3 scripts/factory_paths.py --doctor shell --out ~/af-doctor/
+# в crontab — разовая строка; в Hermes — попросить бота выполнить:
+python3 ~/ai-factory/scripts/factory_paths.py --doctor cron --out ~/af-doctor/
+python3 scripts/factory_paths.py --compare ~/af-doctor/*.json
+```
+
+`--compare` печатает пути, разошедшиеся между контекстами (exit 1), иначе
+OK. Снимок несет env, пути и проверки (есть ли state, реестр, flowctl).
+
+### Прогон как в CI (J65.12)
+
+```bash
+python3 scripts/ci_local.py
+```
+
+Повторяет job `test-flow-control`: shallow-клон **закоммиченного** HEAD,
+пустой HOME, без `GITHUB_*`/`HERMES_HOME`/`AF_*`, затем `pytest tests/` и
+`flow_check`. Ловит «локально зеленое, в CI красное» (полная история git,
+реальный HOME). Незакоммиченные правки в прогон не попадают —
+предупреждение печатается. `--keep` оставляет каталог прогона, аргументы
+после `--` уходят в pytest. `openspec validate` (job `flow`) не входит.
+
 ### Настройка GitHub (вручную, один раз на репозиторий)
 
 Обязательная часть установки — без этого внешний контур не замкнут (машина честно рапортует `external_enforcement: UNKNOWN`):
