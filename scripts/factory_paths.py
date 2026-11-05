@@ -133,16 +133,41 @@ def doctor(label: str) -> dict:
     }
 
 
-def compare(snapshots: list[dict]) -> list[str]:
-    """Пути, различающиеся между снимками: «<путь>: <label>=<значение> …»."""
+def _snapshot_names(snapshots: list[dict], names: list[str] | None) -> list[str]:
+    """Имя снимка в отчете: label (или переданное имя файла); совпадающие
+    метки различаются номером — снимок `shell` с Mac и `shell` с VPS не
+    схлопываются в один (иначе расхождение давало бы ложный OK)."""
+    base = list(names) if names else [str(s.get("label", "?")) for s in snapshots]
+    dup = {n for n in base if base.count(n) > 1}
+    return [f"{n}#{i + 1}" if n in dup else n for i, n in enumerate(base)]
+
+
+def compare(snapshots: list[dict], names: list[str] | None = None) -> list[str]:
+    """Пути, различающиеся между снимками: «<путь>: <снимок>=<значение> …»."""
+    labels = _snapshot_names(snapshots, names)
     diffs = []
     for key in describe():
-        values = {s.get("label", "?"): s.get("paths", {}).get(key)
-                  for s in snapshots}
-        if len(set(values.values())) > 1:
+        values = [(lbl, s.get("paths", {}).get(key))
+                  for lbl, s in zip(labels, snapshots)]
+        if len({v for _, v in values}) > 1:
             diffs.append(f"{key}: " + ", ".join(
-                f"{lbl}={val}" for lbl, val in values.items()))
+                f"{lbl}={val}" for lbl, val in values))
     return diffs
+
+
+def _load_snapshot(path: str) -> dict:
+    """Снимок --doctor или ValueError с причиной (битый/неполный JSON)."""
+    import json
+    try:
+        data = json.loads(Path(path).expanduser().read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise ValueError(f"{path}: не прочитан ({exc})") from exc
+    if not isinstance(data, dict) or not isinstance(data.get("paths"), dict):
+        raise ValueError(f"{path}: не снимок --doctor (нет объекта paths)")
+    missing = [k for k in describe() if k not in data["paths"]]
+    if missing:
+        raise ValueError(f"{path}: в снимке нет путей {', '.join(missing)}")
+    return data
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -153,14 +178,23 @@ def main(argv: list[str] | None = None) -> int:
                     help="снимок контекста (shell/cron/hermes) в JSON")
     ap.add_argument("--out", help="файл или каталог снимка (по умолчанию stdout)")
     ap.add_argument("--compare", nargs="+", metavar="SNAPSHOT",
-                    help="сверить снимки --doctor; exit 1 при расхождении путей")
+                    help="сверить снимки --doctor: exit 1 — пути расходятся, "
+                         "exit 2 — снимки битые или их меньше двух")
     args = ap.parse_args(argv)
 
     if args.compare:
-        snaps = [json.loads(Path(p).read_text(encoding="utf-8"))
-                 for p in args.compare]
-        diffs = compare(snaps)
-        labels = ", ".join(s.get("label", "?") for s in snaps)
+        if len(args.compare) < 2:
+            print("--compare: нужно минимум два снимка")
+            return 2
+        try:
+            snaps = [_load_snapshot(p) for p in args.compare]
+        except ValueError as exc:
+            print(f"--compare: {exc}")
+            return 2
+        names = [f"{s.get('label', '?')} ({Path(p).name})"
+                 for s, p in zip(snaps, args.compare)]
+        diffs = compare(snaps, names)
+        labels = ", ".join(names)
         if diffs:
             print(f"РАСХОЖДЕНИЕ путей между контекстами ({labels}):")
             for d in diffs:

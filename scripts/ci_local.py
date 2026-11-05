@@ -4,20 +4,26 @@
 Повод: «локально зеленое, в CI красное» по двум устойчивым причинам —
 полная история git (тест digest J64.18 сверял старый пин и проходил, в
 shallow-клоне CI падал) и реальный HOME/env машины (J64.2, BUG-025). Скрипт
-воспроизводит job `test-flow-control` из .github/workflows/flow.yml:
+воспроизводит условия CI для `pytest tests/` (job `test-flow-control`) и
+`flow_check` (шаг job `flow`):
 
-1. shallow-клон ЗАКОММИЧЕННОГО HEAD (`git clone --depth 1`) во временный
-   каталог — незакоммиченные правки в прогон не попадают (как в CI);
-2. окружение с нуля: пустой HOME, без GITHUB_*/HERMES_HOME/AF_*/
-   AI_FACTORY_HOME; PATH и PYTHONUSERBASE сохраняются (иначе pytest из
-   user-site не найдется — класс BUG-025);
-3. `python -m pytest tests/ -q` и `python3 scripts/flow_check.py .` в клоне.
+1. клон глубины 1 ЗАКОММИЧЕННОГО HEAD во временный каталог (`git init` +
+   `fetch --depth 1 <sha>`) — незакоммиченные правки в прогон не попадают;
+2. окружение с нуля: пустой HOME, без GITHUB_*/GIT_*/HERMES_HOME/AF_*/
+   AI_FACTORY_HOME; git-шаги — без глобального и системного git-конфига;
+   PATH и PYTHONUSERBASE сохраняются (иначе pytest из user-site не
+   найдется — класс BUG-025);
+3. `python -m pytest tests/ -q` и `python scripts/flow_check.py .` в клоне.
+
+Чем отличается от CI (сознательно): интерпретатор — текущий (CI — 3.12);
+пакеты user-site разработчика видны (PYTHONUSERBASE); на PR CI гоняет
+merge-коммит с base, ci_local — HEAD ветки; HOME пустой (строже раннера
+CI); в клоне нет remote `origin`; `openspec validate` не запускается.
 
 Usage:
   python3 scripts/ci_local.py [--repo PATH] [--keep] [-- <аргументы pytest>]
 
 Exit: 0 — оба шага зеленые; 1 — красный шаг; 2 — ошибка подготовки.
-`openspec validate` не запускается (job flow CI, нужен Node + CLI).
 """
 from __future__ import annotations
 
@@ -44,9 +50,19 @@ def ci_env(home: Path) -> dict[str, str]:
     return env
 
 
+def git_env() -> dict[str, str]:
+    """Окружение git-шагов: без GIT_* (из git-хука экспортируются GIT_DIR/
+    GIT_WORK_TREE/GIT_INDEX_FILE — fetch писал бы в ИСХОДНЫЙ .git и делал
+    его shallow) и без глобального/системного конфига (как раннер CI)."""
+    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+    env["GIT_CONFIG_GLOBAL"] = os.devnull
+    env["GIT_CONFIG_NOSYSTEM"] = "1"
+    return env
+
+
 def _git(repo: Path, *args: str) -> subprocess.CompletedProcess:
     return subprocess.run(["git", "-C", str(repo), *args],
-                          capture_output=True, text=True)
+                          capture_output=True, text=True, env=git_env())
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -75,18 +91,22 @@ def main(argv: list[str] | None = None) -> int:
         # Ровно коммит HEAD, глубина 1 — и для worktree, и для detached HEAD
         # (clone --depth взял бы HEAD основного клона): fetch по SHA через
         # upload-pack с allowAnySHA1InWant (только на время этого fetch).
-        subprocess.run(["git", "init", "-q", str(clone)], check=True)
-        fetch = _git(clone, "fetch", "-q", "--depth", "1",
-                     "--upload-pack",
-                     "git -c uploadpack.allowAnySHA1InWant=true upload-pack",
-                     repo.as_uri(), sha)
-        if fetch.returncode != 0:
-            print(f"ci_local: fetch {sha[:12]} не удался: "
-                  f"{fetch.stderr.strip()}", file=sys.stderr)
-            return 2
-        _git(clone, "checkout", "-q", "FETCH_HEAD")
+        prep = [
+            ("init", lambda: _git(work, "init", "-q", str(clone))),
+            ("fetch", lambda: _git(
+                clone, "fetch", "-q", "--depth", "1", "--upload-pack",
+                "git -c uploadpack.allowAnySHA1InWant=true upload-pack",
+                repo.as_uri(), sha)),
+            ("checkout", lambda: _git(clone, "checkout", "-q", "FETCH_HEAD")),
+        ]
+        for name, step in prep:
+            done = step()
+            if done.returncode != 0:
+                print(f"ci_local: {name} {sha[:12]} не удался: "
+                      f"{done.stderr.strip()}", file=sys.stderr)
+                return 2
         env = ci_env(home)
-        print(f"ci_local: {sha[:12]} shallow-клон {clone}, HOME={home}")
+        print(f"ci_local: {sha[:12]} клон глубины 1 {clone}, HOME={home}")
 
         steps = [
             ("pytest", [sys.executable, "-m", "pytest", "tests/", "-q",
