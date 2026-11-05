@@ -446,7 +446,8 @@ class TestN18RegistrySandbox:
 class TestN12Diagnostics:
     def test_ambiguous_state_names_invalid_field(self, tmp_path):
         """TC-AUD-011: AMBIGUOUS_STATE: диагностика называет поле — scope=xxx не
-        соответствует формату Флоу 3 (BUG-NNN)."""
+        соответствует формату Флоу 3 (incident-ref; [test-adapted] J65.3:
+        канон scope Ф3 — S<1|2|3>-<slug>, решение Заказчика 2026-11-05)."""
         repo = base.make_repo(tmp_path)
         reg = make_registry(tmp_path)
         state = tmp_path / "state" / "flowctl_state.json"
@@ -460,7 +461,7 @@ class TestN12Diagnostics:
         hints = data.get("field_diagnostics") or []
         assert hints, "нет field_diagnostics при AMBIGUOUS_STATE"
         assert any(
-            "scope=xxx" in h and "Флоу 3 (BUG-NNN" in h for h in hints), hints
+            "scope=xxx" in h and "Флоу 3 (incident-ref" in h for h in hints), hints
         # record.decision реально содержит AMBIGUOUS_STATE:
         decision = data["record"]["decision"]
         assert any("AMBIGUOUS_STATE" in str(x) for x in

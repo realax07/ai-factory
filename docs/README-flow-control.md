@@ -47,13 +47,14 @@ BUG-NNN + существующая спека → dev_task (без БА/СА)
   └─ если меняет ожидаемое поведение/API/схему → ЭСКАЛАЦИЯ:
        next_candidates = [create_change (Флоу 1), escalate_to_customer]
 ```
-Валидации: BUG-NNN обязателен; эскалация обязательна при spec_delta (иначе DENY).
+Валидации: scope — имя репорта (BUG-NNN, BUG-<КОМПЛЕКС>-NNN, BUG-NNN-<slug>; flow_ids, J65.3); эскалация обязательна при spec_delta (иначе DENY).
 
 ## Флоу 3 — хотфикс (авария)
 
 ```
-incident_ref=S<1|2|3>-<id> (severity-классификация J48 — в маркере делегации;
-  без префикса enforcer → FLOW_MARKER_INVALID)
+incident_ref=S<1|2|3>-<kebab-slug> (severity-классификация J48 — в маркере
+  делегации; без префикса enforcer → FLOW_MARKER_INVALID; движок принимает
+  и легаси BUG-NNN — грамматика scripts/flow_ids.py, J65.3)
   → emergency_stabilize (dev/devops; неклассифицированный incident_ref — DENY)
   → ПОСЛЕ стабилизации ОБЯЗАТЕЛЬНЫЙ PR-цикл: dev_task → code_review → merge_task
   └─ пока PR-цикл не закрыт: все post-emergency действия несут STALE_EVIDENCE
