@@ -68,21 +68,22 @@ def incident_severity(scope: str | None) -> str | None:
 
 
 def valid_scope(flow: int, scope: str, *, legacy: bool = True) -> bool:
-    """scope соответствует грамматике своего флоу.
+    """scope соответствует грамматике своего флоу (fullmatch: `$` пропустил
+    бы завершающий перевод строки — `add-widget\n`).
 
     legacy=True (движок): Ф3 принимает и BUG-…; legacy=False (маркер
     делегации): Ф3 — только incident-ref с severity."""
     scope = scope or ""
     if flow == 1:
-        return bool(CHANGE_ID_RE.match(scope))
+        return bool(CHANGE_ID_RE.fullmatch(scope))
     if flow == 2:
-        return bool(BUG_ID_RE.match(scope))
+        return bool(BUG_ID_RE.fullmatch(scope))
     if flow == 3:
-        if INCIDENT_REF_RE.match(scope):
+        if INCIDENT_REF_RE.fullmatch(scope):
             return True
-        return legacy and bool(BUG_ID_RE.match(scope))
+        return legacy and bool(BUG_ID_RE.fullmatch(scope))
     if flow in (4, 5):
-        return bool(SLUG_RE.match(scope))
+        return bool(SLUG_RE.fullmatch(scope))
     return False
 
 

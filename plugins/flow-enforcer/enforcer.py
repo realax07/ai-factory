@@ -165,18 +165,21 @@ _FLOW_IDS_FALLBACK = {
 }
 
 
-def _flow_ids_grammar() -> dict:
+def _flow_ids_grammar() -> tuple[dict, str]:
+    """(грамматика, источник): источник — "flow_ids" или "fallback"; пишется
+    в тексты отказов маркера, чтобы после выкатки было видно, какой
+    грамматикой работает энфорсер."""
     try:
         scripts_dir = str(factory_home() / "scripts")
         if scripts_dir not in sys.path:
             sys.path.insert(0, scripts_dir)
         import flow_ids
-        return {k: getattr(flow_ids, k) for k in _FLOW_IDS_FALLBACK}
+        return {k: getattr(flow_ids, k) for k in _FLOW_IDS_FALLBACK}, "flow_ids"
     except Exception:  # noqa: BLE001 — плагин не зависит от доступности фабрики
-        return dict(_FLOW_IDS_FALLBACK)
+        return dict(_FLOW_IDS_FALLBACK), "fallback"
 
 
-_GRAMMAR = _flow_ids_grammar()
+_GRAMMAR, GRAMMAR_SOURCE = _flow_ids_grammar()
 
 
 def _severity_prefixes() -> tuple:
@@ -198,13 +201,13 @@ def marker_scope_valid(flow: int, scope: str) -> bool:
     """scope маркера делегации по грамматике flow_ids с legacy=False:
     Ф3 — только incident-ref с severity (J48: классификация до реакции)."""
     if flow == 1:
-        return bool(CHANGE_ID_RE.match(scope))
+        return bool(CHANGE_ID_RE.fullmatch(scope))
     if flow == 2:
-        return bool(BUG_ID_RE.match(scope))
+        return bool(BUG_ID_RE.fullmatch(scope))
     if flow == 3:
-        return bool(INCIDENT_REF_RE.match(scope))
+        return bool(INCIDENT_REF_RE.fullmatch(scope))
     if flow in (4, 5):
-        return bool(SLUG_RE.match(scope))
+        return bool(SLUG_RE.fullmatch(scope))
     return False
 
 # Действие по роли: этапы STAGE_TABLE Флоу 1 (flow_transition.py).
@@ -1011,28 +1014,32 @@ def validate_scope_for_flow(flow: int, scope: str) -> None:
             "пустой scope — scope обязателен (Ф1 change-id, "
             "Ф2 BUG-<КОМПЛЕКС>-NNN, Ф3 S<1|2|3>-<краткий-ид>, Ф4 chore-slug, "
             "Ф5 slug)")
-    if flow == 2 and not BUG_ID_RE.match(scope):
+    if flow == 2 and not marker_scope_valid(2, scope):
         raise FlowMarkerError(
             f"Флоу 2 требует scope формата BUG-<КОМПЛЕКС>-NNN "
             f"(BUG-001 или BUG-AF-RECHECK-001; A-Z0-9, дефис-разделитель), "
-            f"получено {scope!r} (репорт test-model/bugs/<scope>.md)")
+            f"получено {scope!r} (репорт test-model/bugs/<scope>.md; "
+            f"грамматика: {GRAMMAR_SOURCE})")
     if flow == 3 and not marker_scope_valid(3, scope):
         # J48 (D1/FR-4): severity внутри incident_ref — маркер обязан нести
         # классификацию; неклассифицированный инцидент не запускает реакцию
         # (очевидная ошибка маркера → FLOW_MARKER_INVALID).
         raise FlowMarkerError(
-            f"Флоу 3 требует scope формата S<1|2|3>-<краткий-ид> — "
+            f"Флоу 3 требует scope формата S<1|2|3>-<kebab-slug>, строчные "
+            f"буквы/цифры через дефис, например S1-prod-down — "
             f"severity-классификация инцидента обязательна до реакции "
-            f"(J48; FR-1/FR-4; получено {scope!r})")
+            f"(J48; FR-1/FR-4; получено {scope!r}; грамматика: {GRAMMAR_SOURCE})")
     if flow == 1 and not marker_scope_valid(1, scope):
         raise FlowMarkerError(
             f"Флоу 1 требует scope — kebab-case change-id, например "
-            f"add-widget (получено {scope!r})")
+            f"add-widget (получено {scope!r}; грамматика: {GRAMMAR_SOURCE})")
     if flow in (4, 5) and not marker_scope_valid(flow, scope):
         raise FlowMarkerError(
             f"Флоу {flow} требует scope — kebab-slug, например "
             f"{'repo-cleanup' if flow == 4 else 'fix-typo'} "
-            f"(получено {scope!r})")
+            f"(получено {scope!r}; грамматика: {GRAMMAR_SOURCE})")
+    if flow not in FLOW_IDS:  # fail-closed: не полагаемся на порядок вызовов
+        raise FlowMarkerError(f"flow={flow!r} вне 1–5 — ожидается flow=<1-5>")
 
 
 def resolve_flow(markers: dict) -> tuple[int, bool]:

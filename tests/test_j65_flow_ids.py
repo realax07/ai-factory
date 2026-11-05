@@ -17,6 +17,8 @@
                   проходит и энфорсер, и движок (раньше движок отказывал)
   TC-J65-FID-006  incident_severity и SEVERITY_PREFIX_RE flow_transition — из
                   flow_ids (один allowlist)
+  TC-J65-FID-007  отказ маркера называет источник грамматики (flow_ids/fallback);
+                  flow вне 1–5 — отказ (fail-closed)
 """
 from __future__ import annotations
 
@@ -61,6 +63,9 @@ TABLE = [
     (5, "fix-typo", True, True),
     (5, "fix typo", False, False),
     (5, "", False, False),
+    (1, "add-widget\n", False, False),  # fullmatch: перевод строки — отказ
+    (2, "BUG-001\n", False, False),
+    (3, "S1-prod-down\n", False, False),
 ]
 
 
@@ -119,3 +124,15 @@ def test_severity_from_flow_ids():
     assert ft.incident_severity("S2-login-500") == "S2"
     assert flow_ids.incident_severity("S4-x") is None
     assert enforcer._severity_prefixes() == flow_ids.SEVERITY_PREFIXES
+
+
+def test_marker_error_names_grammar_source():
+    """TC-J65-FID-007: источник грамматики виден в отказе; flow вне 1–5 —
+    отказ без опоры на порядок вызовов."""
+    assert enforcer.GRAMMAR_SOURCE in ("flow_ids", "fallback")
+    with pytest.raises(enforcer.FlowMarkerError) as ei:
+        enforcer.validate_scope_for_flow(3, "S1-Prod")
+    assert f"грамматика: {enforcer.GRAMMAR_SOURCE}" in str(ei.value)
+    assert "строчные" in str(ei.value)
+    with pytest.raises(enforcer.FlowMarkerError):
+        enforcer.validate_scope_for_flow(9, "add-widget")

@@ -34,7 +34,9 @@
   флоу.
 - `flow_check.BUG_ID_PATTERN` остается литералом (копия в проектах
   автономна); совпадение — тестом.
-- Тесты `tests/test_j65_flow_ids.py` (TC-J65-FID-001..006);
+- Шаблон `templates/task_delegation.md`, `docs/README-flow-control.md`,
+  `plugins/README.md` — форматы scope и абзац про bypass (замечание ревью).
+- Тесты `tests/test_j65_flow_ids.py` (TC-J65-FID-001..007);
   `test_audit_ergonomics` TC-AUD-011 — `[test-adapted]` (подсказка Ф3).
 
 ## Вне объема (сознательно)
