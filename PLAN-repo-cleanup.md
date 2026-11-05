@@ -19,8 +19,8 @@
    inspecting-hermes-desktop-dom}`. `skills/README.md` и строка `skills/` в
    `README.md` приводятся к новому составу. Копии в `~/.hermes/skills/` не
    затрагиваются.
-2. **`codegraph.json` (хвост J64.1).** Удаляется из git: в фабрике это граф
-   `backend/app` (4 узла, 0 ребер), файл уже в `.gitignore`. Инструмент
+2. **`codegraph.json` (хвост J64.1).** Удаляется из git: в фабрике граф без смысла
+   (4 узла `scripts.*`, 0 ребер, читателей нет), файл уже в `.gitignore`. Инструмент
    `scripts/codegraph.py` для проектов остается.
 3. **Закрытые планы → `archive/plans/`.** `PLAN-{runner-flow-gates,
    flow4-chore-scope, tests-hermetic, zone-policy-pipeline-paths,
