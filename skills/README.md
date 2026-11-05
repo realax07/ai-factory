@@ -29,10 +29,7 @@
 | [design-review](roles-tools/design-review/) | Ревью UI по трём столпам качества, чек-листы сдачи/приемки, два режима (ревью/создание) | Дистиллят microsoft/skills frontend-design-review (MIT) |
 | [ui-ux-matrices](roles-tools/ui-ux-matrices/) | Локальный поиск: стили, палитры, шрифтовые пары, UX-гайдлайны (`scripts/search.py`) | Vendor nextlevelbuilder/ui-ux-pro-max-skill (MIT), скопирован целиком |
 | [claude-design](roles-tools/claude-design/) | Дисциплина HTML-мокапов: один файл = самодостаточный артефакт | BadTechBandit (MIT) |
-| [popular-web-designs](roles-tools/popular-web-designs/) | 54 реальных дизайн-системы (Stripe, Linear, Vercel) как HTML-референсы | — |
-| [baoyu-infographic](roles-tools/baoyu-infographic/) | Инфографика: 21 макет × 21 стиль, layout/style-референсы | — |
 | [design-md](roles-tools/design-md/) | Формализация дизайн-токенов в DESIGN.md spec-файл | — |
-| [p5js](roles-tools/p5js/) | p5.js скетчи: генеративка, шейдеры, интерактив, 3D | — |
 | [architecture-diagram](roles-tools/architecture-diagram/) | Темные SVG architecture/cloud-диаграммы как HTML | — |
 
 ## Формат скилла
@@ -58,19 +55,18 @@ description: Что делает и когда применять — тригг
 4. Питфоллы обязательны: раздел «Ошибки» из реальных сбоев, не общие слова.
 
 
-## Полная библиотека (зеркало локальной, 2026-10-23)
+## Состав библиотеки (чистка 2026-11-05, J64.16)
 
-Помимо процессных скиллов конвейера (выше), в репо зеркалируется полная локальная
-библиотека скиллов ПМ по категориям: `creative/` (дизайн, визуал), `devops/`
-(эксплуатация фабрики и проектов), `productivity/`, `software-development/`,
-`research/`, `autonomous-ai-agents/`, `email/`, `media/`, `note-taking/`,
-`social-media/`, `web/`, `apple/`, а также `ekotov-factory-pipeline` и
-`skill-repo-mining`.
+В репо — только скиллы конвейера и инструменты ролей: группы `roles/`,
+`roles-tools/`, `flow/`, `pm-factory/`, `runtimes/` и `engineering/spike`.
+Зеркало личной библиотеки ПМ (`creative/`, `office/`, `research/` и
+неиспользуемые `engineering/*`, `runtimes/*`) удалено: ни роль-промпты,
+ни паки, ни скрипты на них не ссылались. Эталон этих скиллов — локальная
+библиотека `~/.hermes/skills/`, история — в git (до коммита чистки).
 
-Каноничность: **эталон процессных скиллов — этот репо** (установщик обновляет
-локальные копии); **эталон категорийных — локальная библиотека** (правки входят
-через PR сюда же). Рассинхрон ловится сверкой `find skills -name SKILL.md`
-между репо и `~/.hermes/skills`.
+Каноничность процессных скиллов: **эталон — этот репо** (установщик
+обновляет локальные копии). Новый скилл попадает в репо, только если на
+него ссылается роль (`agents/*.md`), пак или скрипт.
 
 ### Гигиена (2026-10-23)
 

@@ -285,7 +285,7 @@ Severity до начала реакции: **S1** (прод недоступен
 | `scripts/session_archive.py` | Архив транскриптов + разбор неуспеха |
 | `scripts/session_worktree.sh` | Worktree-изоляция параллельных сессий |
 | `templates/` | Constitution, task_delegation |
-| `skills/` | Библиотека скиллов, 9 плоских групп (перегруппировка 2026-10-31 по аудиту): `pm-factory` (эксплуатация фабрики + Pi: regress-runner, auditor), `flow` (флоу и чистки артефактов), `roles` / `roles-tools` (процедуры и инструменты сабагентов), `runtimes` (claude-code/codex/computer-use), `engineering` (общие практики), `creative`, `research`, `office` — реестр в [skills/README.md](skills/README.md) |
+| `skills/` | Библиотека скиллов конвейера, 6 групп (чистка 2026-11-05, J64.16): `pm-factory` (эксплуатация фабрики + Pi: regress-runner, auditor), `flow` (флоу и чистки артефактов), `roles` / `roles-tools` (процедуры и инструменты сабагентов), `runtimes` (claude-code/codex/computer-use), `engineering` (spike) — реестр в [skills/README.md](skills/README.md) |
 | `agents/*.md` → скиллы роли | Роль-паки Pi: `skills/pm-factory/pi/role-packs/` — regress-runner (зоны записи, zone-guard) и auditor (read-only guard, Kimi K3.1, ручной вызов вне конвейера) |
 | `archive/` | Промежуточные артефакты завершенных спайков/аудитов + старые планы этапов (`archive/plans/`), код-ревью старых релизов (`archive/code-reviews/`), история J-решений (`archive/backlog/`) — живые документы в `docs/` |
 | `docs/e12-speckit-spike.md` | Спайк GitHub Spec Kit (вердикт: гибрид) |
