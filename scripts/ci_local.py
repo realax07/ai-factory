@@ -57,7 +57,23 @@ def git_env() -> dict[str, str]:
     env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
     env["GIT_CONFIG_GLOBAL"] = os.devnull
     env["GIT_CONFIG_NOSYSTEM"] = "1"
+    # safe.directory из глобального конфига сохраняется: без него git
+    # откажет в репо другого владельца (VPS), а это не условие CI.
+    for i, value in enumerate(_global_safe_directories()):
+        env[f"GIT_CONFIG_KEY_{i}"] = "safe.directory"
+        env[f"GIT_CONFIG_VALUE_{i}"] = value
+        env["GIT_CONFIG_COUNT"] = str(i + 1)
     return env
+
+
+def _global_safe_directories() -> list[str]:
+    # GIT_CONFIG_GLOBAL — указатель на сам глобальный конфиг, его сохраняем.
+    clean = {k: v for k, v in os.environ.items()
+             if not k.startswith("GIT_") or k == "GIT_CONFIG_GLOBAL"}
+    got = subprocess.run(["git", "config", "--global", "--get-all",
+                          "safe.directory"], capture_output=True, text=True,
+                         env=clean)
+    return [line for line in got.stdout.splitlines() if line.strip()]
 
 
 def _git(repo: Path, *args: str) -> subprocess.CompletedProcess:
@@ -76,7 +92,8 @@ def main(argv: list[str] | None = None) -> int:
     repo = Path(args.repo).resolve()
     head = _git(repo, "rev-parse", "HEAD")
     if head.returncode != 0:
-        print(f"ci_local: {repo} — не git-репозиторий", file=sys.stderr)
+        print(f"ci_local: {repo} — не git-репозиторий или git отказал: "
+              f"{head.stderr.strip()}", file=sys.stderr)
         return 2
     sha = head.stdout.strip()
     dirty = _git(repo, "status", "--porcelain").stdout.strip()

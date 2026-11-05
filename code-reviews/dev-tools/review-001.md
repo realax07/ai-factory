@@ -120,3 +120,50 @@ factory_paths.py --compare a.json b.json
 - №5–6: отличия от CI перечислены в docstring и README; формулировка — «условия CI для pytest (test-flow-control) и flow_check (шаг job flow)», docstring описывает init+fetch.
 - №7: fixture-коммиты с `commit.gpgsign=false` и `core.hooksPath=/dev/null`; проверка состава diff — по ключам, не по числу; TC-005 проверяет, что клон на HEAD (коммит «two»).
 - №8: `--out <файл>` и путь с `~` — TC-J65-DT-010.
+
+## Повторная проверка (5ac6f04)
+
+Вердикт: Одобрить
+
+Ревьюемый коммит: `5ac6f0413bc8b9df1da513f530d8543763ceed3c`. Ревьюер тот же: независимый сабагент code_reviewer, не автор диффа.
+
+### Major из review-001: закрыты
+
+- **№1 (GIT_* портит исходный репо): закрыт.** Функция `git_env()` (scripts/ci_local.py:53-60) удаляет все `GIT_*` и выставляет `GIT_CONFIG_GLOBAL=/dev/null` и `GIT_CONFIG_NOSYSTEM=1`. Ее используют все git-вызовы, включая `rev-parse` и `status` исходного репо и `init`/`fetch`/`checkout`. Шаги pytest и flow_check по-прежнему идут с `ci_env`, где `GIT_*` нет. Повторил сценарий, на котором раньше воспроизводилась порча: временный репо из 3 коммитов, `GIT_DIR` + `GIT_WORK_TREE` (и отдельно `GIT_INDEX_FILE`) экспортированы. Результат: `PASS`, исходный репо `is-shallow-repository = false`, 3 коммита, файла `.git/shallow` нет. TC-J65-DT-007 покрывает этот сценарий.
+- **№2 (compare схлопывает метки): закрыт.** `compare` идет по списку снимков, а не по dict меток. `_snapshot_names` добавляет `#N` к совпадающим меткам. CLI подставляет метку и имя файла, а при совпадении и имен файлов (`a/shell.json` и `b/shell.json`) срабатывает тот же `#N`. TC-J65-DT-008 покрывает этот сценарий.
+
+### Пункты, проверенные по вопросу ПМ
+
+- **`GIT_CONFIG_GLOBAL=/dev/null` и fetch по file://** не ломают прогон. Транспорт file:// не зависит от глобального конфига: `protocol.file.allow` по умолчанию `always` для не-submodule, а `-c uploadpack.allowAnySHA1InWant` передается в upload-pack командной строкой. Прогон из связанного worktree с detached HEAD на `HEAD~1` дал PASS, клон взял SHA worktree. TC-005/006/007 зеленые.
+- **safe.directory.** Без глобального конфига игнорируется и глобальный `safe.directory`. Сценарий: на VPS репозиторий принадлежит другому пользователю, ci_local запускает крон или бот под своим, и сейчас это работает только благодаря `safe.directory` в `~/.gitconfig`. Тогда `rev-parse HEAD` откажет с «dubious ownership», а ci_local выведет «не git-репозиторий» (stderr git отбрасывается, стр. 77-80). Отказ безопасный (rc 2, без ложного PASS), но сообщение уводит в сторону. См. minor A.
+- Локальный конфиг исходного репо (`.git/config`) git по-прежнему читает. Для `rev-parse`/`status` это корректно и на клон не влияет.
+
+### Новые замечания (minor, мерж не блокируют)
+
+| # | Серьезность | Место | Суть и рекомендация |
+|---|---|---|---|
+| A | minor | scripts/ci_local.py:77-80 | При отказе `rev-parse` печатается только «не git-репозиторий», stderr git теряется. На VPS с чужим владельцем репо причина (safe.directory, теперь без глобального конфига) не видна. Рекомендация: добавить `head.stderr.strip()` в сообщение. Если нужен паритет с раннером, передавать `safe.directory` через `GIT_CONFIG_COUNT`/`GIT_CONFIG_KEY_0`/`GIT_CONFIG_VALUE_0`: это защищенный конфиг командной строки, и `git_env` выставляет его уже после фильтра `GIT_*`. |
+| B | minor | scripts/factory_paths.py:187, 192 | Ошибки `--compare` (rc 2) идут в stdout, а не в stderr. При `--compare ... > report.txt` причина уйдет в файл. Рекомендация: `file=sys.stderr`. |
+| C | minor | scripts/factory_paths.py (`_load_snapshot`) | Полноту снимка проверяют ключи `describe()` текущей версии модуля, поэтому снимок, снятый старой версией с VPS, отвергается с rc 2, а не сверяется по общим ключам. Сейчас это поведение верное (строже лучше ложного OK). Если состав `describe()` будет меняться, это стоит учесть. |
+
+Все minor из review-001 (№3-8) закрыты по существу: код, README и docstring приведены в соответствие, тесты TC-009..011 добавлены, фикстура изолирована от gpgsign/hooks, проверка TC-005 на HEAD (коммит «two») есть.
+
+### Проверено (свежие прогоны)
+
+- `HOME=.../scratchpad/vps-home python3.14 -m pytest tests/test_j65_dev_tools.py tests/test_factory_paths.py tests/test_check_mirrors.py -q -p no:cacheprovider` дал **33 passed**.
+- ci_local на временном репо с `GIT_DIR`/`GIT_WORK_TREE`/`GIT_INDEX_FILE`: PASS, источник не shallow, история цела.
+- ci_local из linked worktree с detached HEAD: PASS.
+- `--compare` с одним снимком дал rc 2 и сообщение.
+- Трассировка: TC-J65-DT-007..011 есть в docstring и в тестах.
+
+### Не проверено
+
+- Полный сьют и ci_local на самой фабрике на 5ac6f04: по указанию ПМ не повторялись.
+- VPS (Linux git, чужой владелец репо, крон/Hermes): сценарий safe.directory выведен из кода и документации git, не воспроизводился.
+- Мутации обоих major: не повторял, данные ПМ («красный тест»).
+
+## Закрытие minor повторной проверки (ПМ)
+
+- A: глобальный `safe.directory` передается git-шагам через `GIT_CONFIG_COUNT`/`KEY`/`VALUE` (остальной глобальный конфиг — нет), отказ `rev-parse` печатает stderr git. TC-J65-DT-012.
+- B: ошибки `--compare` — в stderr (TC-J65-DT-009 проверяет).
+- C: строгость `_load_snapshot` к составу путей оговорена в docstring.

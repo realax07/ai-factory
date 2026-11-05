@@ -156,7 +156,9 @@ def compare(snapshots: list[dict], names: list[str] | None = None) -> list[str]:
 
 
 def _load_snapshot(path: str) -> dict:
-    """Снимок --doctor или ValueError с причиной (битый/неполный JSON)."""
+    """Снимок --doctor или ValueError с причиной (битый/неполный JSON).
+    Строго: снимок обязан нести все пути текущего describe() — при смене
+    состава путей снимки старой версии снимаются заново."""
     import json
     try:
         data = json.loads(Path(path).expanduser().read_text(encoding="utf-8"))
@@ -173,6 +175,7 @@ def _load_snapshot(path: str) -> dict:
 def main(argv: list[str] | None = None) -> int:
     import argparse
     import json
+    import sys
     ap = argparse.ArgumentParser(description="Пути машины фабрики (J64.5)")
     ap.add_argument("--doctor", metavar="LABEL",
                     help="снимок контекста (shell/cron/hermes) в JSON")
@@ -184,12 +187,12 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.compare:
         if len(args.compare) < 2:
-            print("--compare: нужно минимум два снимка")
+            print("--compare: нужно минимум два снимка", file=sys.stderr)
             return 2
         try:
             snaps = [_load_snapshot(p) for p in args.compare]
         except ValueError as exc:
-            print(f"--compare: {exc}")
+            print(f"--compare: {exc}", file=sys.stderr)
             return 2
         names = [f"{s.get('label', '?')} ({Path(p).name})"
                  for s, p in zip(snaps, args.compare)]

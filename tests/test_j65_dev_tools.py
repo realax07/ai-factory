@@ -23,6 +23,8 @@ ci_local воспроизводит job test-flow-control CI: shallow-клон �
                  снимок → rc 2 с причиной (не traceback, не ложный OK)
   TC-J65-DT-010  --doctor --out <файл> и путь с ~
   TC-J65-DT-011  ci_local: не git-репозиторий → rc 2
+  TC-J65-DT-012  git-шаги сохраняют глобальный safe.directory (репо другого
+                 владельца на VPS), остальной глобальный конфиг — нет
 """
 from __future__ import annotations
 
@@ -195,7 +197,9 @@ def test_compare_bad_input(tmp_path, capsys):
     for bad in (broken, listed, empty, partial, tmp_path / "missing.json"):
         assert fp.main(["--compare", str(good), str(bad)]) == 2, bad
     assert fp.main(["--compare", str(good)]) == 2
-    assert "Traceback" not in capsys.readouterr().out
+    captured = capsys.readouterr()
+    assert "Traceback" not in captured.out + captured.err
+    assert "--compare:" in captured.err  # ошибки — в stderr
 
 
 def test_doctor_out_file_and_tilde(monkeypatch, tmp_path):
@@ -212,3 +216,16 @@ def test_doctor_out_file_and_tilde(monkeypatch, tmp_path):
 def test_ci_local_not_git(tmp_path):
     """TC-J65-DT-011"""
     assert ci_local.main(["--repo", str(tmp_path)]) == 2
+
+
+def test_git_env_keeps_safe_directory(monkeypatch, tmp_path):
+    """TC-J65-DT-012"""
+    gcfg = tmp_path / "gitconfig"
+    gcfg.write_text("[safe]\n\tdirectory = /srv/repo\n[user]\n\tname = x\n",
+                    encoding="utf-8")
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(gcfg))
+    env = ci_local.git_env()
+    assert env["GIT_CONFIG_GLOBAL"] == os.devnull
+    assert env["GIT_CONFIG_COUNT"] == "1"
+    assert (env["GIT_CONFIG_KEY_0"], env["GIT_CONFIG_VALUE_0"]) == (
+        "safe.directory", "/srv/repo")
