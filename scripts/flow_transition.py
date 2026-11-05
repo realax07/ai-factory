@@ -41,6 +41,7 @@ from pathlib import Path
 from typing import Callable
 
 import flow_check
+import flow_ids
 import flow_state
 
 DECISION_SCHEMA = "flow-decision/1"
@@ -1698,11 +1699,10 @@ def check_emergency_stabilize(snapshot, action, ctx, flow):
 
 # I-1 ревью: severity-уровни — одним allowlist-множеством; новый уровень
 # (например S4) = одна правка + отдельный change-пакет (rules_change).
-SEVERITY_PREFIXES = ("S1", "S2", "S3")
-# MIN-1 ревью 4.1: regex ВЫВОДИТСЯ из тупла (захват группы для
-# incident_severity: m.group(1) → "S1"/"S2"/…), не дублируется литералом.
-SEVERITY_PREFIX_RE = re.compile(
-    "^(" + "|".join(re.escape(p) for p in SEVERITY_PREFIXES) + ")-")
+# J65.3: allowlist и выведенный из него regex (захват группы для
+# incident_severity) живут в flow_ids; здесь — имена для вызывающих.
+SEVERITY_PREFIXES = flow_ids.SEVERITY_PREFIXES
+SEVERITY_PREFIX_RE = flow_ids.SEVERITY_PREFIX_RE
 # D4: хранилище post-mortem — append-only, именование
 # <YYYY-MM-DD>-<incident_ref>.md; корреляция ворот — по вхождению incident_ref
 # в имя файла ПО ГРАНИЦАМ (начало имени или «-» … «.» или конец; MIN-2 ревью

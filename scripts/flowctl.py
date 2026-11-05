@@ -104,6 +104,7 @@ if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
 import flow_mode  # noqa: E402
+import flow_ids  # noqa: E402  (J65.3: грамматика scope)
 import flow_state  # noqa: E402
 import flow_transition as ft  # noqa: E402
 import gate_runner as gr  # noqa: E402
@@ -175,18 +176,9 @@ def ambiguous_field_hints(scope: dict) -> list[str]:
         return [f"flow={flow!r} вне допустимых 1–5 "
                 "(ожидается целое число 1–5)"]
     hints: list[str] = []
-    if flow in (2, 3) and not flow_state.BUG_ID_RE.match(change):
+    if not flow_ids.valid_scope(flow, change):
         hints.append(f"scope={change} не соответствует формату "
-                     f"Флоу {flow} (BUG-NNN, например BUG-042)")
-    elif flow == 1 and not flow_state.CHANGE_ID_RE.match(change):
-        hints.append(f"scope={change} не соответствует формату Флоу 1 "
-                     "(kebab-case change-id, например add-widget)")
-    elif flow == 4 and not flow_state.CHORE_RE.match(change):
-        hints.append(f"scope={change} не соответствует формату Флоу 4 "
-                     "(chore или kebab-slug)")
-    elif flow == 5 and not flow_state.CHANGE_ID_RE.match(change):
-        hints.append(f"scope={change} не соответствует формату Флоу 5 "
-                     "(change-id)")
+                     f"Флоу {flow} ({flow_ids.SCOPE_HINTS[flow]})")
     return hints
 
 
