@@ -29,16 +29,29 @@
   вердикт не изменился ни у одного;
 - `flow_check.review_commit` — строка `Commit: <sha>`;
 - раннер: `verdict: {file}` читается этим парсером; `contains` устарел
-  (игнорируется с WARNING); `Commit:` ≠ проверявшийся коммит → STOP STALE;
-  после approve/return стадии Pi раннер пишет provenance-sidecar
-  (`gate_runner.write_review_provenance`: reviewed = HEAD до ревью, digest
-  диффа от начала пакета, ревьюер — делегация стадии, автор — последней
-  pi-стадии другой роли) и коммитит его в ветку пакета;
-- `flow_check.review_sidecar_problem`: валидный sidecar (ревьюер ≠ автор,
-  ревьюер не dev-делегация, вердикт sidecar = вердикт файла) подтверждает
-  независимость вместо `Reviewer-Delegation` — в J10 (`approved_review_tasks`)
-  и в SELF_REVIEW-проверке pr_validate;
+  (игнорируется с WARNING); на pi-стадии `Commit:` ≠ HEAD до ревью → STOP
+  STALE (gate-стадия не сверяет: «коммита до ревью» у нее нет); после
+  approve/return стадии Pi раннер пишет **аудит-запись provenance** в
+  `<план>.runner-reports/` (reviewed = HEAD до ревью, digest от начала
+  пакета, ревьюер, авторы — pi-стадии других ролей с коммитом после
+  предыдущего ревью) — до отметки стадии done;
 - `pm_bounds_check.review_approve_date` — через `flow_check.parse_verdict`.
+
+**Пересмотр по ревью №1 (return, 3 major):** первая версия клала sidecar
+рядом с review-файлом и принимала его в J10/pr_validate вместо
+Reviewer-Delegation. Это (а) ослабляло SELF_REVIEW — самодельный JSON заменял
+сверку с реестром делегаций; (б) ломало flow_transition.provenance_findings
+(digest `HEAD^..HEAD`, задача tasks.md) — DENY вместо UNKNOWN; (в) давало
+ложный STALE на gate-стадии. Поэтому provenance раннера — только аудит,
+J10/pr_validate не тронуты; прием ревью стадий Pi в J10 (сверка с реестром
+сессий раннера, совместимый sidecar) — отдельная задача J65.4b.
+
+**Регресс парсера на реальных данных:** старый (origin/main) против нового
+на 344 review-файлах фабрики и трех проектов — изменились 2, оба верно:
+архивные `review-architecture.md` ekotov-wiki, где после первого RETURN
+дописано повторное APPROVE (старый парсер брал первый заголовок). Попытка
+запретить заголовку «Вердикт» переходить строку сломала 19 файлов (формат
+«## Вердикт» + значение следующей строкой) — откачена.
 
 Отклонение от текста ТЗ J65.4 («блок `## Ревью N` + `verdict:`/`commit:`,
 новый `scripts/review_verdict.py`»): цель ТЗ — один парсер для всех ворот;
@@ -49,13 +62,15 @@
 - `flow_check.py`, `pr_validate.py`, `pm_bounds_check.py` копируются в проекты:
   `check_mirrors` покажет расхождение до синхронизации (`factory_init --force`
   — затем сверить `flow.yml`, см. README).
+- Финальный PR пакета, отревьюенного стадией Pi, J10 пройдет только с
+  `Reviewer-Delegation` в review-файле (как и до J65.4) — J65.4b.
 - Манифесты проектов с `contains:` продолжают работать (ключ игнорируется с
   WARNING); review-файлы с вердиктом прозой (без `##`) теперь STOP — так и
   задумано.
 
 ## Тесты
 
-`tests/test_j65_review_verdict.py` — TC-J65-VRD-001..010; адаптированы
+`tests/test_j65_review_verdict.py` — TC-J65-VRD-001..010 (после пересмотра); адаптированы
 `[test-adapted]` TC-PR-032 и TC-PR-034 (`test_package_runner.py`), песочница
 раннера отдает `base_sha` как настоящий `gate_new`.
 

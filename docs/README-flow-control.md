@@ -208,7 +208,7 @@ devops) получает резервацию по политике роли (`R
 (DENY, ZONE_OUTSIDE_POLICY, ZONE_CONFLICT, OUT_OF_ZONE, красный гейт), повторный
 запуск продолжает со state. Гайд и примеры — `docs/guides/pipeline-manifest.md`.
 
-Вердикт review-стадии — единый парсер `flow_check.parse_verdict` + provenance-sidecar раннера (J65.4). Граница: запуск `pi`
+Вердикт review-стадии — единый парсер `flow_check.parse_verdict` + аудит-запись provenance раннера (J65.4). Граница: запуск `pi`
 мимо раннера не ловится ни раннером, ни delegate_watchdog (J65.5).
 
 ## Инциденты и recovery

@@ -13,23 +13,25 @@
   pm_bounds_check;
 - строка `Commit: <sha>` в файле, если есть, обязана совпасть с
   проверявшимся коммитом (STALE);
-- раннер после review-стадии сам пишет provenance-sidecar (SHA, digest
-  диффа, автор/ревьюер) и коммитит его в ветку пакета.
+- раннер после review-стадии Pi пишет аудит-запись provenance (SHA, digest
+  диффа, авторы/ревьюер) в каталог отчетов раннера; рядом с review-файлом
+  sidecar не кладется — его читают ворота flow_transition/J10 со своей
+  семантикой (интеграция — отдельная задача).
 
 Трассировка:
   TC-J65-VRD-001  таблица заголовков: approve/return/None
   TC-J65-VRD-002  решает последний заголовок (повторная проверка в конце)
-  TC-J65-VRD-003  review_commit — последняя строка Commit:
-  TC-J65-VRD-004  раннер: approve → provenance (reviewed = HEAD до ревью,
-                  ревьюер — делегация стадии, автор — делегация dev-стадии)
-  TC-J65-VRD-005  раннер: return → provenance verdict=return + STOP
-  TC-J65-VRD-006  раннер: Commit: не тот → STOP STALE, provenance нет
-  TC-J65-VRD-007  раннер: нет заголовка вердикта → STOP, provenance нет
+  TC-J65-VRD-003  review_commit — последняя строка Commit: (в т.ч. **Commit:**,
+                  «- Commit:»)
+  TC-J65-VRD-004  раннер: approve → аудит-запись provenance в отчетах раннера
+                  (reviewed = HEAD до ревью, ревьюер — делегация стадии,
+                  авторы — dev-стадия); рядом с review-файлом sidecar НЕТ
+  TC-J65-VRD-005  раннер: return → запись verdict=return + STOP
+  TC-J65-VRD-006  раннер: Commit: не тот → STOP STALE, записи нет
+  TC-J65-VRD-007  раннер: нет заголовка вердикта → STOP, записи нет
   TC-J65-VRD-008  pm_bounds_check читает вердикт тем же парсером
-  TC-J65-VRD-009  review_sidecar_problem: нет sidecar / валиден / SELF_REVIEW
-                  / ревьюер — dev-делегация / вердикт не совпал / битый JSON
-  TC-J65-VRD-010  J10 (approved_review_tasks): approve стадии Pi без
-                  Reviewer-Delegation покрыт валидным sidecar, без него — нет
+  TC-J65-VRD-009  gate-стадия с вердиктом: STALE не сверяется (ложного STOP нет)
+  TC-J65-VRD-010  «## Вердикт» и значение следующей строкой читаются
 """
 from __future__ import annotations
 
@@ -90,6 +92,8 @@ def test_review_commit():
     assert flow_check.review_commit("Commit: abc1234\n") == "abc1234"
     assert flow_check.review_commit(
         "Commit: abc1234\n...\nReviewed-Commit: `DEF5678`\n") == "def5678"
+    assert flow_check.review_commit("**Commit:** abc1234\n") == "abc1234"
+    assert flow_check.review_commit("- Commit: `abc1234`\n") == "abc1234"
     assert flow_check.review_commit("коммит не указан\n") is None
 
 
@@ -179,29 +183,29 @@ def _run(tmp_path, monkeypatch, review_text):
     return repo, rc, head_before
 
 
-def _sidecar(repo: Path) -> Path:
-    return repo / (REVIEW + ".provenance.json")
+def _records(repo: Path) -> list:
+    rdir = repo / "PLAN-x.md.runner-reports"
+    return sorted(rdir.glob("review-*.provenance.json")) if rdir.is_dir() else []
 
 
 def test_runner_approve_writes_provenance(tmp_path, monkeypatch):
     """TC-J65-VRD-004"""
     repo, rc, _ = _run(tmp_path, monkeypatch, "## Вердикт: approve\n")
     assert rc == 0
-    side = json.loads(_sidecar(repo).read_text(encoding="utf-8"))
-    assert side["verdict"] == "approve"
+    recs = _records(repo)
+    assert len(recs) == 1
+    side = json.loads(recs[0].read_text(encoding="utf-8"))
+    assert side["verdict"] == "approve" and side["scope"] == "runner-audit"
     assert side["reviewer_delegation"].startswith("deleg-review-")
-    assert side["author_delegation"].startswith("deleg-impl-")
+    assert len(side["authors"]) == 1 and side["authors"][0].startswith("deleg-impl-")
     # reviewed commit — коммит dev-стадии (HEAD до ревью), не коммит ревью
     subj = subprocess.run(
         ["git", "-C", str(repo), "show", "-s", "--format=%s",
          side["reviewed_commit_sha"]], capture_output=True, text=True).stdout
     assert "vrd-pkg/impl" in subj
     assert side["diff_digest"]
-    # sidecar закоммичен раннером: дерево чистое, следующая стадия прошла
-    st = subprocess.run(["git", "-C", str(repo), "status", "--porcelain",
-                         "--", "code-reviews"], capture_output=True,
-                        text=True).stdout
-    assert st.strip() == ""
+    # рядом с review-файлом sidecar не кладется (его читают flow_transition/J10)
+    assert not (repo / (REVIEW + ".provenance.json")).exists()
 
 
 def test_runner_return_records_and_stops(tmp_path, monkeypatch, capsys):
@@ -209,7 +213,7 @@ def test_runner_return_records_and_stops(tmp_path, monkeypatch, capsys):
     repo, rc, _ = _run(tmp_path, monkeypatch, "## Вердикт: Вернуть\n")
     assert rc == 2
     assert "return — ЖДУ ПМ: возврат ревью" in capsys.readouterr().err
-    side = json.loads(_sidecar(repo).read_text(encoding="utf-8"))
+    side = json.loads(_records(repo)[0].read_text(encoding="utf-8"))
     assert side["verdict"] == "return"
 
 
@@ -219,7 +223,7 @@ def test_runner_stale_commit_stops(tmp_path, monkeypatch, capsys):
                        "## Вердикт: approve\nCommit: 0000000\n")
     assert rc == 2
     assert "STALE" in capsys.readouterr().err
-    assert not _sidecar(repo).exists()
+    assert _records(repo) == []
 
 
 def test_runner_no_verdict_stops(tmp_path, monkeypatch, capsys):
@@ -227,7 +231,7 @@ def test_runner_no_verdict_stops(tmp_path, monkeypatch, capsys):
     repo, rc, _ = _run(tmp_path, monkeypatch, "Вердикт: Одобрить\n")
     assert rc == 2
     assert "нет вердикта" in capsys.readouterr().err
-    assert not _sidecar(repo).exists()
+    assert _records(repo) == []
 
 
 def test_pm_bounds_uses_shared_parser():
@@ -238,42 +242,19 @@ def test_pm_bounds_uses_shared_parser():
         "## Вердикт: Не одобрить\nДата: 2026-11-06\n") is None
 
 
-def _side(review: Path, **kw) -> None:
-    data = {"reviewer_delegation": "deleg-review-2",
-            "author_delegation": "deleg-impl-1", "verdict": "approve"}
-    data.update(kw)
-    Path(str(review) + ".provenance.json").write_text(
-        json.dumps(data), encoding="utf-8")
+
+def test_gate_stage_verdict_no_stale(tmp_path):
+    """TC-J65-VRD-009: gate-стадия не знает «коммит до ревью» — строка
+    Commit: на более ранний коммит не дает ложного STALE."""
+    f = tmp_path / "r.md"
+    f.write_text("## Вердикт: approve\nCommit: 1234567\n", encoding="utf-8")
+    assert pr.check_verdict(tmp_path, {"file": "r.md"}) == ("approve", None)
+    value, problem = pr.check_verdict(tmp_path, {"file": "r.md"}, "abcdef0123")
+    assert value == "approve" and "STALE" in problem
 
 
-def test_review_sidecar_problem(tmp_path):
-    """TC-J65-VRD-009"""
-    review = tmp_path / "review-001.md"
-    text = "## Вердикт: approve\n"
-    review.write_text(text, encoding="utf-8")
-    assert flow_check.review_sidecar_problem(review, text) == ""
-    _side(review)
-    assert flow_check.review_sidecar_problem(review, text) is None
-    _side(review, reviewer_delegation="deleg-impl-1")
-    assert "SELF_REVIEW" in flow_check.review_sidecar_problem(review, text)
-    _side(review)
-    assert "dev-делегация" in flow_check.review_sidecar_problem(
-        review, text, {"deleg_review_2"})
-    _side(review, verdict="return")
-    assert "не совпадает" in flow_check.review_sidecar_problem(review, text)
-    Path(str(review) + ".provenance.json").write_text("{", encoding="utf-8")
-    assert "нечитаем" in flow_check.review_sidecar_problem(review, text)
-
-
-def test_j10_coverage_by_sidecar(tmp_path):
-    """TC-J65-VRD-010"""
-    cr = tmp_path / "code-reviews" / "pkg"
-    cr.mkdir(parents=True)
-    review = cr / "review-001-1.1.md"
-    review.write_text("## Вердикт: approve\n", encoding="utf-8")
-    warns: list = []
-    assert flow_check.approved_review_tasks(tmp_path, "pkg", warns) == {}
-    assert any("Reviewer-Delegation" in w for w in warns)
-    _side(review)
-    assert flow_check.approved_review_tasks(tmp_path, "pkg") == {
-        "1.1": review.name}
+def test_heading_value_on_next_line():
+    """TC-J65-VRD-010: «## Вердикт» и значение следующей строкой — формат,
+    принятый в проектах (19 реальных файлов), читается."""
+    assert flow_check.parse_verdict("## Вердикт\n\n**approve**\n") == "approve"
+    assert flow_check.parse_verdict("### Вердикт\nВернуть\n") == "return"

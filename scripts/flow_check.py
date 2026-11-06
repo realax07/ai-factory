@@ -76,6 +76,9 @@ REVIEW_FILE_TASK_FIRST = re.compile(r"^review-(.+?)-(\d{3})\.md$", re.I)
 # None → ложный FAIL J10 на валидном review-файле).
 VERDICT_LINE_RE = re.compile(
     r"^#{1,4}\s*(?:\d+(?:\.\d+)*[.)]?\s+)?Вердикт\s*:?\s*(.+)$", re.I | re.M)
+# \s после «Вердикт» сознательно переходит строку: в проектах вердикт часто
+# пишут «## Вердикт» и значение следующей строкой (J65.4: сужение до [ \t]
+# ломало 19 реальных review-файлов).
 VERDICT_APPROVE_RE = re.compile(r"\b(approve|approved|одобрен\w*|одобрить)\b", re.I)
 # SELF_REVIEW-защита (решение Заказчика 2026-10-03): review-файл обязан нести
 # Reviewer-Delegation: deleg_<id> — платформенный id делегации ревьюера
@@ -88,7 +91,8 @@ VERDICT_NEGATED_RE = re.compile(r"\bне\s+одобр\w*", re.I)
 # J65.4: строка «Commit: <sha>» (или «Reviewed-Commit:») — на каком коммите
 # выдан вердикт; раннер сверяет ее с проверявшимся HEAD (STALE).
 REVIEW_COMMIT_RE = re.compile(
-    r"^\s*(?:Reviewed-)?Commit:\s*`?([0-9a-f]{7,40})`?\s*$", re.I | re.M)
+    r"^[ \t]*(?:[-*][ \t]+)?(?:\*\*)?(?:Reviewed-)?Commit:(?:\*\*)?[ \t]*"
+    r"`?([0-9a-f]{7,40})`?[ \t]*$", re.I | re.M)
 QA_SECTION = "6"  # раздел 6.x — QA-цикл, не dev (J10)
 
 # --- J46: карта архитектуры — обязательный артефакт (решение Заказчика
@@ -224,37 +228,6 @@ def review_commit(text: str) -> str | None:
     return found[-1].lower() if found else None
 
 
-def review_sidecar_problem(review: Path, text: str,
-                           dev_delegs: set | frozenset = frozenset()) -> str | None:
-    """Provenance-sidecar ревью (J65.4) как доказательство независимости.
-
-    '' — sidecar нет (проверка по Reviewer-Delegation, как раньше);
-    None — sidecar валиден: ревьюер и автор указаны и различны, ревьюер не
-    dev-делегация задачи, вердикт sidecar = вердикт файла;
-    иначе — текст дефекта."""
-    path = Path(str(review) + ".provenance.json")
-    if not path.is_file():
-        return ""
-    try:
-        side = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError) as exc:
-        return f"provenance-sidecar нечитаем ({exc}) — ревью не засчитано"
-    if not isinstance(side, dict):
-        return "provenance-sidecar не объект — ревью не засчитано"
-    reviewer = str(side.get("reviewer_delegation") or "")
-    author = str(side.get("author_delegation") or "")
-    if not reviewer or not author or reviewer == author:
-        return ("provenance-sidecar: ревьюер и автор не указаны или совпадают "
-                "(SELF_REVIEW) — ревью не засчитано")
-    if reviewer.replace("-", "_") in dev_delegs:
-        return ("provenance-sidecar: ревьюер — dev-делегация задачи "
-                "(SELF_REVIEW) — ревью не засчитано")
-    if side.get("verdict") != parse_verdict(text):
-        return ("provenance-sidecar: вердикт sidecar не совпадает с вердиктом "
-                "файла — ревью не засчитано")
-    return None
-
-
 def approved_review_tasks(repo: Path, change_id: str,
                           warns: list[str] | None = None) -> dict[str, str]:
     """task-id → имя review-файла АКТУАЛЬНОЙ итерации с вердиктом approve
@@ -321,9 +294,7 @@ def approved_review_tasks(repo: Path, change_id: str,
     for rev, fname, tasks in entries:
         text = (cr_dir / fname).read_text(encoding="utf-8", errors="replace")
         verdict = parse_verdict(text)
-        # J65.4: ревью стадии раннера (Pi) — независимость по provenance-sidecar
-        meta = (bool(REVIEWER_META_RE.search(text))
-                or review_sidecar_problem(cr_dir / fname, text) is None)
+        meta = bool(REVIEWER_META_RE.search(text))
         meta_by_rev[rev] = meta_by_rev.get(rev, False) or meta
         for task_id in tasks:
             cur = latest.get(task_id)

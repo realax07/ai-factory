@@ -172,16 +172,6 @@ def check_change(repo: Path, change_id: str, marker: str = "") -> list[str]:
     if _cr_dir.is_dir():
         for _rf in _cr_dir.glob("review-*.md"):
             _t = _rf.read_text(encoding="utf-8", errors="replace")
-            # J65.4: ревью стадии пакетного раннера (Pi) подтверждается
-            # provenance-sidecar раннера, а не id делегации Hermes (у стадии
-            # Pi его в async_delegations нет).
-            from flow_check import review_sidecar_problem
-            _side = review_sidecar_problem(_rf, _t, _dev_delegs)
-            if _side is None:
-                continue
-            if _side:
-                missing.append(f"code-reviews/{change_id}/{_rf.name}: {_side}")
-                continue
             _m = re.search(r"Reviewer-Delegation[^A-Za-z0-9]{0,6}(deleg[-_][A-Za-z0-9]+)", _t, re.I)
             if not _m:
                 missing.append(

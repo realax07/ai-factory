@@ -585,40 +585,56 @@ def check_verdict(worktree: Path, verdict: dict,
     return value, None
 
 
-def record_review_provenance(worktree: Path, manifest: dict, stage: dict,
-                             state: dict, gate: dict, verdict: str) -> str:
-    """Provenance-sidecar ревью (J65.4) рядом с файлом вердикта + коммит
-    раннера в ветку пакета. Ревьюер — делегация этой стадии; автор —
-    делегация последней предыдущей pi-стадии другой роли; reviewed commit —
-    HEAD до стадии ревью; digest — дифф от начала пакета до него.
-    Возвращает путь sidecar или бросает RunnerStop."""
+def record_review_provenance(plan_path: Path, worktree: Path, manifest: dict,
+                             stage: dict, state: dict, gate: dict,
+                             verdict: str) -> str:
+    """Аудит-запись provenance ревью стадии Pi (J65.4) в каталоге отчетов
+    раннера `<план>.runner-reports/<stage>-<попытка>.provenance.json`.
+
+    Запись — для аудита: на какой коммит выдан вердикт (HEAD до стадии
+    ревью), digest диффа от начала пакета, ревьюер — делегация стадии, авторы
+    — делегации pi-стадий других ролей с коммитом после предыдущей
+    review-стадии. Рядом с review-файлом sidecar НЕ кладется: его читает
+    flow_transition (provenance_findings) и J10 со своей семантикой
+    (`HEAD^..HEAD`, задача tasks.md, Reviewer-Delegation из реестра Hermes);
+    интеграция ревью стадий Pi с этими воротами — отдельная задача.
+    Возвращает путь записи или бросает RunnerStop."""
     if gr is None:
         raise RunnerStop(f"provenance ревью: движок фабрики недоступен "
                          f"({ENGINE_ERROR})")
     gates = state.get("flow_gates", {})
-    author = f"package:{manifest['package']}"
+    authors: list[str] = []
     for prev in manifest["stages"]:
         if prev["id"] == stage["id"]:
             break
         g = gates.get(prev["id"])
-        if (prev["kind"] == "pi" and prev["payload"] != stage["payload"]
-                and g and g.get("commit")):
-            author = g["delegation_id"]
+        if prev["kind"] != "pi" or not g:
+            continue
+        if prev.get("verdict"):
+            authors = []  # предыдущее ревью закрыло свой отрезок работы
+        elif prev["payload"] != stage["payload"] and g.get("commit"):
+            authors.append(g["delegation_id"])
     reviewed = gate["base_sha"]
     first = next((g for g in gates.values() if g.get("base_sha")), gate)
     base = first["base_sha"]
+    rdir = plan_path.with_name(plan_path.name + REPORTS_SUFFIX)
+    out = rdir / f"{stage['id']}-{gate.get('attempt', 1)}.provenance.json"
     try:
+        rdir.mkdir(parents=True, exist_ok=True)
         digest = gr.compute_diff_digest(worktree, base, reviewed)
-        sidecar, _ = gr.write_review_provenance(
+        _, payload = gr.write_review_provenance(
             worktree / stage["verdict"]["file"], repo_of_name(worktree),
             manifest["package"], [stage.get("task_id") or manifest["package"]],
-            author, gate["delegation_id"], reviewed, verdict,
-            diff_digest=digest, diff_base=base)
+            ",".join(authors) or f"package:{manifest['package']}",
+            gate["delegation_id"], reviewed, verdict,
+            diff_digest=digest, diff_base=base, sidecar_path=out)
+        payload["authors"] = authors
+        payload["scope"] = "runner-audit"
+        out.write_text(json.dumps(payload, ensure_ascii=False, indent=2,
+                                  sort_keys=True), encoding="utf-8")
     except (ValueError, OSError) as exc:
         raise RunnerStop(f"provenance ревью не записан: {exc}") from exc
-    commit_stage(worktree, f"[pipeline] {manifest['package']}/{stage['id']}: "
-                 f"provenance ревью ({verdict}, reviewed {reviewed[:12]})")
-    return str(sidecar)
+    return str(out)
 
 
 def repo_of_name(worktree: Path) -> str:
@@ -1444,8 +1460,8 @@ def cmd_run(plan_path: Path, dry_run: bool) -> int:
                            f"{stage['id']} | gate:{stage['payload']} | ok")
             done.add(stage["id"])
             if stage["verdict"]:
-                _, problem = check_verdict(worktree, stage["verdict"],
-                                           _git_head(worktree))
+                # gate-стадия не знает «коммит до ревью» — STALE не сверяется
+                _, problem = check_verdict(worktree, stage["verdict"])
                 if problem and _fail(
                         stage, f"{problem} — ЖДУ ПМ: возврат ревью", None):
                     return EXIT_STOP
@@ -1639,6 +1655,30 @@ def cmd_run(plan_path: Path, dry_run: bool) -> int:
             continue
         gate_close(gate, commit)
         gate.update(open=False, commit=commit)
+        # Вердикт-ворота (J62 → J65.4) ДО отметки done: вердикт файла — по
+        # единому парсеру; approve/return фиксируется аудит-записью provenance
+        # (прерывание между ними не оставит done-стадию без записи);
+        # return/STALE/нет вердикта — STOP.
+        verdict_problem = None
+        if stage["verdict"]:
+            value, verdict_problem = check_verdict(
+                worktree, stage["verdict"], gate["base_sha"])
+            if value in ("approve", "return") and not (
+                    verdict_problem and "STALE" in verdict_problem):
+                try:
+                    record = record_review_provenance(
+                        plan_path, worktree, manifest, stage, state, gate,
+                        value)
+                except RunnerStop as exc:
+                    return _stop(stage, str(exc), None)
+                print(f"RUNNER: stage {stage['id']} — provenance ревью "
+                      f"(аудит): {record}")
+            if verdict_problem:
+                state_write(spath, state)
+                if _fail(stage, f"{verdict_problem} — ЖДУ ПМ: возврат ревью",
+                         None):
+                    return EXIT_STOP
+                continue
         state_record(state, stage["id"], "done", "pi ok", 0, out, err)
         state_write(spath, state)
         try:
@@ -1648,25 +1688,6 @@ def cmd_run(plan_path: Path, dry_run: bool) -> int:
         journal_append(plan_path, f"{utcnow_iso()} | stage {stage['id']} | "
                        f"pi:{stage['payload']} | ok")
         done.add(stage["id"])
-        # Вердикт-ворота (J62 → J65.4): вердикт файла — по единому парсеру;
-        # approve/return фиксируется provenance-sidecar (SHA проверявшегося
-        # коммита, дифф, автор/ревьюер) коммитом раннера; return/STALE/нет
-        # вердикта — STOP.
-        if stage["verdict"]:
-            value, problem = check_verdict(worktree, stage["verdict"],
-                                           gate["base_sha"])
-            if value in ("approve", "return") and not (
-                    problem and "STALE" in problem):
-                try:
-                    sidecar = record_review_provenance(
-                        worktree, manifest, stage, state, gate, value)
-                except RunnerStop as exc:
-                    return _stop(stage, str(exc), None)
-                print(f"RUNNER: stage {stage['id']} — provenance ревью: "
-                      f"{sidecar}")
-            if problem and _fail(
-                    stage, f"{problem} — ЖДУ ПМ: возврат ревью", None):
-                return EXIT_STOP
 
     print(f"RUNNER: пакет {manifest['package']} докатан "
           f"({len(manifest['stages'])} stage); state: {spath}")
