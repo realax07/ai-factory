@@ -94,6 +94,7 @@ def test_review_commit():
         "Commit: abc1234\n...\nReviewed-Commit: `DEF5678`\n") == "def5678"
     assert flow_check.review_commit("**Commit:** abc1234\n") == "abc1234"
     assert flow_check.review_commit("- Commit: `abc1234`\n") == "abc1234"
+    assert flow_check.review_commit("**Commit**: abc1234\n") == "abc1234"
     assert flow_check.review_commit("коммит не указан\n") is None
 
 

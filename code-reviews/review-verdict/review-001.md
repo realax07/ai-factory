@@ -64,3 +64,46 @@ SELF_REVIEW-защиту pr_validate: чтобы обойти сверку с р
 - №7 авторы — все pi-стадии других ролей с коммитом после предыдущей review-стадии (список `authors`).
 - №8 регресс: сравнение со старым парсером из origin/main (не degenerate) на 344 файлах — 2 изменения, оба верные (архивные review-architecture.md с дописанным APPROVE).
 - №9 сужение «Вердикт» до одной строки опробовано и откачено: ломало 19 реальных файлов (формат «## Вердикт» + значение следующей строкой); зафиксировано тестом TC-J65-VRD-010 и комментарием у регэкспа.
+
+## Повторная проверка (e42591b)
+
+Ревьюер: code_reviewer (независимый сабагент, тот же, что review-001 выше)
+Commit: e42591b
+Дата: 2026-11-06
+Предмет: `git diff ffa2201 e42591b`
+
+### Major из review-001
+
+| # | Статус | Чем подтверждено |
+|---|---|---|
+| 1 ложный STALE на gate-стадии | закрыт | `package_runner.py` (gate-ветка): `check_verdict` вызывается без `reviewed_sha`, STALE сверяется только на pi-стадии против `gate["base_sha"]`. Мой repro из review-001 (gate-стадия + `Commit: <HEAD до ревью>`) теперь проходит без STOP (assert на STALE падает — так и должно быть). TC-J65-VRD-009 тоже это покрывает. |
+| 2 sidecar ослаблял SELF_REVIEW | закрыт | `review_sidecar_problem` удален; `git diff origin/main e42591b -- scripts/pr_validate.py` пуст; в `approved_review_tasks` снова `meta = REVIEWER_META_RE`. Ссылок на sidecar в scripts/docs/паках нет. Остаток (прием ревью Pi в J10) честно назван: J65.4b в бэклоге, guarantees.md, guide. |
+| 3 несовместимость с flow_transition | закрыт | Рядом с review-файлом sidecar больше не пишется и не коммитится. Запись лежит в `<план>.runner-reports/<stage>-<попытка>.provenance.json` (`scope: runner-audit`), и `load_review_provenance` (глоб `code-reviews/<change>/review-*.provenance.json`) ее не видит. TC-004 проверяет, что рядом с review файла нет. |
+
+Минорные пункты review-001: №4 (guarantees.md) приведен к коду; №5 `**Commit:**` / `- Commit:` распознаются (TC-003); №6 — запись вне worktree (resume больше не встает на файле вне зоны), вердикт и запись делаются до `done`; №7 — список `authors` со сбросом на предыдущем ревью; №8 — пересчитано. №9: откат принимаю. Довод с 19 реальными файлами «## Вердикт» + значение следующей строкой весомый, TC-010 и комментарий у регэкспа фиксируют решение.
+
+### Новые замечания
+
+| # | Серьезность | Место | Суть | Рекомендация |
+|---|---|---|---|---|
+| R1 | minor | PLAN-review-verdict.md:27-28 | По-прежнему написано «Проверено на 316 review-файлах … вердикт не изменился ни у одного». Это противоречит строке 50 того же плана (344 файла, 2 изменения). | Исправить строку 27-28 или сослаться на раздел пересмотра. |
+| R2 | minor | scripts/flow_check.py:94-95 | Форма `**Commit**: abc1234` (двоеточие вне жирного) не распознается, и STALE молча не проверяется. Пак инструктирует `Commit: <sha>`, так что это граничный случай. | По желанию: `(?:\*\*)?Commit(?:\*\*)?:(?:\*\*)?`. Не блокирует. |
+
+Нового дефекта в порядке раннера не нашел. Return: запись → `state_write` → `_fail` → `stopped`; resume переисполняет стадию с attempt+1 и новым файлом записи. Optional + return → skipped. Если запись не удалась → STOP: коммит стадии уже сделан, а файл записи вне worktree зону не засоряет. Gate-стадии в цикле авторов пропускаются (`kind != pi`).
+
+### Проверено
+
+- Дифф `ffa2201..e42591b`: scripts, tests, документы, паки.
+- `tests/test_j65_review_verdict.py` + `tests/test_package_runner.py`: 122 passed (HOME=vps-home, python3.14).
+- `python3 scripts/flow_check.py .`: OK.
+- Старый парсер (`ffa2201~1`) против нового на 385 файлах (worktree, ai-factory main, auto-school, child_bot, ekotov-wiki): 2 изменения, те же архивные `review-architecture.md` ekotov-wiki, return → approve, оба верные.
+- `pr_validate.py` совпадает с origin/main; `review_sidecar_problem` нигде больше не упоминается.
+
+### Не проверено
+
+- Полный сьют и ci_local (данные ПМ: 1246 passed).
+- Реальный прогон Pi/flowctl.
+- J65.4b — вне объема.
+
+## Вердикт: approve
+- R1 (316 vs 344 в плане), R2 (`**Commit**:`) — исправлены (ПМ).

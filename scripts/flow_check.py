@@ -91,7 +91,7 @@ VERDICT_NEGATED_RE = re.compile(r"\bне\s+одобр\w*", re.I)
 # J65.4: строка «Commit: <sha>» (или «Reviewed-Commit:») — на каком коммите
 # выдан вердикт; раннер сверяет ее с проверявшимся HEAD (STALE).
 REVIEW_COMMIT_RE = re.compile(
-    r"^[ \t]*(?:[-*][ \t]+)?(?:\*\*)?(?:Reviewed-)?Commit:(?:\*\*)?[ \t]*"
+    r"^[ \t]*(?:[-*][ \t]+)?(?:\*\*)?(?:Reviewed-)?Commit(?:\*\*)?:(?:\*\*)?[ \t]*"
     r"`?([0-9a-f]{7,40})`?[ \t]*$", re.I | re.M)
 QA_SECTION = "6"  # раздел 6.x — QA-цикл, не dev (J10)
 
