@@ -313,6 +313,7 @@ COPY_FILES = [
 # Детерминированный Flow Control (change add-deterministic-flow, J28):
 # исполняемое ядро + контракт + скилл — устанавливается вместе с базой.
 FLOW_CONTROL_FILES = [
+    "scripts/flow_ids.py",  # J65.3: грамматика scope — импортируют движок ниже (BUG-026)
     "scripts/flow_state.py",
     "scripts/flow_transition.py",
     "scripts/session_check.py",
