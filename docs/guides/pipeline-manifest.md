@@ -40,7 +40,9 @@ pipeline:
     с пометкой «читай вместе с AGENTS.md проекта» (Pi читает оба), бриф
     упоминает нужный файл. Задает `PI_ZONE_WRITE` из `zones` и вызывает
     `pi --no-session -e ~/.pi/agent/extensions/zone-guard.ts -p <бриф>`.
-    Для pi-шага `zones` **обязателен**. Провайдер/модель берутся из
+    Без `zones` раннер берет зону роли целиком из реестра `agents/roles.json`
+    (`<id>` → change-id пакета, J65.1); `zones` в манифесте ее только сужает;
+    у роли без зоны в реестре (auditor, debug) `zones` обязателен. Провайдер/модель берутся из
     `settings.example.json` пака (дефолт `zai-glm`/`glm-5.3`); ключ pi берет
     сам из `~/.pi/agent/models.json` — раннер секретов не касается.
   - `gate:<команда>` — shell-команда в worktree; ненулевой exit → STOP

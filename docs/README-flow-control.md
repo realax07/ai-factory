@@ -263,7 +263,8 @@ devops) получает резервацию по политике роли (`R
 | `flow_mode.py` | ПМ (вручную) | config | Переключатель shadow/enforcing |
 | `pr_validate.py` | CI job `flow`, gate_runner | GitHub-enforced + ворота | PR-ворота: маркер/стадия, артефакты контрактов, J58-правила (вкл. pr_body IR-05/06) |
 | `pm_bounds_check.py` | gate_runner, ПМ | enforcing | Границы записи ПМ: защищенные пути, реестр сессий, продукт-коммиты |
-| `role_zone_policy.py` | session_check/flowctl (import) | enforcing | Политика зон записи ролей (источник — таблица agents/README.md) |
+| `role_zone_policy.py` | session_check/flowctl (import) | enforcing | Политика зон записи ролей (источник — реестр `agents/roles.json`, версия — его sha256; J65.1) |
+| `gen_role_docs.py` | ПМ после правки реестра, тест (`--check`) | manual | Таблица зон `agents/README.md` и оглавление роль-паков из `agents/roles.json` |
 | `flow_ids.py` | flow_state/flowctl/flow_transition (import), энфорсер (import или fallback-копия) | enforcing | Грамматика scope флоу 1–5 (J65.3); `python3 scripts/flow_ids.py <flow> <scope>` — ручная проверка |
 | `factory_paths.py` | все скрипты ворот (import), ПМ | config | Пути машины из env (J64.5); `--doctor LABEL` / `--compare` — сверка контекстов шелл/крон/Hermes (J65.12) |
 | `package_runner.py` | ПМ (`package_runner.py <PLAN> [--dry-run]`) | enforcing | Пакетный раннер по манифесту `pipeline:`: стадии `pi:<роль>` через prepare/run/finish, сверка git diff с зоной, коммит стадии; `gate:`/`hermes:` стадии (J62/J63) |

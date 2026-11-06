@@ -202,9 +202,10 @@ def test_a2_no_pipeline_section():
     # неизвестный вид run
     ("pipeline:\n  package: p\n  flow: 4\n  stages:\n"
      "    - id: a\n      run: bash:ls\n"),
-    # pi без zones
+    # pi без zones у роли без зоны в реестре ([test-adapted] J65.1: у роли с
+    # зоной zones берется из agents/roles.json — TC-J65-ROL-005)
     ("pipeline:\n  package: p\n  flow: 4\n  stages:\n"
-     "    - id: a\n      run: pi:dev\n"),
+     "    - id: a\n      run: pi:auditor\n"),
     # дубль id
     ("pipeline:\n  package: p\n  flow: 4\n  stages:\n"
      "    - id: a\n      run: gate:true\n"

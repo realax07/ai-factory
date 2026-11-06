@@ -54,9 +54,12 @@ def test_copied_scripts_bring_their_imports():
 def test_engine_copies_import_standalone(tmp_path):
     """TC-BUG-026-002"""
     scripts = tmp_path / "scripts"
-    scripts.mkdir()
-    for rel in COPIED:
-        shutil.copy2(FACTORY / rel, scripts / Path(rel).name)
+    # все файлы списков с их путями (J65.1: role_zone_policy читает
+    # agents/roles.json рядом со scripts/)
+    for rel in fi.COPY_FILES + fi.FLOW_CONTROL_FILES:
+        dst = tmp_path / rel
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(FACTORY / rel, dst)
     for mod in sorted(Path(rel).stem for rel in COPIED):
         proc = subprocess.run(
             [sys.executable, "-I", "-c",

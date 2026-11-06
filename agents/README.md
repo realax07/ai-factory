@@ -17,6 +17,10 @@
 
 ## Таблица зон записи (норма для всех ролей)
 
+Источник — реестр [`roles.json`](roles.json) (J65.1): там зоны записи в форме glob (политика ворот) и тексты этой таблицы. Правка зоны — только в реестре, затем `python3 scripts/gen_role_docs.py`; ручная правка таблицы ловится тестом.
+
+<!-- roles:zones:start -->
+<!-- генерируется scripts/gen_role_docs.py из agents/roles.json — руками не править -->
 | Агент | Режим | Зона записи (только она) | Push |
 |---|---|---|---|
 | Бизнес-аналитик | plan-write | `requirements.md`, `docs/ba/answers_roundN.md` | нет |
@@ -35,6 +39,10 @@
 | Debug (эскалационный, 14-й) | auto-edit | только `docs/project-pitfalls.md` проекта (база граблей, append-only) | нет |
 | Regress-раннер (regress_runner, J51.4) | auto-edit | только `test-model/regress/<change-id>/` (артефакты прогонов пишет flowctl regress) | нет |
 | Основная сессия (relay) | plan | диалог с Заказчиком; запись не ведет (кроме PLAN-строк приема эскалаций по решению Заказчика) | нет |
+| Архитектор (J46) | auto-edit | `architecture/**` (карта архитектуры), ревью пакета `test-model/reviews/<change-id>/review-*-architecture.md` | нет |
+| DevOps (J26) | auto-edit | `deploy/**`, `ops/**`, CI-ворота `.github/workflows/**` (J64.18); боевой деплой — только по утверждению | нет |
+| Валидатор дизайна | auto-edit | `test-model/reviews/<change-id>/review-*-design.md` | нет |
+<!-- roles:zones:end -->
 
 Запись вне зоны = нарушение флоу; отчет отклоняется ПМ.
 

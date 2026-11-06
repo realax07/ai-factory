@@ -53,7 +53,7 @@
 | `flowctl.py` | оркестратор: prepare/run/finish/status/reconcile, adapter=manual, идемпотентность | меняет state |
 | `flow_mode.py` | переключатель shadow/enforcing (enforcing: DENY/UNKNOWN блокируют) | меняет режим |
 | `flow_ids.py` | грамматика scope флоу 1–5 (J65.3): движок, flowctl и энфорсер — по одному источнику | чистый |
-| `role_zone_policy.py` | политика зон ролей для ворот (таблица `agents/README.md` защищена отпечатком) | чистый |
+| `role_zone_policy.py` | политика зон ролей для ворот из реестра `agents/roles.json` (J65.1); таблицы ролей — `gen_role_docs.py` | чистый |
 | `package_runner.py` | пакетный раннер по манифесту `pipeline:` плана: стадии `pi:<роль>` через `flowctl prepare/run/finish`, сверка диффа с зоной, коммит стадии (J62/J63) | меняет worktree/state |
 | `ci_local.py` | прогон сьюта и flow_check в условиях CI (клон глубины 1, пустой HOME, J65.12) | чистый для репо |
 
