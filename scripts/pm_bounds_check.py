@@ -236,15 +236,12 @@ MERGE_TASK_RE = re.compile(
 
 def review_approve_date(text: str) -> str | None:
     """Вердикт approve + дата из review-файла (формат agents/code_reviewer_agent.md)."""
-    # повторяем семантику flow_check.parse_verdict без импорта (скрипт самодостаточен)
-    verdict = None
-    for m in re.finditer(r"^#{1,4}\s*Вердикт\s*:?\s*(.+)$", text, re.I | re.M):
-        v = m.group(1).strip().strip("*").strip().lower()
-        if re.search(r"\b(return|доработк\w*)\b", v, re.I):
-            verdict = "return"
-        elif re.search(r"\b(approve|approved|одобрен\w*)\b", v, re.I):
-            verdict = "approve"
-    if verdict != "approve":
+    # Единый парсер вердикта — flow_check.parse_verdict (J65.4: прежняя копия
+    # семантики расходилась — не знала «одобрить»/«вернуть», «не одобрить»,
+    # нумерованные заголовки). flow_check копируется в проект вместе с этим
+    # скриптом (factory_init COPY_FILES).
+    import flow_check
+    if flow_check.parse_verdict(text) != "approve":
         return None
     dm = re.search(r"Дата\s*[:\*]*\s*(\d{4}-\d{2}-\d{2})", text, re.I)
     return dm.group(1) if dm else None

@@ -140,7 +140,9 @@ def flow_gates_sandbox(request, tmp_path, monkeypatch):
     monkeypatch.setattr(pr, "gate_new", lambda s, r, w: {
         "kind": "fake", "cid": "fake-cid", "delegation_id": "deleg-fake",
         "role": pr.flow_role(s["payload"]), "registry": str(st / "reg.json"),
-        "state": str(st / "state.json"), "repo": str(r), "base_sha": ""})
+        "state": str(st / "state.json"), "repo": str(r),
+        # как настоящий gate_new: HEAD worktree до стадии (provenance J65.4)
+        "base_sha": pr._git_head(w)})
     monkeypatch.setattr(pr, "gate_begin", lambda m, s, r, w, b, g: g)
     monkeypatch.setattr(pr, "zone_recheck", lambda g, w: [])
     monkeypatch.setattr(pr, "shelve_attempt", lambda w, b, label: "fake")
@@ -1134,7 +1136,8 @@ def test_k4b_verdict_gate_fail_stop(tmp_path, monkeypatch, capsys):
     assert pr.cmd_run(plan, dry_run=False) == 2
     err = capsys.readouterr().err
     assert "ЖДУ ПМ: возврат ревью" in err
-    assert "маркер 'Одобрить' не найден" in err
+    # [test-adapted] J65.4: вердикт читает единый парсер, а не подстрока
+    assert "review-001.md — return" in err
     state = json.loads((repo / "PLAN-x.md.runner-state.json").read_text("utf-8"))
     assert state["stages"]["review"]["status"] == "stopped"
     assert "next" not in state["stages"]
@@ -1178,8 +1181,10 @@ def test_k4d_verdict_gate_on_gate_stage(tmp_path, monkeypatch, capsys):
 
 
 def test_k5_verdict_validation_negatives():
-    """TC-PR-034 (J62, негативы): verdict не отображение / без file /
-    без contains — ManifestError; валидный verdict нормализуется."""
+    """TC-PR-034 (J62, негативы): verdict не отображение / без file —
+    ManifestError; валидный verdict нормализуется. [test-adapted] J65.4:
+    `contains` устарел — без него verdict валиден, с ним — сохраняется
+    (раннер предупреждает и игнорирует)."""
     base = ("# PLAN-x\n\n```yaml\npipeline:\n  package: p\n  flow: 1\n"
             "  stages:\n    - id: a\n      run: gate:true\n")
     with pytest.raises(pr.ManifestError):
@@ -1187,9 +1192,9 @@ def test_k5_verdict_validation_negatives():
     with pytest.raises(pr.ManifestError):
         pr.parse_manifest(write_tmp_plan(
             base + "      verdict:\n        contains: \"Одобрить\"\n```\n"))
-    with pytest.raises(pr.ManifestError):
-        pr.parse_manifest(write_tmp_plan(
-            base + "      verdict:\n        file: review.md\n```\n"))
+    m0 = pr.parse_manifest(write_tmp_plan(
+        base + "      verdict:\n        file: review.md\n```\n"))
+    assert m0["stages"][0]["verdict"] == {"file": "review.md"}
     m = pr.parse_manifest(write_tmp_plan(
         base + "      verdict:\n        file: r.md\n"
                "        contains: \"Одобрить\"\n```\n"))

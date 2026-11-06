@@ -89,21 +89,31 @@ pipeline:
   игнорируется с WARNING, если нарушает порядок.
 - `gate` (опциональное поле pi-шага) — команда-проверка в worktree после
   успешного pi; ненулевой exit → STOP.
-- `verdict` (опциональное поле pi/gate-стадии, J62) — **вердикт-ворота**:
-  отображение `{file: путь, contains: маркер}`. После успешной стадии раннер
-  проверяет, что файл (в worktree) содержит маркер — иначе STOP exit 2 с
-  сообщением **«ЖДУ ПМ: возврат ревью»** (стадия в state — `stopped`; при
-  повторном запуске стадия переисполняется, как gate-отказ — ретраев нет).
-  Типовое применение — review-стадии: маркер «Одобрить» в review-файле
-  (машиночитаемый вердикт; прозаический вердикт «по памяти» = задача НЕ
-  покрыта воротами). Валидация манифеста требует оба поля непустыми::
+- `verdict` (опциональное поле pi/gate-стадии, J62 → J65.4) — **вердикт-ворота**:
+  отображение `{file: путь}`. После успешной стадии раннер читает вердикт
+  файла (в worktree) **единым парсером** `flow_check.parse_verdict` — тем же,
+  что у pr_validate и gate_runner:
+  - вердикт — заголовок `## Вердикт: approve|return` (или Одобрить/Вернуть),
+    решает **последний** такой заголовок файла (повторная проверка,
+    дописанная в конец, отменяет прежний вердикт);
+  - approve → проход; return, «Не одобрить», заголовок с обоими словами
+    (шаблон) → STOP exit 2 **«ЖДУ ПМ: возврат ревью»**; заголовка нет
+    (вердикт прозой, `Вердикт: …` без `##`) → STOP;
+  - строка `Commit: <sha>` в файле, если есть, обязана совпасть с
+    проверявшимся коммитом — иначе STOP STALE;
+  - у pi-стадии approve/return фиксируется **provenance**: раннер пишет
+    `<file>.provenance.json` (reviewed commit — HEAD до стадии ревью, digest
+    диффа от начала пакета, ревьюер — делегация стадии, автор — делегация
+    последней предыдущей pi-стадии другой роли) и коммитит его в ветку пакета.
+
+  Стадия в state — `stopped`; повторный запуск переисполняет ее, ретраев нет.
+  Ключ `contains` устарел: принимается и игнорируется с WARNING::
 
       - id: code_review
         run: pi:code-reviewer
         zones: [code-reviews/my-package/review-001.md]
         verdict:
           file: code-reviews/my-package/review-001.md
-          contains: "Одобрить"
 - Таймаут вызова: env `PIPELINE_TIMEOUT` (сек), дефолт 1800; таймаут и
   ненулевой exit pi/gate/stand → STOP: exit 2, хвост stdout/stderr ≤30 строк.
 - Состояние: `<план>.runner-state.json` рядом с планом (путь печатается
@@ -249,7 +259,6 @@ pipeline:
         - openspec/changes/my-package/design.md
       verdict:
         file: test-model/reviews/my-package/review-001-architecture.md
-        contains: "Одобрить"
     - id: design              # дизайн-макеты/токены ДО кода (J36); опциональна:
       run: pi:ui-designer     # задачи без фронт-дельты — падение → skipped,
       zones: [design/**]      # пакет едет дальше (не STOP)
@@ -261,7 +270,6 @@ pipeline:
       inputs: [design/]
       verdict:
         file: test-model/reviews/my-package/review-001-design.md
-        contains: "Одобрить"
       optional: true          # отказ вердикта → skipped, не STOP
     - id: dev
       run: pi:dev
@@ -274,10 +282,9 @@ pipeline:
     - id: code_review
       run: pi:code-reviewer
       zones: [code-reviews/my-package/review-001.md]
-      verdict:                # вердикт-ворота: нет «Одобрить» в файле —
-        file: code-reviews/my-package/review-001.md         # STOP «ЖДУ ПМ:
-        contains: "Одобрить"                                # возврат ревью»,
-                              # ПМ возвращает дифф dev, потом repeat
+      verdict:                # вердикт-ворота: return / нет заголовка
+        file: code-reviews/my-package/review-001.md   # → STOP «ЖДУ ПМ:
+                              # возврат ревью», ПМ возвращает дифф dev, repeat
     - id: qa_cases
       run: pi:qa-case-author
       zones: [test-model/new/my-package/**]
@@ -290,7 +297,6 @@ pipeline:
       inputs: [test-model/new/my-package/]
       verdict:
         file: test-model/reviews/my-package/review-cases-001.md
-        contains: "Одобрить"
     - id: qa_stand             # подъем стенда (J62): stdout стенда
       run: stand:bash scripts/qa_stand_up.sh reset   # (export EKOTOV_WIKI_*)
                               # прокидывается в env qa_auto/design/regress;

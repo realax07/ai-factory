@@ -140,6 +140,7 @@ SCRIPTS = Path(__file__).resolve().parent
 # (без ворот pi не запускается), gate/stand/hermes-стадии работают.
 sys.path.insert(0, str(SCRIPTS))
 import factory_paths as fp  # noqa: E402  (J64.5: пути машины — только оттуда)
+import flow_check  # noqa: E402  (J65.4: единый парсер вердикта ревью)
 
 for _engine in (SCRIPTS, fp.factory_home() / "scripts"):
     if (_engine / "flowctl.py").is_file():
@@ -150,9 +151,10 @@ try:
     import flow_transition as ft  # noqa: E402  (STAGE_TABLE: роль → этап)
     import role_zone_policy as rzp  # noqa: E402  (зоны ролей без этапа)
     import session_check as sc  # noqa: E402  (резервация/post-check)
+    import gate_runner as gr  # noqa: E402  (provenance ревью, J65.4)
     ENGINE_ERROR = ""
 except ImportError as _exc:  # раннер вне фабрики без AI_FACTORY_HOME
-    fc = ft = rzp = sc = None
+    fc = ft = rzp = sc = gr = None
     ENGINE_ERROR = str(_exc)
 
 REPO_ROOT = SCRIPTS.parent
@@ -452,18 +454,21 @@ def parse_manifest(plan_path: Path) -> dict:
                 f"(PI_ZONE_WRITE разделяется по ':'): {bad!r}")
         verdict = raw.get("verdict")
         if verdict is not None:
-            # Вердикт-ворота стадии (J62): файл в worktree обязан содержать
-            # маркер (например «Одобрить»), иначе STOP «ЖДУ ПМ: возврат ревью».
+            # Вердикт-ворота стадии (J62 → J65.4): вердикт файла решает
+            # flow_check.parse_verdict (заголовок `## Вердикт: approve|return`,
+            # последний решает); `contains` — устаревший ключ, игнорируется.
             if not isinstance(verdict, dict):
                 raise ManifestError(
-                    f"{where}.verdict: ожидается отображением "
-                    "{file: путь, contains: маркер}")
-            for field in ("file", "contains"):
-                val = verdict.get(field)
-                if not isinstance(val, str) or not val.strip():
-                    raise ManifestError(
-                        f"{where}.verdict.{field} обязателен "
-                        "(непустая строка)")
+                    f"{where}.verdict: ожидается отображением {{file: путь}}")
+            val = verdict.get("file")
+            if not isinstance(val, str) or not val.strip():
+                raise ManifestError(
+                    f"{where}.verdict.file обязателен (непустая строка)")
+            legacy = verdict.get("contains")
+            if legacy is not None and not isinstance(legacy, str):
+                raise ManifestError(
+                    f"{where}.verdict.contains: ожидается строка (ключ "
+                    "устарел и игнорируется, J65.4)")
         for field in ("action", "task_id", "approval_ref"):
             # Ворота pi-стадии: этап STAGE_TABLE (если роль участвует в
             # нескольких), id задачи tasks.md, ссылка на решение Заказчика —
@@ -491,7 +496,8 @@ def parse_manifest(plan_path: Path) -> dict:
             "gate": (raw.get("gate") or "").strip(),
             "depends": [d.strip() for d in (raw.get("depends") or [])],
             "verdict": ({"file": verdict["file"].strip(),
-                         "contains": verdict["contains"].strip()}
+                         **({"contains": verdict["contains"].strip()}
+                            if verdict.get("contains") else {})}
                         if isinstance(verdict, dict) else None),
             "optional": bool(optional),
             "action": (raw.get("action") or "").strip(),
@@ -544,19 +550,88 @@ def parse_stand_env(stdout: str) -> dict[str, str]:
     return env
 
 
-def check_verdict(worktree: Path, verdict: dict) -> str | None:
-    """Вердикт-ворота стадии (J62): файл обязан содержать маркер.
-    Возвращает None (ворота пройдены) или текст отказа (STOP)."""
+def check_verdict(worktree: Path, verdict: dict,
+                  reviewed_sha: str = "") -> tuple[str | None, str | None]:
+    """Вердикт-ворота стадии (J62 → J65.4) → (вердикт, отказ).
+
+    Вердикт решает flow_check.parse_verdict — тот же парсер, что у
+    pr_validate/gate_runner (J10): заголовок `## Вердикт: approve|return`
+    (Одобрить/Вернуть), последний решает, «Не одобрить» и шаблон с обоими
+    словами — return. Строка `Commit: <sha>` в файле, если есть, обязана
+    указывать на проверявшийся коммит (иначе STALE). Отказ — None, если
+    вердикт approve и не STALE."""
+    if verdict.get("contains"):
+        print(f"RUNNER: WARNING: verdict.contains устарел и игнорируется "
+              f"(J65.4) — вердикт {verdict['file']} читается по заголовку "
+              f"«## Вердикт: approve|return»")
     path = worktree / verdict["file"]
     try:
         text = path.read_text(encoding="utf-8")
     except OSError as exc:
-        return (f"вердикт-ворота: файл вердикта не читается: "
-                f"{verdict['file']} ({exc})")
-    if verdict["contains"] not in text:
-        return (f"вердикт-ворота: маркер {verdict['contains']!r} не найден "
-                f"в {verdict['file']}")
-    return None
+        return None, (f"вердикт-ворота: файл вердикта не читается: "
+                      f"{verdict['file']} ({exc})")
+    value = flow_check.parse_verdict(text)
+    if value is None:
+        return None, (f"вердикт-ворота: в {verdict['file']} нет вердикта — "
+                      f"нужен заголовок «## Вердикт: approve» или "
+                      f"«## Вердикт: return» (Одобрить/Вернуть)")
+    stated = flow_check.review_commit(text)
+    if stated and reviewed_sha and not reviewed_sha.lower().startswith(stated):
+        return value, (f"вердикт-ворота: STALE — вердикт в {verdict['file']} "
+                       f"выдан на коммит {stated}, а проверялся "
+                       f"{reviewed_sha[:12]}")
+    if value == "return":
+        return value, f"вердикт-ворота: {verdict['file']} — return"
+    return value, None
+
+
+def record_review_provenance(worktree: Path, manifest: dict, stage: dict,
+                             state: dict, gate: dict, verdict: str) -> str:
+    """Provenance-sidecar ревью (J65.4) рядом с файлом вердикта + коммит
+    раннера в ветку пакета. Ревьюер — делегация этой стадии; автор —
+    делегация последней предыдущей pi-стадии другой роли; reviewed commit —
+    HEAD до стадии ревью; digest — дифф от начала пакета до него.
+    Возвращает путь sidecar или бросает RunnerStop."""
+    if gr is None:
+        raise RunnerStop(f"provenance ревью: движок фабрики недоступен "
+                         f"({ENGINE_ERROR})")
+    gates = state.get("flow_gates", {})
+    author = f"package:{manifest['package']}"
+    for prev in manifest["stages"]:
+        if prev["id"] == stage["id"]:
+            break
+        g = gates.get(prev["id"])
+        if (prev["kind"] == "pi" and prev["payload"] != stage["payload"]
+                and g and g.get("commit")):
+            author = g["delegation_id"]
+    reviewed = gate["base_sha"]
+    first = next((g for g in gates.values() if g.get("base_sha")), gate)
+    base = first["base_sha"]
+    try:
+        digest = gr.compute_diff_digest(worktree, base, reviewed)
+        sidecar, _ = gr.write_review_provenance(
+            worktree / stage["verdict"]["file"], repo_of_name(worktree),
+            manifest["package"], [stage.get("task_id") or manifest["package"]],
+            author, gate["delegation_id"], reviewed, verdict,
+            diff_digest=digest, diff_base=base)
+    except (ValueError, OSError) as exc:
+        raise RunnerStop(f"provenance ревью не записан: {exc}") from exc
+    commit_stage(worktree, f"[pipeline] {manifest['package']}/{stage['id']}: "
+                 f"provenance ревью ({verdict}, reviewed {reviewed[:12]})")
+    return str(sidecar)
+
+
+def repo_of_name(worktree: Path) -> str:
+    """Имя проекта для sidecar: каталог основного клона (не worktree)."""
+    common = subprocess.run(
+        ["git", "-C", str(worktree), "rev-parse", "--git-common-dir"],
+        capture_output=True, text=True).stdout.strip()
+    if common:
+        path = Path(common)
+        if not path.is_absolute():
+            path = (worktree / path).resolve()
+        return path.parent.name
+    return worktree.name
 
 
 def sequence_warnings(stages: list[dict]) -> list[str]:
@@ -1369,7 +1444,8 @@ def cmd_run(plan_path: Path, dry_run: bool) -> int:
                            f"{stage['id']} | gate:{stage['payload']} | ok")
             done.add(stage["id"])
             if stage["verdict"]:
-                problem = check_verdict(worktree, stage["verdict"])
+                _, problem = check_verdict(worktree, stage["verdict"],
+                                           _git_head(worktree))
                 if problem and _fail(
                         stage, f"{problem} — ЖДУ ПМ: возврат ревью", None):
                     return EXIT_STOP
@@ -1572,10 +1648,22 @@ def cmd_run(plan_path: Path, dry_run: bool) -> int:
         journal_append(plan_path, f"{utcnow_iso()} | stage {stage['id']} | "
                        f"pi:{stage['payload']} | ok")
         done.add(stage["id"])
-        # Вердикт-ворота (J62): после успешной pi-стадии (и ее gate) файл
-        # вердикта обязан содержать маркер («Одобрить»), иначе STOP.
+        # Вердикт-ворота (J62 → J65.4): вердикт файла — по единому парсеру;
+        # approve/return фиксируется provenance-sidecar (SHA проверявшегося
+        # коммита, дифф, автор/ревьюер) коммитом раннера; return/STALE/нет
+        # вердикта — STOP.
         if stage["verdict"]:
-            problem = check_verdict(worktree, stage["verdict"])
+            value, problem = check_verdict(worktree, stage["verdict"],
+                                           gate["base_sha"])
+            if value in ("approve", "return") and not (
+                    problem and "STALE" in problem):
+                try:
+                    sidecar = record_review_provenance(
+                        worktree, manifest, stage, state, gate, value)
+                except RunnerStop as exc:
+                    return _stop(stage, str(exc), None)
+                print(f"RUNNER: stage {stage['id']} — provenance ревью: "
+                      f"{sidecar}")
             if problem and _fail(
                     stage, f"{problem} — ЖДУ ПМ: возврат ревью", None):
                 return EXIT_STOP

@@ -24,7 +24,7 @@ env `PI_ZONE_WRITE="зона1:зона2"` (относительные globs от
 | [`architect/`](architect/README.md) | architect (`agents/architect_agent.md`) | **glm-5.3** | zai-glm | `architecture/**:docs/**:test-model/reviews/**` |
 | [`dev/`](dev/README.md) | dev (`agents/dev_agent.md`) | **glm-5.3** | zai-glm | `backend/**:frontend/**:services/**:src/**:tests/**:e2e/**` |
 | [`ba/`](ba/README.md) | ba (`agents/ba_agent.md`) | **glm-5.3** | zai-glm | `requirements.md:docs/ba/**` |
-| [`code-reviewer/`](code-reviewer/README.md) | code_reviewer (`agents/code_reviewer_agent.md`) | **glm-5.3-flash** | zai-glm | `test-model/reviews/**` (маркер «Одобрить» в вердикте обязателен) |
+| [`code-reviewer/`](code-reviewer/README.md) | code_reviewer (`agents/code_reviewer_agent.md`) | **glm-5.3-flash** | zai-glm | `test-model/reviews/**` (вердикт — заголовком `## Вердикт: Одобрить|Вернуть`, J65.4) |
 | [`qa-case-author/`](qa-case-author/README.md) | qa_case_author (`agents/qa_case_author_agent.md`) | **glm-5.3-flash** | zai-glm | `test-model/new/**` (1 кейс = 1 файл TC-*.md) |
 | [`qa-case-reviewer/`](qa-case-reviewer/README.md) | qa_case_reviewer (`agents/qa_case_reviewer_agent.md`) | **glm-5.3-flash** | zai-glm | `test-model/reviews/**:test-model/approved/**` (append-only партиии) |
 | [`qa-automation/`](qa-automation/README.md) | qa_automation (`agents/qa_automation_agent.md`) | **glm-5.3-flash** | zai-glm | `tests/**:test-model/**` |
