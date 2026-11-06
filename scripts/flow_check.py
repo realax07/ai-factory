@@ -76,13 +76,23 @@ REVIEW_FILE_TASK_FIRST = re.compile(r"^review-(.+?)-(\d{3})\.md$", re.I)
 # None → ложный FAIL J10 на валидном review-файле).
 VERDICT_LINE_RE = re.compile(
     r"^#{1,4}\s*(?:\d+(?:\.\d+)*[.)]?\s+)?Вердикт\s*:?\s*(.+)$", re.I | re.M)
+# \s после «Вердикт» сознательно переходит строку: в проектах вердикт часто
+# пишут «## Вердикт» и значение следующей строкой (J65.4: сужение до [ \t]
+# ломало 19 реальных review-файлов).
 VERDICT_APPROVE_RE = re.compile(r"\b(approve|approved|одобрен\w*|одобрить)\b", re.I)
 # SELF_REVIEW-защита (решение Заказчика 2026-10-03): review-файл обязан нести
 # Reviewer-Delegation: deleg_<id> — платформенный id делегации ревьюера
 # (реестр async_delegations устойчив к пересозданию main-сессий: id
 # уникален и не зависит от имени сессии).
 REVIEWER_META_RE = re.compile(r"Reviewer-Delegation[^A-Za-z0-9]{0,6}(deleg[-_][A-Za-z0-9]+)", re.I)
-VERDICT_RETURN_RE = re.compile(r"\b(return|доработк\w*)\b", re.I)
+VERDICT_RETURN_RE = re.compile(r"\b(return|returned|доработк\w*|вернуть)\b", re.I)
+# J65.4: «Не одобрить» — отказ, а не approve по слову «одобрить».
+VERDICT_NEGATED_RE = re.compile(r"\bне\s+одобр\w*", re.I)
+# J65.4: строка «Commit: <sha>» (или «Reviewed-Commit:») — на каком коммите
+# выдан вердикт; раннер сверяет ее с проверявшимся HEAD (STALE).
+REVIEW_COMMIT_RE = re.compile(
+    r"^[ \t]*(?:[-*][ \t]+)?(?:\*\*)?(?:Reviewed-)?Commit(?:\*\*)?:(?:\*\*)?[ \t]*"
+    r"`?([0-9a-f]{7,40})`?[ \t]*$", re.I | re.M)
 QA_SECTION = "6"  # раздел 6.x — QA-цикл, не dev (J10)
 
 # --- J46: карта архитектуры — обязательный артефакт (решение Заказчика
@@ -194,16 +204,28 @@ def closed_dev_tasks(tasks_text: str) -> list[str]:
 
 
 def parse_verdict(text: str) -> str | None:
-    """Вердикт из review-файла по формату code_reviewer_agent.md: 'approve' | 'return' | None."""
+    """Вердикт из review-файла по формату code_reviewer_agent.md: 'approve' | 'return' | None.
+
+    Вердикт — заголовок `## Вердикт: approve|return` (или Одобрить/Вернуть).
+    Решает ПОСЛЕДНИЙ решающий заголовок файла (J65.4): повторная проверка,
+    дописанная в конец append-only файла, отменяет прежний вердикт.
+    «return»/«Вернуть»/«доработка» и «Не одобрить» — return; заголовок с
+    обоими словами (шаблон «Одобрить / Вернуть») — return (fail-closed).
+    Строка без заголовка (`Вердикт: …` прозой) вердиктом не считается."""
+    found = None
     for m in VERDICT_LINE_RE.finditer(text):
         v = m.group(1).strip().strip("*").strip().lower()
-        has_return = bool(VERDICT_RETURN_RE.search(v))
-        has_approve = bool(VERDICT_APPROVE_RE.search(v))
-        if has_return:
-            return "return"
-        if has_approve:
-            return "approve"
-    return None
+        if VERDICT_RETURN_RE.search(v) or VERDICT_NEGATED_RE.search(v):
+            found = "return"
+        elif VERDICT_APPROVE_RE.search(v):
+            found = "approve"
+    return found
+
+
+def review_commit(text: str) -> str | None:
+    """SHA из последней строки `Commit: <sha>` review-файла или None (J65.4)."""
+    found = REVIEW_COMMIT_RE.findall(text)
+    return found[-1].lower() if found else None
 
 
 def approved_review_tasks(repo: Path, change_id: str,
