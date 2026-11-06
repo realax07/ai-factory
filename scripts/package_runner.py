@@ -153,7 +153,7 @@ try:
     import session_check as sc  # noqa: E402  (резервация/post-check)
     import gate_runner as gr  # noqa: E402  (provenance ревью, J65.4)
     ENGINE_ERROR = ""
-except ImportError as _exc:  # раннер вне фабрики без AI_FACTORY_HOME
+except (ImportError, RuntimeError) as _exc:  # нет движка/реестра ролей (J65.1)
     fc = ft = rzp = sc = gr = None
     ENGINE_ERROR = str(_exc)
 
@@ -382,11 +382,12 @@ def extract_pipeline(text: str) -> dict:
 
 def policy_zones(pack: str, package: str) -> list[str]:
     """Зона роли пака из реестра ролей (J65.1) с подстановкой change-id
-    пакета вместо сегмента '*'; движка нет или зоны нет — []."""
+    пакета вместо плейсхолдера '<id>' ('*' реестра — маска имени, не id);
+    движка нет или зоны нет — []."""
     if rzp is None:
         return []
-    return ["/".join(package if seg == "*" else seg for seg in z.split("/"))
-            for z in rzp.allowed_zones_for(flow_role(pack))]
+    return [z.replace(rzp.CHANGE_ID, package)
+            for z in rzp.registry_zones_for(flow_role(pack))]
 
 
 def parse_manifest(plan_path: Path) -> dict:

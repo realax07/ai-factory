@@ -65,6 +65,7 @@ PROTECTED_PATHS = tuple(
         "contracts/",
         "AGENTS.md",
         "agents/README.md",
+        "agents/roles.json",  # J65.1: реестр ролей — источник политики зон
     )
     if p not in [x.strip() for x in __import__("os").environ.get("PM_PROTECTED_EXCLUDE", "").split(",") if x.strip()]
 )
@@ -131,7 +132,8 @@ def check_commit(repo: Path, commit: str) -> list[str]:
         )
 
     for f in files:
-        if f.startswith(ROLE_PROMPT_PREFIX) and not f.endswith(ALLOWED_EXTENSIONS_IN_ROLES):
+        if (f.startswith(ROLE_PROMPT_PREFIX) and f != "agents/roles.json"
+                and not f.endswith(ALLOWED_EXTENSIONS_IN_ROLES)):
             problems.append(
                 f"{commit}: {f} — не-документный файл в agents/ вне зоны ПМ (J3)"
             )

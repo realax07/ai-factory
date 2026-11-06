@@ -21,19 +21,19 @@ env `PI_ZONE_WRITE="зона1:зона2"` (относительные globs от
 | Пак | Роль (фабричный промпт) | Модель | Провайдер | Зоны записи (политика ворот) |
 |---|---|---|---|---|
 | [`ba/`](ba/README.md) | ba (`agents/ba_agent.md`) | **glm-5.3** | zai-glm | `requirements.md`, `docs/ba/*` |
-| [`sa/`](sa/README.md) | sa (`agents/sa_agent.md`) | **glm-5.3** | zai-glm | `openspec/changes/*/proposal.md`, `openspec/changes/*/requirements.md`, `openspec/changes/*/research.md`, `openspec/changes/*/specs/**`, `openspec/changes/*/design.md`, `openspec/changes/*/tasks.md`, `sdd.md` |
-| [`dev/`](dev/README.md) | dev (`agents/dev_agent.md`) | **glm-5.3** | zai-glm | `openspec/changes/*/tasks.md`, `backend/**`, `frontend/**`, `e2e/**`, `services/**`, `scripts/**`, `contracts/**`, `deploy/**`, `src/**`, `tests/**`, `test-model/bugs/*`, `feature/*`, `plugins/**` |
-| [`code-reviewer/`](code-reviewer/README.md) | code_reviewer (`agents/code_reviewer_agent.md`) | **glm-5.3-flash** | zai-glm | `code-reviews/*/review-*.md` (вердикт — заголовком `## Вердикт: approve|return` (J65.4)) |
-| [`qa-case-author/`](qa-case-author/README.md) | qa_case_author (`agents/qa_case_author_agent.md`) | **glm-5.3-flash** | zai-glm | `test-model/new/*/**` |
+| [`sa/`](sa/README.md) | sa (`agents/sa_agent.md`) | **glm-5.3** | zai-glm | `openspec/changes/<id>/proposal.md`, `openspec/changes/<id>/requirements.md`, `openspec/changes/<id>/research.md`, `openspec/changes/<id>/specs/**`, `openspec/changes/<id>/design.md`, `openspec/changes/<id>/tasks.md`, `sdd.md` |
+| [`dev/`](dev/README.md) | dev (`agents/dev_agent.md`) | **glm-5.3** | zai-glm | `openspec/changes/<id>/tasks.md`, `backend/**`, `frontend/**`, `e2e/**`, `services/**`, `scripts/**`, `contracts/**`, `deploy/**`, `src/**`, `tests/**`, `test-model/bugs/*`, `feature/*`, `plugins/**` |
+| [`code-reviewer/`](code-reviewer/README.md) | code_reviewer (`agents/code_reviewer_agent.md`) | **glm-5.3-flash** | zai-glm | `code-reviews/<id>/review-*.md` (вердикт — заголовком `## Вердикт: approve\|return` (J65.4)) |
+| [`qa-case-author/`](qa-case-author/README.md) | qa_case_author (`agents/qa_case_author_agent.md`) | **glm-5.3-flash** | zai-glm | `test-model/new/<id>/**` |
 | [`qa-case-reviewer/`](qa-case-reviewer/README.md) | qa_case_reviewer (`agents/qa_case_reviewer_agent.md`) | **glm-5.3-flash** | zai-glm | `test-model/reviews/**`, `test-model/approved/**` (append-only партии) |
 | [`qa-automation/`](qa-automation/README.md) | qa_automation (`agents/qa_automation_agent.md`) | **glm-5.3-flash** | zai-glm | `tests/**`, `test-model/bugs/*`, `pytest.ini` |
 | [`qa-impact-analyst/`](qa-impact-analyst/README.md) | qa_impact_analyst (`agents/qa_impact_analyst_agent.md`) | **glm-5.3-flash** | zai-glm | `test-model/impact/*.md` |
 | [`ui-designer/`](ui-designer/README.md) | ui_designer (`agents/ui_designer_agent.md`) | **glm-5.3-flash** | zai-glm | `design/**` |
 | [`debug/`](debug/README.md) | debug (`agents/debug_agent.md`) | **glm-5.3-flash** | zai-glm | только чтение (диагностика без правки продукта; вердикт СРЕДА/КОД/ТЕСТ; зоны политики нет — развилка J64.11) |
-| [`regress-runner/`](regress-runner/README.md) | regress_runner (`agents/regress_runner_agent.md`) | **glm-5.3-flash** | zai-glm | `test-model/regress/*/**` (артефакты прогонов пишет flowctl regress) |
-| [`architect/`](architect/README.md) | architect (`agents/architect_agent.md`) | **glm-5.3** | zai-glm | `architecture/**`, `test-model/reviews/*/review-*-architecture.md` |
+| [`regress-runner/`](regress-runner/README.md) | regress_runner (`agents/regress_runner_agent.md`) | **glm-5.3-flash** | zai-glm | `test-model/regress/<id>/**` (артефакты прогонов пишет flowctl regress) |
+| [`architect/`](architect/README.md) | architect (`agents/architect_agent.md`) | **glm-5.3** | zai-glm | `architecture/**`, `test-model/reviews/<id>/review-*-architecture.md` |
 | [`devops/`](devops/README.md) | devops (`agents/devops_agent.md`) | **glm-5.3-flash** | zai-glm | `deploy/**`, `ops/**`, `.github/workflows/**` (боевой деплой — только по утверждению ПМ, hermes-стоп) |
-| [`design-validator/`](design-validator/README.md) | design_validator (`agents/design_validator_agent.md`) | **glm-5.3-flash** | zai-glm | `test-model/reviews/*/review-*-design.md` |
+| [`design-validator/`](design-validator/README.md) | design_validator (`agents/design_validator_agent.md`) | **glm-5.3-flash** | zai-glm | `test-model/reviews/<id>/review-*-design.md` |
 | [`auditor/`](auditor/README.md) | auditor — Аудитор (pi-auditor, вне конвейера) | **kimi k3.1-pro** | kimi | только чтение (read-only guard, ручной вызов ПМ; модель — флагами CLI поверх settings.example.json) |
 <!-- roles:packs:end -->
 

@@ -58,10 +58,21 @@ POLICY_VERSION = f"{POLICY_SOURCE} sha256 {_REGISTRY_SHA}"
 
 # Имена сохранены для вызывающих: роль → кортеж glob-зон; glob-семантика —
 # session_check.glob_matches ('*' — ровно один сегмент: место change-id).
+# Плейсхолдер реестра CHANGE_ID ('<id>') — сегмент change-id; для ворот это
+# '*' (любой change-id), раннер подставляет id пакета (policy_zones).
+CHANGE_ID = "<id>"
 ROLE_ZONE_POLICY: dict[str, tuple[str, ...]] = {
-    r["id"]: tuple(r.get("zones") or ())
+    r["id"]: tuple(z.replace(CHANGE_ID, "*") for z in r.get("zones") or ())
     for r in REGISTRY["roles"] if r.get("zones")
 }
+
+
+def registry_zones_for(role: str) -> tuple[str, ...]:
+    """Зоны роли в форме реестра (с '<id>') — для подстановки change-id."""
+    for r in REGISTRY["roles"]:
+        if r["id"] == str(role or "").strip():
+            return tuple(r.get("zones") or ())
+    return ()
 
 # Роли конвейера, ведущие запись ВНЕ продуктового репозитория (или не ведущие
 # запись вообще): политика пуста = резервация/запись запрещены (P0.3).

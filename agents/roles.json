@@ -1,6 +1,6 @@
 {
   "schema": "roles/1",
-  "comment": "Единый реестр ролей (J65.1): зоны записи (политика ворот), строки таблицы зон agents/README.md и таблицы роль-паков генерируются из этого файла (scripts/gen_role_docs.py). Правка зон — только здесь. Плейсхолдер '*' в зоне — один сегмент пути (change-id).",
+  "comment": "Единый реестр ролей (J65.1): зоны записи (политика ворот), строки таблицы зон agents/README.md и оглавление роль-паков генерируются из этого файла (scripts/gen_role_docs.py). Правка зон — только здесь. <id> в зоне — сегмент change-id пакета (для ворот — '*', раннер подставляет id пакета); '*' — обычная маска glob.",
   "roles": [
     {
       "id": "ba",
@@ -23,12 +23,12 @@
       "zone_text": "`openspec/changes/<id>/**` (вкл. requirements.md, research.md — решение 2026-10-05 ekotov-wiki), `sdd.md`",
       "push": "нет",
       "zones": [
-        "openspec/changes/*/proposal.md",
-        "openspec/changes/*/requirements.md",
-        "openspec/changes/*/research.md",
-        "openspec/changes/*/specs/**",
-        "openspec/changes/*/design.md",
-        "openspec/changes/*/tasks.md",
+        "openspec/changes/<id>/proposal.md",
+        "openspec/changes/<id>/requirements.md",
+        "openspec/changes/<id>/research.md",
+        "openspec/changes/<id>/specs/**",
+        "openspec/changes/<id>/design.md",
+        "openspec/changes/<id>/tasks.md",
         "sdd.md"
       ],
       "pack": "sa",
@@ -42,7 +42,7 @@
       "zone_text": "файлы своей задачи, чекбокс в `tasks.md`, своя ветка `feature/*`; код фабрики — `scripts/**`, `plugins/**` (J64.18)",
       "push": "своей ветки — да; main — нет",
       "zones": [
-        "openspec/changes/*/tasks.md",
+        "openspec/changes/<id>/tasks.md",
         "backend/**",
         "frontend/**",
         "e2e/**",
@@ -67,7 +67,7 @@
       "zone_text": "`code-reviews/<change-id>/review-*.md`",
       "push": "нет",
       "zones": [
-        "code-reviews/*/review-*.md"
+        "code-reviews/<id>/review-*.md"
       ],
       "pack": "code-reviewer",
       "prompt": "agents/code_reviewer_agent.md",
@@ -81,7 +81,7 @@
       "zone_text": "`test-model/new/<change-id>/`",
       "push": "нет",
       "zones": [
-        "test-model/new/*/**"
+        "test-model/new/<id>/**"
       ],
       "pack": "qa-case-author",
       "prompt": "agents/qa_case_author_agent.md",
@@ -163,7 +163,7 @@
       "zone_text": "merge-коммиты и конфликтные правки мерженных веток, чекбоксы `tasks.md`, зачистка worktree",
       "push": "интеграционной ветки — да, только после зеленых ворот (J9; триггер: dev-делегации завершены → merge только через dev-lead)",
       "zones": [
-        "openspec/changes/*/tasks.md"
+        "openspec/changes/<id>/tasks.md"
       ],
       "pack": null,
       "prompt": "agents/dev_lead_agent.md",
@@ -220,7 +220,7 @@
       "zone_text": "только `test-model/regress/<change-id>/` (артефакты прогонов пишет flowctl regress)",
       "push": "нет",
       "zones": [
-        "test-model/regress/*/**"
+        "test-model/regress/<id>/**"
       ],
       "pack": "regress-runner",
       "prompt": "agents/regress_runner_agent.md",
@@ -247,7 +247,7 @@
       "push": "нет",
       "zones": [
         "architecture/**",
-        "test-model/reviews/*/review-*-architecture.md"
+        "test-model/reviews/<id>/review-*-architecture.md"
       ],
       "pack": "architect",
       "prompt": "agents/architect_agent.md",
@@ -276,7 +276,7 @@
       "zone_text": "`test-model/reviews/<change-id>/review-*-design.md`",
       "push": "нет",
       "zones": [
-        "test-model/reviews/*/review-*-design.md"
+        "test-model/reviews/<id>/review-*-design.md"
       ],
       "pack": "design-validator",
       "prompt": "agents/design_validator_agent.md",
@@ -289,7 +289,7 @@
       "zone_text": "как qa_case_author",
       "push": "нет",
       "zones": [
-        "test-model/new/*/**"
+        "test-model/new/<id>/**"
       ],
       "pack": null,
       "prompt": null,

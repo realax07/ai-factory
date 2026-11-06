@@ -38,13 +38,18 @@ def _roles() -> list[dict]:
     return json.loads(ROLES.read_text(encoding="utf-8"))["roles"]
 
 
+def _cell(text: str) -> str:
+    """'|' в ячейке GFM-таблицы (и внутри `code`) рвет колонки — экранируем."""
+    return str(text).replace("|", "\\|")
+
+
 def render_zones(roles: list[dict]) -> str:
     lines = ["| Агент | Режим | Зона записи (только она) | Push |",
              "|---|---|---|---|"]
     for r in roles:
         if r.get("in_table"):
-            lines.append(f"| {r['title']} | {r['mode']} | {r['zone_text']} "
-                         f"| {r['push']} |")
+            lines.append(f"| {_cell(r['title'])} | {_cell(r['mode'])} "
+                         f"| {_cell(r['zone_text'])} | {_cell(r['push'])} |")
     return "\n".join(lines)
 
 
@@ -72,8 +77,8 @@ def render_packs(roles: list[dict]) -> str:
         model = r.get("model") or model
         role = r["id"] + (f" (`{r['prompt']}`)" if r.get("prompt")
                           else f" — {r['title']}")
-        zones = ", ".join(f"`{z}`" for z in r.get("zones") or ()) or "только чтение"
-        note = f" ({r['pack_note']})" if r.get("pack_note") else ""
+        zones = ", ".join(f"`{_cell(z)}`" for z in r.get("zones") or ()) or "только чтение"
+        note = f" ({_cell(r['pack_note'])})" if r.get("pack_note") else ""
         lines.append(f"| [`{pack}/`]({pack}/README.md) | {role} | **{model}** "
                      f"| {provider} | {zones}{note} |")
     return "\n".join(lines)

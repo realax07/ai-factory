@@ -20,13 +20,16 @@ agents/README.md — отдельным текстом с отпечатком �
                   ('*' → change-id пакета); явные zones не трогаются
   TC-J65-ROL-006  реестра нет или он битый — модуль политики не загружается
   TC-J65-ROL-007  factory_init кладет реестр в проект (FLOW_CONTROL_FILES)
+  TC-J65-ROL-008  реестр — защищенный путь: pm_bounds_check пропускает его с
+                  [pipeline]-маркером и не считает «не-документным»,
+                  flow_transition держит его в PROTECTED_PATHS
 """
 from __future__ import annotations
 
 import hashlib
 import json
+import subprocess
 import sys
-import tempfile
 from pathlib import Path
 
 import pytest
@@ -35,8 +38,10 @@ FACTORY = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(FACTORY / "scripts"))
 
 import factory_init as fi  # noqa: E402
+import flow_transition as ft  # noqa: E402
 import gen_role_docs as gen  # noqa: E402
 import package_runner as pr  # noqa: E402
+import pm_bounds_check as pbc  # noqa: E402
 import role_zone_policy as rzp  # noqa: E402
 
 REGISTRY = json.loads((FACTORY / "agents" / "roles.json").read_text("utf-8"))
@@ -69,9 +74,16 @@ def test_generated_tables_up_to_date():
 
 
 def test_policy_from_registry():
-    """TC-J65-ROL-003"""
-    expected = {r["id"]: tuple(r["zones"]) for r in ROLES if r["zones"]}
+    """TC-J65-ROL-003: политика ворот — из реестра ('<id>' → '*'); якорь —
+    зафиксированные зоны ключевых ролей (как в словаре до J65.1)."""
+    expected = {r["id"]: tuple(z.replace("<id>", "*") for z in r["zones"])
+                for r in ROLES if r["zones"]}
     assert rzp.ROLE_ZONE_POLICY == expected
+    assert rzp.ROLE_ZONE_POLICY["code_reviewer"] == ("code-reviews/*/review-*.md",)
+    assert rzp.ROLE_ZONE_POLICY["ba"] == ("requirements.md", "docs/ba/*")
+    assert "plugins/**" in rzp.ROLE_ZONE_POLICY["dev"]
+    assert rzp.ROLE_ZONE_POLICY["qa_automation"] == (
+        "tests/**", "test-model/bugs/*", "pytest.ini")
     assert set(rzp.EMPTY_POLICY_ROLES) == {
         r["id"] for r in ROLES if r.get("empty_policy")}
     assert rzp.allowed_zones_for("unknown-role") == ()
@@ -89,23 +101,27 @@ def test_policy_version_is_registry_digest(tmp_path):
     assert sha != hashlib.sha256(raw).hexdigest()
 
 
-def _plan(body: str) -> Path:
-    with tempfile.NamedTemporaryFile("w", suffix=".md", delete=False,
-                                     encoding="utf-8") as f:
-        f.write("# PLAN-x\n\n```yaml\npipeline:\n  package: add-widget\n"
-                "  flow: 1\n  stages:\n" + body + "```\n")
-    return Path(f.name)
+def _plan(tmp_path: Path, body: str) -> Path:
+    plan = tmp_path / "PLAN-x.md"
+    plan.write_text("# PLAN-x\n\n```yaml\npipeline:\n  package: add-widget\n"
+                    "  flow: 1\n  stages:\n" + body + "```\n", encoding="utf-8")
+    return plan
 
 
-def test_runner_default_zones_from_registry():
-    """TC-J65-ROL-005"""
-    m = pr.parse_manifest(_plan("    - id: r\n      run: pi:code-reviewer\n"))
-    assert m["stages"][0]["zones"] == ["code-reviews/add-widget/review-*.md"]
-    m = pr.parse_manifest(_plan("    - id: d\n      run: pi:dev\n"))
-    assert "openspec/changes/add-widget/tasks.md" in m["stages"][0]["zones"]
-    m = pr.parse_manifest(_plan(
-        "    - id: d\n      run: pi:dev\n      zones: [backend/**]\n"))
-    assert m["stages"][0]["zones"] == ["backend/**"]
+def test_runner_default_zones_from_registry(tmp_path):
+    """TC-J65-ROL-005: '<id>' → change-id; '*' реестра — маска имени, не id."""
+    def zones(body):
+        return pr.parse_manifest(_plan(tmp_path, body))["stages"][0]["zones"]
+    assert zones("    - id: r\n      run: pi:code-reviewer\n") == [
+        "code-reviews/add-widget/review-*.md"]
+    assert "openspec/changes/add-widget/tasks.md" in zones(
+        "    - id: d\n      run: pi:dev\n")
+    assert zones("    - id: b\n      run: pi:ba\n") == [
+        "requirements.md", "docs/ba/*"]
+    assert "test-model/bugs/*" in zones(
+        "    - id: q\n      run: pi:qa-automation\n")
+    assert zones("    - id: d\n      run: pi:dev\n      zones: [backend/**]\n"
+                 ) == ["backend/**"]
 
 
 @pytest.mark.parametrize("content", ["", "{", '{"schema": "roles/0", "roles": []}'])
@@ -122,3 +138,20 @@ def test_factory_init_copies_registry():
     """TC-J65-ROL-007"""
     assert "agents/roles.json" in fi.FLOW_CONTROL_FILES
     assert "scripts/role_zone_policy.py" in fi.FLOW_CONTROL_FILES
+
+
+def test_registry_is_protected_path(tmp_path):
+    """TC-J65-ROL-008"""
+    repo = tmp_path / "r"
+    (repo / "agents").mkdir(parents=True)
+    git = ["git", "-C", str(repo), "-c", "user.name=t", "-c", "user.email=t@t",
+           "-c", "commit.gpgsign=false"]
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    (repo / "agents" / "roles.json").write_text("{}\n", encoding="utf-8")
+    subprocess.run([*git, "add", "-A"], check=True)
+    subprocess.run([*git, "commit", "-qm", "[pipeline] реестр"], check=True)
+    assert pbc.check_commit(repo, "HEAD") == []
+    (repo / "agents" / "roles.json").write_text('{"a": 1}\n', encoding="utf-8")
+    subprocess.run([*git, "commit", "-qam", "правка без маркера"], check=True)
+    assert any("защищенные пути" in p for p in pbc.check_commit(repo, "HEAD"))
+    assert "agents/roles.json" in ft.PROTECTED_PATHS
