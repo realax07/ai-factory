@@ -62,3 +62,18 @@ Nit (на усмотрение автора, на вердикт не влияе
 - №5: сервисы ekotov-wiki — `app, backup, frontend, images, search, video, weather` (по `services/` репозитория); число контейнеров помечено «по README проекта».
 - №6: Флоу 5 в README — `FLOW5_RETRO_MISSING` на любом prepare без `requirements.md`, `express_close` требует requirements, спека-дельту и кейсы (`MISSING_INPUT`).
 - №7: расхождение правила 6 AGENTS.md (CHK) внесено в список расхождений плана; правило не правилось (решение Заказчика).
+
+## Повторная проверка (e3eb969)
+
+Вердикт: Одобрить
+
+Проверен дифф `86dfb70..e3eb969` (AGENTS.md, README.md, PLAN-docs-refresh.md).
+
+- **Major 1 — закрыт.** README.md:118 и AGENTS.md:122 теперь пишут: без `--force` существующие файлы не трогаются, с `--force` перезаписываются все копируемые, включая `flow.yml`. Это совпадает с `factory_init.py:310,496–504` и с повторным запуском из итерации 001.
+- **Major 2 — закрыт условно.** В `PLAN-docs-refresh.md` появился раздел «Порядок мержа»: строго после #225 (BUG-026). Условие обязательное. Если PR влить раньше #225 (сейчас #225 OPEN), документация опишет состояние, которого нет в main. Интегратор проверяет это при мерже.
+- №3–7 закрыты. AGENTS.md:147 — `factory_paths` в `COPY_FILES`, верно. AGENTS.md:99 — оговорен bash/push_gate, верно (`enforcer.py:1367–1372`). README:381 — сервисы совпадают с `services/` ekotov-wiki, «7 контейнеров» — так в README проекта (строка 18), верно. README:232 — Флоу 5 соответствует `flow_state.py:833–846` и `check_express_close`. Расхождение правила 6 внесено в план (п. 4).
+- Новых неточностей в правках нет.
+
+Остается одно старое, minor, на вердикт не влияет. В итерации 001 я его пропустил:
+- README.md:116, абзац «Плагин flow-enforcer»: scope по флоу перечислен в старой форме: «change-id / BUG-<КОМПЛЕКС>-NNN (BUG-001, BUG-AF-RECHECK-001) / incident-id / chore-slug / slug». Это расходится с README.md:236 и `flow_ids.py`: Ф3 incident-ref `S<1-3>-<slug>`, Ф4 `chore` или kebab-slug, Ф2 также `BUG-NNN-<slug>`. Рекомендация: заменить ссылкой «грамматика — `scripts/flow_ids.py`», можно в этом же PR или следом.
+- Повторная проверка, остаток: scope в абзаце о flow-enforcer README приведен к flow_ids (ПМ).
