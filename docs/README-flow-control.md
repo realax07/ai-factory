@@ -195,6 +195,22 @@ dev-lead, ПМ git не трогает.**
   через запятую) или деривация из реестра (project ≠ `ai-factory` с
   существующим `~/project/.git`, как `pm_bounds_check --all-projects`).
 
+## Пакетный раннер Pi (J62/J63)
+
+Боевой путь ролей с 2026-11: план пакета (`PLAN-<id>.md` со строкой `Флоу: N`)
+несет манифест `pipeline:`; `scripts/package_runner.py` гонит стадии по порядку.
+Стадия `pi:<роль>` — роль-пак Pi в worktree с zone-guard и проходит те же ворота,
+что делегация: `flowctl prepare → run → pi → finish post_agent`, затем сверка
+реального `git diff` с зоной (запись через bash тоже), коммит стадии в ветку
+пакета и закрытие резервации. Роль без этапа во флоу (ba, regress-runner,
+devops) получает резервацию по политике роли (`ROLE_WITHOUT_STAGE`). Стадии
+`gate:<команда>` — ворота, `hermes:<роль>` — стоп-точка ПМ. Отказ — STOP с кодом
+(DENY, ZONE_OUTSIDE_POLICY, ZONE_CONFLICT, OUT_OF_ZONE, красный гейт), повторный
+запуск продолжает со state. Гайд и примеры — `docs/guides/pipeline-manifest.md`.
+
+Граница: вердикт review-стадии — подстрока в файле (J64.12/J65.4); запуск `pi`
+мимо раннера не ловится ни раннером, ни delegate_watchdog (J65.5).
+
 ## Инциденты и recovery
 
 - Падение процесса → `flowctl reconcile` (или `session_check reconcile`): PID/worktree/status → stale/needs_attention. Ничего не удаляется молча.
@@ -248,6 +264,10 @@ dev-lead, ПМ git не трогает.**
 | `pr_validate.py` | CI job `flow`, gate_runner | GitHub-enforced + ворота | PR-ворота: маркер/стадия, артефакты контрактов, J58-правила (вкл. pr_body IR-05/06) |
 | `pm_bounds_check.py` | gate_runner, ПМ | enforcing | Границы записи ПМ: защищенные пути, реестр сессий, продукт-коммиты |
 | `role_zone_policy.py` | session_check/flowctl (import) | enforcing | Политика зон записи ролей (источник — таблица agents/README.md) |
+| `flow_ids.py` | flow_state/flowctl/flow_transition (import), энфорсер (import или fallback-копия) | enforcing | Грамматика scope флоу 1–5 (J65.3); `python3 scripts/flow_ids.py <flow> <scope>` — ручная проверка |
+| `factory_paths.py` | все скрипты ворот (import), ПМ | config | Пути машины из env (J64.5); `--doctor LABEL` / `--compare` — сверка контекстов шелл/крон/Hermes (J65.12) |
+| `package_runner.py` | ПМ (`package_runner.py <PLAN> [--dry-run]`) | enforcing | Пакетный раннер по манифесту `pipeline:`: стадии `pi:<роль>` через prepare/run/finish, сверка git diff с зоной, коммит стадии; `gate:`/`hermes:` стадии (J62/J63) |
+| `ci_local.py` | ПМ/dev до push | manual | `pytest tests/` + flow_check в условиях CI: клон глубины 1, пустой HOME (J65.12) |
 | `delegate_gate.py` | ПМ перед каждым диспатчем | enforcing | Обертка prepare→run→finish: делегация не существует вне flowctl |
 | `delegate_watchdog.py` | крон */5 (на паузе — включается ПМ после проверки эвристики, см. «Кроны и вотчдоги»), вручную | detect | Обход flowctl: делегация с непустым project вне реестра → BYPASS (Н18: project-less диспатчи ПМ — норма) |
 | `session_watchdog.py` | крон */5 (deliver=origin, политика 2026-10-23) | detect | DM-роутинг: залипшие ключи, тайтл main, dropped-делегации, контаминация; чисто = пустой stdout = молчание |

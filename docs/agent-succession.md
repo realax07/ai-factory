@@ -46,11 +46,14 @@
   + для продуктовых задач **обязательно `paths=<файл1,файл2>`** (иначе
   PATHS_MISSING — честный отказ, введено BUG-AF-RECHECK-001); `kind=docs`
   легален только для docs_task/chore_task.
-- scope по флоу: change-id / `BUG-<КОМПЛЕКС>-NNN` (BUG-001,
-  BUG-AF-RECHECK-001 — единая грамматика enforcer+flow_check) / incident-id /
-  chore-slug / slug.
-- Ролевая модель: **ПМ не пишет прод-код** — изменения через `delegate_task`
-  (dev/devops/code_reviewer/design_validator/qa_automation/leaf); ПМ коммитит,
+- scope по флоу (грамматика — `scripts/flow_ids.py`, J65.3): Ф1 change-id
+  с дефисом / Ф2 имя репорта `BUG-NNN`, `BUG-<КОМПЛЕКС>-NNN`, `BUG-NNN-<slug>` /
+  Ф3 incident-ref `S<1-3>-<slug>` / Ф4 `chore` или slug / Ф5 slug. Проверка:
+  `python3 scripts/flow_ids.py <flow> <scope>`.
+- Ролевая модель: **ПМ не пишет прод-код** — изменения через роли: боевой
+  путь — пакетный раннер `scripts/package_runner.py` со стадиями `pi:<роль>`
+  (Pi роль-паки, AGENTS.md §2.1, ворота J63), прочие роли — `delegate_task`
+  Hermes (dev/devops/code_reviewer/design_validator/qa_automation/leaf); ПМ коммитит,
   пушит, мержит PR, деплоит. Исключение допускается явно и с оговоркой
   (прецедент: дозавершение PO-рефакторинга при мертвом пуле провайдера).
 - Ревью-цикл: dev → code_reviewer (для значимых диффов — адверсариально:
@@ -95,7 +98,8 @@
 
 ## 5. Скиллы: как устроены и как дополнять
 
-- Фабрика `skills/` — 12 скиллов; формат как в alirezarezvani/claude-skills:
+- В проекты `factory_init` ставит 12 скиллов конвейера (`SKILL_DIRS`), сама фабрика
+  держит больше (реестр — skills/README.md); формат как в alirezarezvani/claude-skills:
   SKILL.md (инструкции) + scripts/ (исполняемые инструменты скипта) +
   references/ (справочники). Скрипты вызываются из инструкций SKILL.md
   (пример: skills/code-review/scripts/code_quality_checker.py).
@@ -109,7 +113,10 @@
 - После любых изменений фабрики обновляй README.md, agents/README.md,
   инсталлятор — Заказчик просит это каждый раз, не жди просьбы.
 
-## 6. Открытое состояние на момент передачи (2026-10-14)
+## 6. Открытое состояние на момент передачи (2026-10-14) — исторический срез
+
+> Снимок на дату передачи, дальше не обновляется. Текущее состояние —
+> PLAN.md («Текущее состояние») и backlog/MAP.md.
 
 - PO-рефакторинг волна 2 (deleg_bdd7a28e) — в работе: остаток
   settings_categories + navigation_search, полный прогон; после green —
