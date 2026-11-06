@@ -48,3 +48,20 @@
 - №5: гайд — `zones` по умолчанию из реестра.
 - №6–7: «вне объема» в плане и резолюции перечислено явно (этап флоу и путь вердикта, копия для энфорсера не нужна, проза ≠ glob не сверяется).
 - №8: тесты на `tmp_path`; TC-J65-ROL-003 — якорь на зафиксированных зонах ключевых ролей.
+
+## Повторная проверка (14eada6)
+
+Предмет: коммит 14eada63dec616405d8a6c59f3150e5ab36db61c (исправления по возврату review-001).
+
+## Вердикт: approve
+
+Оба major закрыты, новых blocker/major нет.
+
+- **Major 1 — закрыт.** В реестре теперь плейсхолдер `<id>`. `role_zone_policy` переводит его в `*` (scripts/role_zone_policy.py, `CHANGE_ID`), а раннер подставляет id пакета только на место `<id>` (`registry_zones_for`). Факт `policy_zones(...,'add-widget')`: ba → `['requirements.md', 'docs/ba/*']`; qa-automation и dev сохраняют `test-model/bugs/*` и `feature/*`; code-reviewer → `code-reviews/add-widget/review-*.md`; sa, architect и regress-runner подставлены верно. Повторная программная сверка со старым модулем: `ROLE_ZONE_POLICY == old` и `EMPTY_POLICY_ROLES == old` — True; `allowed_zones_for`/`narrow_zones` расходятся только в `policy_version`. В политике ворот нет зон с `<`. TC-J65-ROL-005 покрывает ba и qa-automation, TC-J65-ROL-003 получил якорь из конкретных зон.
+- **Major 2 — закрыт.** `agents/roles.json` внесен в `PROTECTED_PATHS` pm_bounds_check и flow_transition и исключен из правила «не-документный файл». Факт `check_commit`: для 14eada6 и 20e002e осталась только проблема «защищенные пути … без пометки [pipeline]», безусловного отказа больше нет. TC-J65-ROL-008 проверяет оба случая: с маркером — чисто, без маркера — J3.
+- Minor 3–8 закрыты. Раннер на копии scripts/ без реестра импортируется, ENGINE_ERROR содержит текст про реестр (проверено). `|` экранируется (`approve\|return` в оглавлении паков). Гайд pipeline-manifest.md обновлен. «Вне объема» перечислено явно. Тесты используют `tmp_path`.
+- Прогон: `pytest tests/test_j65_roles_registry.py tests/test_package_runner.py tests/test_p03_zone_policy.py tests/test_j51_review003_fixes.py tests/test_audit_fix_gates.py tests/test_bug026_init_imports.py -q` → 181 passed. `gen_role_docs --check` → «таблицы актуальны», `git status` чистый.
+
+Информационно, не замечание к коду. Subject `[chore]` обоих коммитов не входит в `PIPELINE_MARKERS`, поэтому `pm_bounds_check` в режиме commits (gate_runner pre_accept/pre_merge) покажет J3 по `agents/README.md` и `agents/roles.json`. Поведение существующее и сохранено осознанно. ПМ стоит учесть это при pre_merge: например, merge-коммит с маркером `[флоу 4]` или `[pipeline]`.
+
+Не проверено: полный сьют (данные ПМ: 1256 passed), живой прогон pi-стадии с дефолтной зоной.
