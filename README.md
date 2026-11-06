@@ -21,10 +21,12 @@
 | Компонент | Версия | Зачем |
 |---|---|---|
 | git | ≥ 2.40 | версии, PR-цикл, аудит-след |
-| Python | ≥ 3.11 (скрипты — только stdlib) | все ворота и утилиты конвейера |
-| [OpenSpec CLI](https://github.com/Fission-AI/OpenSpec) | ≥ 1.13 (`npm i -g @openspec/cli`) | формальные спеки + `openspec validate --strict` |
+| Python | ≥ 3.10 (скрипты — только stdlib; CI — 3.12) | все ворота и утилиты конвейера |
+| pytest | любой актуальный (`pip install pytest`) | сьют фабрики, приемка bootstrap |
+| [OpenSpec CLI](https://github.com/Fission-AI/OpenSpec) | 1.14.0, как в CI (`npm i -g @fission-ai/openspec@1.14.0`) | формальные спеки + `openspec validate --strict` |
 | GitHub-репозиторий с Actions | — | CI-ворота (flow.yml) |
-| Hermes Agent (или среда с `delegate_task`) | — | запуск сабагентов-ролей |
+| [Pi](https://pi.dev) (`@earendil-works/pi-coding-agent`) + ключ провайдера | — | исполнитель ролей: стадии `pi:<роль>` пакетного раннера (роль-паки `skills/pm-factory/pi/role-packs/`) |
+| Оркестратор ПМ | Hermes Agent или любой кодагент (Claude Code, Qwen Coder…) | диалог с Заказчиком, запуск раннера и ворот; плагин flow-enforcer — только для Hermes `delegate_task` |
 
 ### Установка на новую машину — bootstrap
 
@@ -33,7 +35,7 @@ git clone <ai-factory> && cd ai-factory
 python3 scripts/factory_bootstrap.py            # окружение + state + крон вотчдога + приемочные тесты
 ```
 
-Bootstrap: проверяет окружение (python ≥ 3.10, git, npx для openspec), создает state-каталоги (`~/.hermes/state/`, реестр, `flow_mode.json` с **дефолтом shadow**), ставит крон вотчдога (session_watchdog */2 + delegate_watchdog */5), гоняет приемочные тесты (990). Секреты НЕ переносит — кладутся вручную в `~/.hermes/.env`. Режим enforcing включается явно (`flow_mode.py set enforcing`), после shadow-прогона. Подсказку по плагину flow-enforcer (J43) ставит factory_init (см. ниже).
+Bootstrap: проверяет окружение (python ≥ 3.10, git, npx для openspec), создает state-каталоги (`~/.hermes/state/`, реестр, `flow_mode.json` с **дефолтом shadow**), ставит крон вотчдога (session_watchdog */2 + delegate_watchdog */5), гоняет приемочные тесты (полный `pytest tests/`, на 2026-11-06 — более 1200 тестов). Секреты НЕ переносит — кладутся вручную в `~/.hermes/.env`. Режим enforcing включается явно (`flow_mode.py set enforcing`), после shadow-прогона. Подсказку по плагину flow-enforcer (J43) ставит factory_init (см. ниже).
 
 ### Пути машины (J64.5)
 
@@ -109,11 +111,11 @@ python3 ~/ai-factory/scripts/factory_init.py \
     --name "My Project"
 ```
 
-Скрипт: создает структуру каталогов (openspec, test-model, architecture, docs/ba), копирует ворота и скрипты (flow_check, pr_validate, codegraph, smoke_static, session_archive, session_worktree, **delegate_gate**, **delegate_watchdog**, check_auth_timing, **pm_bounds_check**, **stand_reaper**, **session_watchdog**), CI-workflow, контракты, шаблоны (включая **pm_launch**), **12 скиллов конвейера**; создает `CONSTITUTION.md` из шаблона; создает `docs/glossary.md` (скелет глоссария проекта, свободная форма — без машинных ворот, J53); проверяет среду; прогоняет **post-init ворота** — `flow_check` на пустом проекте обязан вернуть OK. Идемпотентен: повторный запуск без `--force` ничего не перезапишет (включая глоссарий с уже накопленными терминами).
+Скрипт: создает структуру каталогов (openspec, test-model, architecture, docs/ba), копирует ворота и скрипты (`COPY_FILES`: factory_paths, flow_check, pr_validate, codegraph, smoke_static, session_archive, session_worktree, **delegate_gate**, **delegate_watchdog**, check_auth_timing, **pm_bounds_check**, **stand_reaper**, **session_watchdog**, flow_preflight, impact_rules.json) и копии ядра Flow Control (`FLOW_CONTROL_FILES`: flow_ids, flow_state, flow_transition, session_check, gate_runner, flowctl, flow_mode, role_zone_policy, flow_scope_check + контракт), CI-workflow, контракты, шаблоны (включая **pm_launch**), **12 скиллов конвейера**; создает `CONSTITUTION.md` из шаблона; создает `docs/glossary.md` (скелет глоссария проекта, свободная форма — без машинных ворот, J53); проверяет среду; прогоняет **post-init ворота** — `flow_check` на пустом проекте обязан вернуть OK. Идемпотентен: повторный запуск без `--force` ничего не перезапишет (включая глоссарий с уже накопленными терминами).
 
 **Плагин flow-enforcer (J43, с 2026-10-12):** factory_init также ставит pre_tool_call-энфорсер делегаций в `~/.hermes/plugins/flow-enforcer/` и добавляет его в `plugins.enabled` (аккуратная правка существующего блока; нет блока — печатает инструкцию; `--skip-plugin` отключает шаг). Плагин валидирует каждый `delegate_task` через `flowctl prepare --dry-run` до исполнения: заголовок `flow: flow=<1-5> role=<роль> repo=<путь> scope=<id>` (scope по флоу: change-id / BUG-<КОМПЛЕКС>-NNN (BUG-001, BUG-AF-RECHECK-001) / incident-id / chore-slug / slug; для продуктовых задач — paths=<файлы> (или kind=docs для docs_task/chore_task, dev_task без paths — PATHS_MISSING)), DENY с кодами ворот (план релиза, зоны, BUG-репорт…) ПМ видит на спавне. Режимы `FLOW_ENFORCER_MODE=permissive|strict`, bypass — строка `flow: bypass --by customer` только ЗАЯВКА: действует при записи в реестре решений Заказчика `~/.hermes/state/flow-bypass-decisions.json` (repo/scope/action/expires; без записи — обычные проверки, fail-closed). Порядок этапов: `flowctl phase` (память фазы) + sequence-gate (`FLOW_ENFORCER_SEQUENCE=1`). Подробности: [plugins/README.md](plugins/README.md), backlog J43/J43.1.
 
-**Отношение «фабрика ↔ проект»: проект — тонкий клиент.** В проекте живут его код, спеки, артефакты и автономные CI-ворота (flow_check + flow.yml — работают без машины). Ядро детерминированного слоя (flow_state, flow_transition, session_check, gate_runner, flowctl, flow_mode, реестр сессий) — в фабрике, в одном экземпляре, и обслуживает все проекты по путям (`--repo`/`--registry` — параметры). Обновление правил = обновление фабрики в одном месте; проектные ворота синхронизируются factory_init (`--force`), рассинхрон промптов ловится flow_check. Проектный `.github/workflows/flow.yml` при повторной установке НЕ перезаписывается (включая --force) — сохраняются required-checks и триггеры проекта; сверку с фабричным эталоном выполняет ПМ (J52-mirror-guard).
+**Отношение «фабрика ↔ проект»: проект — тонкий клиент.** В проекте живут его код, спеки, артефакты и автономные CI-ворота (flow_check + flow.yml — работают без машины). Ядро детерминированного слоя (flow_state, flow_transition, session_check, gate_runner, flowctl, flow_mode, реестр сессий) работает экземпляром фабрики и обслуживает все проекты по путям (`--repo`/`--registry` — параметры); копии ядра в проекте — для автономности, переход на подключение по закрепленной версии — J64.8/J65.7. Обновление правил = обновление фабрики в одном месте; проектные ворота синхронизируются factory_init (`--force`), рассинхрон промптов ловится flow_check. Проектный `.github/workflows/flow.yml` при повторной установке НЕ перезаписывается (включая --force) — сохраняются required-checks и триггеры проекта; сверку с фабричным эталоном выполняет ПМ (J52-mirror-guard).
 
 Промпты ролей **копируются в проект при установке** — фабрика самодостаточна и не зависит от каталога `~/ai-factory` после установки. Рассинхрон с фабрикой ловится воротами: каждый промпт несет версию в шапке, `flow_check` сравнивает с эталоном фабрики при наличии машины-фабрики (WARNING) — обновление конвейера в проекте всегда осознанный шаг (`--force`).
 
@@ -127,7 +129,7 @@ python3 ~/ai-factory/scripts/factory_init.py \
 2. **Потеря решений** — договоренности живут в чате и исчезают; следующий запуск принимает решения заново.
 3. **Отсутствие детерминизма** — процесс зависит от дисциплины конкретного запуска: обход флоу ничем не наказуем.
 
-AI Factory отвечает на каждую: **каждая роль — изолированный сабагент** (физически не видит чужой контекст, проверено живым тестом), **передача — только артефактами в репозитории** (диалог не является источником правды), **порядок проверяется скриптом и CI** (нарушение = красный пайплайн, а не замечание).
+AI Factory отвечает на каждую: **каждая роль — изолированный сабагент** (отдельный процесс Pi или делегация Hermes; физически не видит чужой контекст, проверено живым тестом), **передача — только артефактами в репозитории** (диалог не является источником правды), **порядок проверяется скриптом и CI** (нарушение = красный пайплайн, а не замечание).
 
 ---
 
@@ -136,9 +138,10 @@ AI Factory отвечает на каждую: **каждая роль — из�
 | Слой | Технология | Роль в конвейере |
 |---|---|---|
 | Спеки | [OpenSpec](https://github.com/Fission-AI/OpenSpec) | формальный формат Requirement/Scenario, change-пакеты, `validate --strict`, master-spec + archive |
-| Оркестрация агентов | [Hermes Agent](https://hermes-agent.nousresearch.com/docs) (`delegate_task`) | изолированные контексты сабагентов, живые транскрипты, фоновый запуск |
-| Практики спек | [GitHub Spec Kit](https://github.com/github/spec-kit) | источник заимствований (E12-спайк, [docs/e12-speckit-spike.md](docs/e12-speckit-spike.md)): constitution-артефакт, research.md, [P]-маркеры; замена отклонена — у spec-kit нет исполняемой state machine и мультиагентности |
-| Ворота флоу | собственный `flow_check.py` (~310 строк, stdlib) | детерминированная state-machine по артефактам |
+| Исполнитель ролей | [Pi](https://pi.dev) + роль-паки, модели GLM-5.3 / GLM-5.3-flash (Z.ai), Kimi K3.1 для аудитора | изолированный контекст роли в своем worktree, zone-guard, модель по ярусу роли (J59/J62) |
+| Оркестрация | `scripts/package_runner.py` (манифест `pipeline:` в плане) + ПМ-сессия (Hermes Agent или другой кодагент); `delegate_task` Hermes — для ролей вне раннера | последовательные стадии с воротами flowctl, state+resume, STOP с кодом |
+| Практики спек | [GitHub Spec Kit](https://github.com/github/spec-kit) | источник заимствований (E12-спайк, [archive/docs/e12-speckit-spike.md](archive/docs/e12-speckit-spike.md)): constitution-артефакт, research.md, [P]-маркеры; замена отклонена — у spec-kit нет исполняемой state machine и мультиагентности |
+| Ворота флоу | собственный `flow_check.py` (~750 строк, stdlib) | детерминированная state-machine по артефактам |
 | CI | [GitHub Actions](https://github.com/features/actions) (`.github/workflows/flow.yml`) | оба валидатора на каждый push/PR |
 | Контроль версий | git + branch protection | прямые push в main отклонены; только PR |
 | QA API | [pytest](https://pytest.org) + [requests](https://requests.readthedocs.io) | регрессионный API-сьют |
@@ -156,7 +159,7 @@ AI Factory отвечает на каждую: **каждая роль — из�
 
 ## Роли (кто что делает)
 
-Все роли выполняются выделенными сабагентами. Оркестратор — роль ПМ. **ПМ — main-сессия; ПМ-сабагент НЕ внедряется** (решение Заказчика 2026-10-10, J1–J4 закрыты: сабагент ПМ порождал бы сабсабагентов — лишний уровень оркестрации; параллельные проекты решаются отдельным инстансом Hermes на другой VPS; контекст проекта — во внешней памяти, новый проект = новая директория + сброс сессии. Дизайн сохранен как артефакт: [agents/pm_agent.md](agents/pm_agent.md), `templates/pm_launch.md`, `scripts/pm_bounds_check.py` — bounds-проверки живы). ПМ — единственный контакт с Заказчиком и владелец общей картины. Реестр и зоны записи: [agents/README.md](agents/README.md).
+Все роли выполняются выделенными сабагентами: боевые стадии — Pi роль-паки через пакетный раннер (SA/архитектор/DEV/BA — glm-5.3, остальные — glm-5.3-flash; таблица — [role-packs/README.md](skills/pm-factory/pi/role-packs/README.md)). Оркестратор — роль ПМ. **ПМ — main-сессия; ПМ-сабагент НЕ внедряется** (решение Заказчика 2026-10-10, J1–J4 закрыты: сабагент ПМ порождал бы сабсабагентов — лишний уровень оркестрации; параллельные проекты решаются отдельным инстансом Hermes на другой VPS; контекст проекта — во внешней памяти, новый проект = новая директория + сброс сессии. Дизайн сохранен как артефакт: [agents/pm_agent.md](agents/pm_agent.md), `templates/pm_launch.md`, `scripts/pm_bounds_check.py` — bounds-проверки живы). ПМ — единственный контакт с Заказчиком и владелец общей картины. Реестр и зоны записи: [agents/README.md](agents/README.md).
 
 | # | Роль | Промпт | Что делает | Вход → Выход |
 |---|---|---|---|---|
@@ -175,6 +178,7 @@ AI Factory отвечает на каждую: **каждая роль — из�
 | 12 | **design_validator** | [design_validator_agent.md](agents/design_validator_agent.md) | Реализованный UI vs дизайн-артефакты (ловит «браузерные дефолты») | UI → вердикты соответствия |
 | 12a | **ui_designer** | [ui_designer_agent.md](agents/ui_designer_agent.md) | Мокапы и дизайн-токены (HTML, зона `design/`), до dev-внедрения; Заказчик выбирает вариант | спека → мокапы + токены |
 | — | **ПМ** | main-сессия (ПМ-сабагент не внедряется, решение 2026-10-10 — см. выше) | Диалог с Заказчиком, сборка задач, приемка фактами, push, PLAN/BACKLOG, диспатч сабагентов (через [delegate_gate](scripts/delegate_gate.py)) | — |
+| 12b | **regress_runner** | [regress_runner_agent.md](agents/regress_runner_agent.md) | Прогон и разбор регресса своего куска / финальный regress (J51/J54): узкий бриф, флак-триаж, артефакт `test-model/regress/` | бриф → regress-артефакт |
 | 13 | **debug** (эскалационный, 2026-10-03) | [debug_agent.md](agents/debug_agent.md) | Изолированная диагностика по эскалации `needs-debug:` от любого сабагента (через ПМ): воспроизведение, среда/код/тест вердикт, база граблей проекта. **Запись в продукт запрещена** — фиксы текстом в отчете, код меняет исходный dev | эскалация → вердикт + база граблей |
 
 **Самоулучшение (E16):** агент, поймав 2 одинаковые ошибки подряд, пишет «проблема → решение → предложение» в `agents/<роль>_improvements.md` и меняет подход — работа доделывается, урок накапливается. Транскрипты всех сессий архивируются (`session_archive.py`) с детерминированным разбором паттернов неуспеха (ретроспектива 48 сессий: топ-причина — среда исполнения; профилактика вшита в [AGENTS.md](AGENTS.md)).
@@ -213,7 +217,7 @@ AI Factory отвечает на каждую: **каждая роль — из�
 
 ### Флоу 2: Баг-фикс (быстрый цикл)
 
-Баг = расхождение **реализованного** с **спекой**, поэтому БА и СА не участвуют: `BUG-NNN` в `test-model/bugs/` → dev фикс → ревью → merge → regression: keep. Если ожидание не выводимо из существующих Requirements — это фича (Флоу 1); мини-дельта СА обязательна при затрагивании API/схемы. Прецеденты: BUG-001 (2026-09-19); внешний ре-ревью комплект BUG-AF-RECHECK-001..004 (2026-10-13) — обход arch-gate, bypass-подстрока, stale-approve, coverage_matrix. BUG-005/022/023 (2026-10-18, обкатка ворот J51 на видео-хостинге): дедуп доменов маппинга regress, shallow+локальный worktree в CI, само-исключение артефакта из свежести.
+Баг = расхождение **реализованного** с **спекой**, поэтому БА и СА не участвуют: `BUG-NNN` в `test-model/bugs/` → dev фикс → ревью → merge → regression: keep. Если ожидание не выводимо из существующих Requirements — это фича (Флоу 1); мини-дельта СА обязательна при затрагивании API/схемы. Прецеденты: BUG-001 (2026-09-19); внешний ре-ревью комплект BUG-AF-RECHECK-001..004 (2026-10-13) — обход arch-gate, bypass-подстрока, stale-approve, coverage_matrix. BUG-005/022/023 (2026-10-18, обкатка ворот J51 на видео-хостинге): дедуп доменов маппинга regress, shallow+локальный worktree в CI, само-исключение артефакта из свежести. BUG-025 (2026-11-03): тесты с подмененным HOME теряли user-site на VPS. BUG-026 (2026-11-06): `factory_init` не копировал `flow_ids.py`.
 
 ### Флоу 3: Хотфикс прода + инцидент-протокол (J48, реализован 2026-10-15)
 
@@ -221,7 +225,11 @@ Severity до начала реакции: **S1** (прод недоступен
 
 ### Флоу 4: Обслуживание
 
-Мини-ТЗ прямо в делегации → стандартный PR-цикл. Прецеденты: E5–E14 бэклога фабрики, уборка хвостов R2.
+Поведение продукта не меняется: инфраструктура, ворота, документация, чистка. План `PLAN-<slug>.md` в корне со строкой `Флоу: 4` (и, для раннера, манифестом `pipeline:`) → стандартный PR-цикл с ревью. scope — `chore` или kebab-slug пакета (J64.3). Прецеденты: обслуживание фабрики J63–J65 (ворота раннера, модуль путей, грамматика scope, чистка репо).
+
+### Флоу 5: Экспресс
+
+Малая правка без полного цикла: scope — kebab-slug, план релиза не нужен; ретроспективный артефакт (`requirements.md` и др.) обязателен к закрытию `express_close` — без него `FLOW5_RETRO_MISSING`.
 
 | Ситуация | Флоу | БА | СА |
 |---|---|---|---|
@@ -229,6 +237,9 @@ Severity до начала реакции: **S1** (прод недоступен
 | Поведение ≠ спеке | 2 | нет | нет* |
 | Прод сломан | 3 | нет | нет* |
 | Поведение не меняется | 4 | нет | нет* |
+| Малая правка, ретро-артефакты после | 5 | нет | нет* |
+
+Грамматика scope по флоу — `scripts/flow_ids.py` (`python3 scripts/flow_ids.py <flow> <scope>` проверяет вручную).
 
 ---
 
@@ -239,10 +250,11 @@ Severity до начала реакции: **S1** (прод недоступен
 | Ворота | Что ловит |
 |---|---|
 | [scripts/flow_check.py](scripts/flow_check.py) | Порядок артефактов: чеклист без спеки, кейсы без чеклиста, approved без ревью, автотесты без TC-трассировки, archive без слияния дельт; **I3**: API-эндпоинт вне спек; качество ТЗ (7 разделов, уникальность FR/NFR, запрет TBD, оценочные формулировки); **H1** «1 кейс = 1 файл». Exit 0/1/2. |
-| **Детерминированный Flow Control** ([docs/README-flow-control.md](docs/README-flow-control.md)) | Исполняемая state-машина: `flow_state` (снимок фактов) → `flow_transition` (ALLOW/DENY/UNKNOWN по графам Флоу 1–5, этапные ворота Заказчика) → `session_check` (атомарная резервация зон, границы записи: renames/symlink) → `gate_runner` (ворота с digest/STALE, provenance review, audit JSONL) → `flowctl` (оркестратор). Режимы shadow/enforcing (`flow_mode.py`); **enforcing включен 2026-10-02** — DENY/UNKNOWN блокируют действие. 777 тестов; **J51 (2026-10-17, закрыт живым пилотом)**: worktree-per-delegation в prepare, `flowctl regress --change` (регресс своего куска с артефактом), ворота merge `regress-final`, роль regress_runner (узкий бриф, флак-триаж); **J52-w3 — gate self-test harness**: ворота обкатываются в CI-имитации (shallow-клон эталонного репо, env -i без openspec/локальных путей — `tests/test_gate_harness.py`, в прогоне `pytest tests/` job test-flow-control); backlog: J52 (швы пилота), J53 (глоссарий проекта — словарь понимания, без машинных ворот), J54 (эшелонированный регресс: домены → smoke → regress-final, baseline, freeze tooling). |
+| **Детерминированный Flow Control** ([docs/README-flow-control.md](docs/README-flow-control.md)) | Исполняемая state-машина: `flow_state` (снимок фактов) → `flow_transition` (ALLOW/DENY/UNKNOWN по графам Флоу 1–5, этапные ворота Заказчика) → `session_check` (атомарная резервация зон, границы записи: renames/symlink) → `gate_runner` (ворота с digest/STALE, provenance review, audit JSONL) → `flowctl` (оркестратор). Режимы shadow/enforcing (`flow_mode.py`); **enforcing включен 2026-10-02** — DENY/UNKNOWN блокируют действие. Сьют фабрики — более 1200 тестов (2026-11-06); **J51 (2026-10-17, закрыт живым пилотом)**: worktree-per-delegation в prepare, `flowctl regress --change` (регресс своего куска с артефактом), ворота merge `regress-final`, роль regress_runner (узкий бриф, флак-триаж); **J52-w3 — gate self-test harness**: ворота обкатываются в CI-имитации (shallow-клон эталонного репо, env -i без openspec/локальных путей — `tests/test_gate_harness.py`, в прогоне `pytest tests/` job test-flow-control); backlog: J52 (швы пилота), J53 (глоссарий проекта — словарь понимания, без машинных ворот), J54 (эшелонированный регресс: домены → smoke → regress-final, baseline, freeze tooling). |
 | **Эшелонированный регресс (J54, реализован)** | Пять эшелонов (таблица — docs/README-flow-control.md «Пять эшелонов»): эшелон 1 — `flowctl regress --change C` (доменный regress своего куска), эшелон 2 — `--tier smoke` (cross-domain smoke по манифесту `test-model/smoke-cross/manifest.json`; пустой контур — WARN и exit 0), эшелон 3 — `--final` (regress-final, пакетно перед плановым деплоем, baseline игнорирует). Baseline известных фейлов main (`test-model/regress/baseline.json`: {test, reason, added}) — фон эшелонов 1–2 не краснит («baseline: ожидаемо-падающий (reason)» в артефакте); `--suggest-baseline` дописывает упавших в suggestions-файл — перенос в baseline вручную (ПМ). `--xdist N` — `pytest -n N` + предупреждение о детерминированности в артефакте; время прогона (duration) — в артефакте каждого прогона. factory_init ставит скелеты (tests/smoke_cross/README, пустые манифест/карта доменов/baseline). |
 
-| **Плагин flow-enforcer** ([plugins/flow-enforcer/](plugins/flow-enforcer/), J43/J43.1) | Делегация мимо ворот: каждый `delegate_task` валидируется pre_tool_call-хуком через `flowctl prepare --dry-run` ДО исполнения — план релиза (Ф1/Ф2/Ф4), зоны, BUG-репорт, порядок этапов (`flowctl phase` + sequence-gate). Bypass — только по записи в реестре решений Заказчика (заявка в goal без записи = обычные проверки, fail-closed); актуальная итерация ревью решает (поздний return отменяет старый approve). |
+| **Плагин flow-enforcer** ([plugins/flow-enforcer/](plugins/flow-enforcer/), J43/J43.1/J60) | Делегация мимо ворот: каждый `delegate_task` Hermes валидируется pre_tool_call-хуком через `flowctl prepare --dry-run` ДО исполнения — грамматика scope (flow_ids), план релиза (Ф1/Ф2/Ф4), зоны, BUG-репорт, порядок этапов (`flowctl phase` + sequence-gate), MODEL_ENFORCE (5.3-роли — только через Pi). Bypass — только по записи в реестре решений Заказчика (заявка в goal без записи = обычные проверки, fail-closed); актуальная итерация ревью решает (поздний return отменяет старый approve). |
+| **Пакетный раннер** ([scripts/package_runner.py](scripts/package_runner.py), J62/J63) | Стадия `pi:<роль>` мимо ворот: `flowctl prepare → run → pi → finish`, сверка реального `git diff` с зоной (включая запись через bash), коммит стадии в ветку пакета; роль без этапа во флоу — резервация по политике роли. STOP с кодом: DENY, ZONE_OUTSIDE_POLICY, ZONE_CONFLICT, OUT_OF_ZONE, красный гейт. Граница: вердикт review-стадии — подстрока (J64.12/J65.4). |
 | [scripts/pr_validate.py](scripts/pr_validate.py) | PR без маркера (BUG-NNN / change-id / [chore]/[docs]/[ops]) и без обязательных файлов; **J11**: Reviewer-Delegation сверяется с реестром — делегация обязана существовать, быть completed и иметь роль `code_reviewer` (self-review/чужая роль = ревью не засчитано); **J26**: PR с диффом `deploy/**`/`RUNBOOK.md` без маркера `[ops]` = FAIL (CI-ворота, `PR_CHANGED_DEPLOY`); **J50**: PR с UI-дельтой (`frontend/**`, макеты `design/**`) без web-тестов в дифе = FAIL без маркера `[no-ui-tests]` с основанием ≥10 символов (env `PR_CHANGED_UI`/`PR_CHANGED_WEBTESTS`); **J51.3**: change-PR требует свежий артефакт `regress-final.md` (PASS, commit-предок HEAD, сам артефакт исключен из сверки свежести — BUG-023; shallow-клон и нечитаемый worktree обрабатываются — BUG-022). |
 | [scripts/check_auth_timing.py](scripts/check_auth_timing.py) | AST-контроль auth: bcrypt, dummy-логины, secrets вместо `==`. |
 | [scripts/smoke_static.py](scripts/smoke_static.py) | Класс DEF-002: статик-ресурс, на который ссылается UI, но который не отдается (сверка ссылок с диском + прод-URL требует 200). |
@@ -251,11 +263,11 @@ Severity до начала реакции: **S1** (прод недоступен
 | [scripts/session_archive.py](scripts/session_archive.py) | Разбор транскриптов: traceback, module_not_found, exit codes, петли; вердикт clean/suspicious/degraded. |
 
 | [scripts/delegate_gate.py](scripts/delegate_gate.py) | **Вход в машину**: делегация создается только через `flowctl prepare+run` (DENY/MISSING_INPUT/ZONE_CONFLICT → делегации не будет); finish с обязательными гейтами по флоу 1–5. |
-| [scripts/delegate_watchdog.py](scripts/delegate_watchdog.py) | **Детектор обхода**: сверяет платформенный реестр делегаций (async_delegations — пишется при каждом `delegate_task` независимо от воли агента) с prepare-записями flowctl. Делегация мимо машины → BYPASS-инцидент в `~/.hermes/state/delegate_bypass_incidents.json`; забытый finish → STALE. Крон */5. Трехканальный отчет: Заказчик — машинный stdout (дельта по ack-файлу), ПМ-0 — `pm_instruction.txt` + крон `pm-instruction-relay` (*/2), ПМ-1 — stdout крона; анти-рекурсия (fingerprint-дедуп, cooldown 15 мин, потолок 3/ч). |
+| [scripts/delegate_watchdog.py](scripts/delegate_watchdog.py) | **Детектор обхода**: сверяет платформенный реестр делегаций (async_delegations — пишется при каждом `delegate_task` независимо от воли агента) с prepare-записями flowctl. Делегация мимо машины → BYPASS-инцидент в `~/.hermes/state/delegate_bypass_incidents.json`; забытый finish → STALE. Крон */5. Отчет — один канал: машинный stdout крона, только дельта новых инцидентов (каналы ПМ-0 и суточный digest упразднены 2026-10-23); анти-рекурсия (fingerprint-дедуп, cooldown 15 мин, потолок 3/ч). Видит только делегации Hermes — запуск `pi` мимо раннера не ловит (J65.5). |
 
 **Три слоя гарантии (2026-10-03, инцидент add-containerization):**
 1. **Движок** — flowctl DENY на входе (зоны, approval_ref, роли) блокирует неправильное до старта.
-2. **Вотчдог** — обход flowctl неизбежно виден в течение ~5 минут (реестр делегаций пишет платформа, агент не контролирует). Baseline с даты внедрения — история не инцидент.
+2. **Вотчдог** — обход flowctl делегацией Hermes виден в течение ~5 минут (реестр делегаций пишет платформа, агент не контролирует). Baseline с даты внедрения — история не инцидент. Для стадий Pi роль вотчдога пока играет сам раннер (ворота J63 на входе и выходе стадии).
 3. **Правило** — видимый обход = нарушение независимо от результата работы (SELF_REVIEW/OPS_TASK_AS_DEV в контракте).
 
 Инструкции агенту — не гарантия; гарантией является сочетание «нельзя + заметят + не засчитают».
@@ -300,6 +312,11 @@ Severity до начала реакции: **S1** (прод недоступен
 | `contracts/artifact_contract.md` + `contracts/flow_control_contract.md` | Контракты 1–7 + контракт Flow Control |
 | `scripts/factory_bootstrap.py` | **Установка фабрики на новую машину** (окружение, state, вотчдог, приемка) |
 | `scripts/factory_init.py` | **Развертывание конвейера на проект** (E15) |
+| `scripts/factory_paths.py` | Пути машины из env (J64.5); `--doctor`/`--compare` — сверка контекстов (J65.12) |
+| `scripts/flow_ids.py` | Грамматика scope флоу 1–5 (J65.3); энфорсер держит fallback-копию, flow_check — литерал, совпадение проверяет тест |
+| `scripts/role_zone_policy.py` | Политика зон ролей для ворот (таблица `agents/README.md` защищена отпечатком) |
+| `scripts/ci_local.py` | Прогон сьюта и flow_check в условиях CI: клон глубины 1, пустой HOME (J65.12) |
+| `scripts/check_mirrors.py` | Сверка копий ворот в проектах с эталоном фабрики (только на машине фабрики) |
 | `scripts/flow_check.py` | Ворота флоу (state machine) |
 | `scripts/flow_state.py` / `flow_transition.py` | Снимок фактов / разрешение действий (Flow Control) |
 | `scripts/session_check.py` | Резервация зон, post-check, reconcile |
@@ -320,11 +337,12 @@ Severity до начала реакции: **S1** (прод недоступен
 | `scripts/smoke_static.py` | Смоук статики (класс DEF-002) |
 | `scripts/session_archive.py` | Архив транскриптов + разбор неуспеха |
 | `scripts/session_worktree.sh` | Worktree-изоляция параллельных сессий |
-| `templates/` | Constitution, task_delegation |
+| `templates/` | Constitution, task_delegation (заголовок `flow:` и форматы scope), impact, pm_launch (дизайн ПМ-сабагента, не внедрен) |
 | `skills/` | Библиотека скиллов конвейера, 6 групп (чистка 2026-11-05, J64.16): `pm-factory` (эксплуатация фабрики + Pi: regress-runner, auditor), `flow` (флоу и чистки артефактов), `roles` / `roles-tools` (процедуры и инструменты сабагентов), `runtimes` (claude-code/codex/computer-use), `engineering` (spike) — реестр в [skills/README.md](skills/README.md) |
-| `agents/*.md` → скиллы роли | Роль-паки Pi: `skills/pm-factory/pi/role-packs/` — regress-runner (зоны записи, zone-guard) и auditor (read-only guard, Kimi K3.1, ручной вызов вне конвейера) |
+| `agents/*.md` → скиллы роли | Роль-паки Pi: `skills/pm-factory/pi/role-packs/` — 15 паков (все роли конвейера + auditor), общий zone-guard, модели по ярусам (J59/J62); оглавление — [role-packs/README.md](skills/pm-factory/pi/role-packs/README.md) |
 | `archive/` | Промежуточные артефакты завершенных спайков/аудитов + старые планы этапов (`archive/plans/`), код-ревью старых релизов (`archive/code-reviews/`), история J-решений (`archive/backlog/`) — живые документы в `docs/` |
-| `docs/e12-speckit-spike.md` | Спайк GitHub Spec Kit (вердикт: гибрид) |
+| `docs/guides/pipeline-manifest.md` | Гайд по манифесту `pipeline:` пакетного раннера (стадии, зоны, ворота, вердикт) |
+| `archive/docs/e12-speckit-spike.md` | Спайк GitHub Spec Kit (вердикт: гибрид) |
 | `openspec/specs/` | Спеки конвейера (источник правды правил) |
 
 ### В репозитории проекта (пример — ekotov-wiki)
@@ -354,8 +372,14 @@ Severity до начала реакции: **S1** (прод недоступен
 
 ---
 
-## Пилотный проект: ekotov-wiki
+## Проекты на конвейере
 
-Личная wiki/канбан-доска (FastAPI + Jinja2 + vanilla JS + SQLite WAL; nginx TLS, systemd). **5 релизов в проде через конвейер** (прод v=r5.2, 2026-10-01): Р1 запуск (18 раундов БА, 24 задачи, 8 доменов) → Р2 категории/настройки → Р3 визуальный фундамент → Р4 профиль/view-модалка → Р5 аватары (кроп-виджет, карточка V3). Роли: architect и devops отработали живые задачи; design_validator — сверка реализованного UI с макетом (Р5); qa_runner — прогон/разбор регресса. Испытания конвейера: 2 прод-инцидента миграции (репетиция на копии — новое правило), rollover-инциденты сессий (J19 — дисциплина heartbeat); ревьюеры дважды поймали major до прода (rsync-аватары, кеш static_v).
+Состояние по репозиториям на 2026-11-02 (детали — в самих проектах):
 
-**В работе: Р6 — этап A «Микросервисы» (change `add-microservices-full`)**: выделение search-сервиса в контейнере (`services/search/`, копии роутеров с трассировкой, замороженный контракт OpenAPI), nginx-маршрутизация сервисного семейства через фронт (X-Service, 503-деградация), отрезка search-маршрутов от монолита (f0fe4ec, xfail TC-openapi-202 снят). Задачи 1.1–1.5 закрыты через delegate_gate с независимыми ревью; далее — вертикаль auth-сервиса, приемка Заказчика и прод-деплой (2.3/2.4 — явная развилка Заказчика).
+| Проект | Что это | Где сейчас |
+|---|---|---|
+| [ekotov-wiki](https://github.com/realax07/ekotov-wiki) | Пилот и полигон фабрики: личная wiki/канбан — задачи, заметки, аватары, поиск, wiki-раздел с деревом страниц и историей версий | монорепо микросервисов `services/{app,frontend,search,backup,images,auth}` в docker compose, прод — проект `ekotov-wiki-par` (7 контейнеров); 20 change-пакетов в архиве. Намеренно усложнен, чтобы обкатывать фабрику |
+| [child_bot](https://github.com/realax07/child_bot) | Telegram-бот «Дневник сна ребенка» | пакет 1 `add-core-diary` реализован (кнопки сна, ввод задним числом, наблюдатель, 13 настроек); подсказки окон сна и напоминания — следующий этап |
+| [auto-school](https://github.com/realax07/auto-school) | Сайт автошколы: регистрация, админка, кабинеты ученика и инструктора | спринтовая разработка по Флоу 1/2, регистр инцидентов `incidents.md` |
+
+История пилота: 5 релизов kanban-ядра (Р1–Р5) → Р6 и P11–P14 (контейнеризация, UI, микросервисы, адаптив) → R7/R8 (Netdata, галерея). Испытания конвейера и уроки — в [backlog/MAP.md](backlog/MAP.md).

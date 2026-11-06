@@ -1,4 +1,4 @@
-# plugins/ — плагин flow-enforcer (J43)
+# plugins/ — плагин flow-enforcer (J43/J43.1/J60)
 
 `pre_tool_call`-энфорсер делегаций: делегация `delegate_task` мимо конвейера
 становится невозможной без видимого отключения плагина. Источник плагина —
@@ -56,9 +56,17 @@ python3 scripts/factory_init.py --target <repo> --name "<проект>"
 Первая строка goal (см. templates/task_delegation.md, чеклист 0):
 
 ```
-flow: role=<роль> repo=<путь> change=<id> paths=<путь1,путь2> [kind=docs|product]
+flow: flow=<1-5> role=<роль> repo=<путь> scope=<id> paths=<путь1,путь2> [kind=docs|product]
 task: <id задачи tasks.md>        # опционально, для dev_task
 ```
+
+scope — по грамматике своего флоу (`scripts/flow_ids.py`, J65.3): Ф1 kebab
+change-id с дефисом, Ф2 имя репорта `BUG-NNN` / `BUG-<КОМПЛЕКС>-NNN` /
+`BUG-NNN-<slug>`, Ф3 incident-ref `S<1|2|3>-<kebab-slug>`, Ф4 `chore` или
+kebab-slug, Ф5 kebab-slug. Невалидный scope — `FLOW_MARKER_INVALID` уже на
+спавне; текст отказа называет источник грамматики (`flow_ids` или
+`fallback` — встроенная копия, если фабрика недоступна). Легаси-форма
+`flow: role=… repo=… change=…` без `flow=` трактуется как Флоу 1 с WARNING.
 
 `paths=` — ТОЛЬКО относительные пути (от корня репозитория, без '..'-сегментов
 и абсолютных путей — иначе `FLOW_MARKER_INVALID`; MAJ-2 ревью
@@ -74,6 +82,16 @@ code_reviewer→code_review, qa_automation→qa_automation, ...
 
 Одиночные маркеры `role: X` / `repo: P` / `change: C` в goal/context тоже
 распознаются (fallback, если заголовка нет).
+
+## MODEL_ENFORCE (J60): 5.3-роли — только через Pi
+
+Боевой этап SA/архитектора/DEV/BA распознается эвристикой по ключевым словам
+роли в goal и обязан нести маркер исполнителя: `[pi:<роль>]` → ALLOW,
+`[hermes:<роль>]` → DENY с подсказкой «используй pi роль-пак»; маркера нет —
+WARN в лог (миграционный период). Флоу 2/4/5 и devops/qa/docs-вызовы — свобода
+выбора исполнителя. Выключение — `FLOW_MODEL_ENFORCE=off` (недоступность Pi).
+Стадии `pi:<роль>` пакетного раннера идут мимо хука: их ворота — в
+`scripts/package_runner.py` (J63).
 
 ## Bypass
 
