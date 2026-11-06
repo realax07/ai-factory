@@ -43,6 +43,28 @@ GLM-5.3-flash), потому что проверку делает не моде�
 3. **Правило проверяет скрипт, а не дисциплина агента.** Инструкции в
    промптах — подсказка; гарантию дают ворота, которые нельзя пропустить.
 
+<details>
+<summary>Словарь терминов</summary>
+
+- **Hermes** — агент-оркестратор, в котором обычно работает ПМ (диалог с
+  Заказчиком в Telegram, делегации `delegate_task`). **Pi** — CLI-агент, в
+  котором исполняются роли.
+- **Пакет** — единица работы с одним планом и одним PR (фича, багфикс,
+  обслуживание). **scope** — его идентификатор (`add-widget`, `BUG-042`…).
+- **Change-пакет** — пакет флоу 1 в OpenSpec: `openspec/changes/<id>/`
+  с предложением, дельтами спек, дизайном и задачами `tasks.md`.
+- **Дельта / master-spec** — изменение спеки внутри change-пакета / общая
+  спека проекта в `openspec/specs/`; при архивации дельты сливаются в
+  master-spec.
+- **Зона** — пути, в которые роль имеет право писать; **резервация** —
+  захват зоны на время сессии, чтобы две сессии не писали в одно место.
+- **Ворота (gate)** — проверка, без прохождения которой шаг не принимается.
+- **Provenance** — запись о ревью, привязанная к SHA и отпечатку диффа:
+  кто автор, кто ревьюер, на каком коммите вердикт. **STALE** — вердикт
+  или прогон ворот относится к старому коммиту и не засчитывается.
+
+</details>
+
 ---
 
 ## 2. Кто что делает
@@ -59,9 +81,11 @@ GLM-5.3-flash), потому что проверку делает не моде�
 
 ### Роли конвейера
 
-Каждая роль — системный промпт в [`agents/`](agents/README.md) и Pi роль-пак в
+Каждая роль — системный промпт в [`agents/`](agents/README.md); у ролей,
+которые исполняет Pi, есть еще роль-пак в
 [`skills/pm-factory/pi/role-packs/`](skills/pm-factory/pi/role-packs/README.md)
-с моделью своего яруса.
+с моделью своего яруса. Зоны записи всех ролей — таблица в
+[agents/README.md](agents/README.md#таблица-зон-записи-норма-для-всех-ролей).
 
 | Роль | Результат | Модель |
 |---|---|---|
@@ -93,7 +117,8 @@ GLM-5.3-flash), потому что проверку делает не моде�
 | Python | ≥ 3.10 (CI — 3.12), скрипты — только stdlib | ворота и утилиты |
 | pytest | актуальный | сьют фабрики |
 | [OpenSpec CLI](https://github.com/Fission-AI/OpenSpec) | 1.14.0 (`npm i -g @fission-ai/openspec@1.14.0`) | формат спек и `validate --strict` |
-| [Pi](https://pi.dev) | `@earendil-works/pi-coding-agent` + ключ провайдера | исполнитель ролей |
+| Node.js + npm | для OpenSpec CLI и Pi | проверяется bootstrap |
+| [Pi](https://pi.dev) | `npm i -g @earendil-works/pi-coding-agent` + ключ провайдера | исполнитель ролей |
 | Оркестратор ПМ | Hermes Agent или другой кодагент | диалог с Заказчиком, запуск раннера |
 | GitHub с Actions | — | CI и ruleset |
 
@@ -104,9 +129,10 @@ git clone https://github.com/realax07/ai-factory ~/ai-factory && cd ~/ai-factory
 python3 scripts/factory_bootstrap.py
 ```
 
-Bootstrap проверяет окружение, создает каталог состояния движка
-(`~/.hermes/state/`: реестр сессий, режим), ставит кроны вотчдогов и прогоняет
-полный сьют фабрики как приемку. Режим ворот после установки — **shadow**
+Bootstrap проверяет окружение (python, git, node/npx, pytest), создает
+каталог состояния движка `~/.hermes/state/` с файлом режима `flow_mode.json`
+(реестр сессий появится там при первой резервации), ставит кроны вотчдогов и
+прогоняет полный сьют фабрики как приемку. Режим ворот после установки — **shadow**
 (решения считаются, но не блокируют); боевой режим включает Заказчик:
 `python3 scripts/flow_mode.py set enforcing --by customer`. Секреты не
 переносятся — кладутся вручную в `~/.hermes/.env`.
@@ -129,7 +155,8 @@ cp skills/pm-factory/pi/role-packs/regress-runner/extensions/zone-guard.ts ~/.pi
 
 Settings → Rules → Rulesets → ruleset на `main`: **Active**, bypass —
 **никому**, правила: только через PR, без force-push, обязательные проверки
-`test-flow-control` и `flow`. Проверка: `gh api repos/<owner>/<repo>/rules/branches/main`
+`test-flow-control` и `flow` (чек появляется в списке только после первого
+прогона CI в репозитории — сначала откройте любой PR). Проверка: `gh api repos/<owner>/<repo>/rules/branches/main`
 возвращает `pull_request` и `required_status_checks`, прямой push в main
 отклоняется.
 
@@ -140,12 +167,16 @@ python3 ~/ai-factory/scripts/factory_init.py --target /path/to/repo --name "My P
 ```
 
 Создает структуру каталогов (openspec, test-model, docs…), копирует ворота,
-CI-workflow, контракты, шаблоны и скиллы ролей, `CONSTITUTION.md` и скелет
-глоссария, затем проверяет, что `flow_check` на пустом проекте проходит.
-Повторный запуск без `--force` докопирует только недостающее; `--force`
-перезаписывает все копируемые файлы, включая проектный `flow.yml`, — после
-него сверьте required-checks проекта. Если оркестратор — Hermes, тот же
-запуск ставит плагин flow-enforcer (`--skip-plugin` — пропустить).
+CI-workflow, контракты, шаблоны, промпты ролей и скиллы, `CONSTITUTION.md` и
+скелет глоссария, затем проверяет, что `flow_check` на пустом проекте
+проходит. Заодно ставит плагин flow-enforcer в `~/.hermes/plugins/`
+(`--skip-plugin` — пропустить, если оркестратор не Hermes) и обертки кронов в
+`~/.hermes/scripts/` (`--skip-crons`).
+
+Повторный запуск без `--force` докопирует только недостающее. `--force`
+перезаписывает все, что ставит factory_init: ворота, `flow.yml`, промпты
+`agents/`, а также `CONSTITUTION.md` и `docs/glossary.md` проекта — после него
+сверьте required-checks и верните проектные правки.
 
 ---
 
@@ -170,44 +201,49 @@ CI-workflow, контракты, шаблоны и скиллы ролей, `CON
 
 ### 4.2. Написать план пакета
 
-План — обязательный артефакт (флоу 1, 2, 4): `PLAN-<scope>.md` в корне
-проекта. В нем цель, строка `Флоу: N`, решения Заказчика, критерий закрытия и
-манифест стадий для раннера:
+План — обязательный артефакт для флоу 1, 2 и 4: `PLAN-<scope>.md` в корне
+проекта или `PLAN.md` внутри change-пакета `openspec/changes/<id>/` (флоу 3
+вместо плана несет incident-ref, флоу 5 план не требует). В плане цель,
+строка `Флоу: N`, решения Заказчика, критерий закрытия и манифест стадий для
+раннера. Пример — обслуживание (флоу 4):
 
 ````markdown
-# PLAN-add-widget: виджет на главной
+# PLAN-log-cleanup: убрать отладочный вывод из backend
 
-**Флоу: 1** — новое поведение, меняется спека.
+**Флоу: 4** — поведение продукта не меняется.
 
 ```yaml
 pipeline:
-  package: add-widget
-  flow: 1
+  package: log-cleanup
+  flow: 4
   stages:
     - id: impl
       run: pi:dev
       zones: [backend/**, tests/**]
-      task: реализовать FR-1..FR-3 по спеке, тесты обязательны
+      task: заменить print на logging в backend/, поведение не меняется, тесты зеленые
     - id: check
       run: gate:python3 scripts/flow_check.py .
     - id: review
       run: pi:code-reviewer
-      zones: [code-reviews/add-widget/review-001.md]
+      zones: [code-reviews/log-cleanup/review-001.md]
       verdict:
-        file: code-reviews/add-widget/review-001.md
+        file: code-reviews/log-cleanup/review-001.md
         contains: "Вердикт: Одобрить"
 ```
 ````
 
 Виды стадий: `pi:<роль>` — роль-агент, `gate:<команда>` — ворота,
 `stand:<команда>` — подъем тестового стенда, `hermes:<роль>` — стоп-точка
-для ПМ. Все поля — [docs/guides/pipeline-manifest.md](docs/guides/pipeline-manifest.md).
+для ПМ. Во флоу 1 стадии ролей идут по задачам `tasks.md` (поле `task_id`), а
+движок пустит их только при утвержденных требованиях и готовом
+change-пакете. Все поля и пример флоу 1 —
+[docs/guides/pipeline-manifest.md](docs/guides/pipeline-manifest.md).
 
 ### 4.3. Запустить раннер
 
 ```bash
-python3 ~/ai-factory/scripts/package_runner.py PLAN-add-widget.md --dry-run   # показать разбор
-python3 ~/ai-factory/scripts/package_runner.py PLAN-add-widget.md             # исполнить
+python3 ~/ai-factory/scripts/package_runner.py PLAN-log-cleanup.md --dry-run   # только разобрать манифест
+python3 ~/ai-factory/scripts/package_runner.py PLAN-log-cleanup.md             # исполнить
 ```
 
 Что происходит на каждой стадии `pi:<роль>`:
@@ -216,8 +252,8 @@ python3 ~/ai-factory/scripts/package_runner.py PLAN-add-widget.md             # 
 flowctl prepare   — снимок фактов → можно ли этой роли этот шаг сейчас? (ALLOW/DENY)
   └─ резервация зоны (две сессии не пишут в одни пути)
 flowctl run       — переснимок перед стартом
-pi <роль>         — агент работает в своем worktree, zone-guard режет запись вне зоны
-flowctl finish    — реальный git diff ⊆ зона? ворота этапа зеленые?
+pi <роль>         — агент работает в своем worktree; zone-guard режет write/edit вне зоны
+flowctl finish    — реальный git diff ⊆ зона (ловит и запись через bash)? ворота этапа зеленые?
 коммит стадии в ветку пакета → резервация закрыта → следующая стадия
 ```
 
@@ -237,7 +273,8 @@ flowctl finish    — реальный git diff ⊆ зона? ворота эт�
 проверках.
 
 До push полезно прогнать то же, что увидит CI: `python3 scripts/ci_local.py`
-(клон глубины 1, пустой HOME — ловит «локально зеленое, в CI красное»).
+(закоммиченный HEAD в клоне глубины 1, пустой HOME — ловит «локально
+зеленое, в CI красное»; незакоммиченные правки в прогон не попадают).
 
 ### 4.5. Как работает с harness сам агент-ПМ
 
@@ -252,10 +289,13 @@ flowctl finish    — реальный git diff ⊆ зона? ворота эт�
 3. **Решения Заказчика — только зафиксированными.** «Считаю согласованным»
    машина не принимает (`HUMAN_APPROVAL_REQUIRED`).
 4. **Работа ролей — через раннер.** Если оркестратор — Hermes, его
-   `delegate_task` перехватывает плагин flow-enforcer: делегация без
-   заголовка `flow: flow=N role=… repo=… scope=…` или с отказом движка
-   блокируется на спавне, а боевые роли SA/архитектор/DEV/BA разрешены
-   только через Pi.
+   `delegate_task` проверяет плагин flow-enforcer: заголовок
+   `flow: flow=N role=… repo=… scope=…` с невалидным scope или отказом движка
+   блокируется на спавне. Делегация вовсе без заголовка в режиме по
+   умолчанию (`permissive`) проходит с записью в лог, в `strict` —
+   блокируется. Боевые SA/архитектор/DEV/BA с маркером `[hermes:<роль>]`
+   получают отказ с подсказкой «используй Pi» (без маркера исполнителя —
+   предупреждение в лог).
 5. **Доклад Заказчику** всегда содержит статусы ворот:
    `prepare | reserve | zone-check/gates | provenance` — PASS/DENY/UNKNOWN/SKIPPED,
    без «сглаживания».
