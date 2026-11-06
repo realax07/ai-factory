@@ -12,8 +12,8 @@ factory_paths, J64.5).
 Трассировка:
   TC-BUG-026-001  каждый фабричный модуль, импортируемый копируемым скриптом
                   (включая try/except-импорты), сам входит в списки копирования
-  TC-BUG-026-002  копии движка (набор файлов factory_init) импортируются в
-                  каталоге без остальной фабрики
+  TC-BUG-026-002  все копируемые .py (набор файлов factory_init) импортируются
+                  в каталоге без остальной фабрики
 """
 from __future__ import annotations
 
@@ -47,7 +47,8 @@ def test_copied_scripts_bring_their_imports():
     """TC-BUG-026-001"""
     copied = {Path(p).stem for p in COPIED}
     missing = {rel: sorted(_factory_imports(rel) - copied) for rel in COPIED}
-    assert not {k: v for k, v in missing.items() if v}, missing
+    missing = {k: v for k, v in missing.items() if v}
+    assert not missing, missing
 
 
 def test_engine_copies_import_standalone(tmp_path):
@@ -56,7 +57,7 @@ def test_engine_copies_import_standalone(tmp_path):
     scripts.mkdir()
     for rel in COPIED:
         shutil.copy2(FACTORY / rel, scripts / Path(rel).name)
-    for mod in ("flow_state", "flow_transition", "flowctl", "flow_check"):
+    for mod in sorted(Path(rel).stem for rel in COPIED):
         proc = subprocess.run(
             [sys.executable, "-I", "-c",
              f"import sys; sys.path.insert(0, {str(scripts)!r}); import {mod}"],
