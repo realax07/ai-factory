@@ -314,6 +314,7 @@ COPY_FILES = [
 # исполняемое ядро + контракт + скилл — устанавливается вместе с базой.
 FLOW_CONTROL_FILES = [
     "scripts/flow_ids.py",  # J65.3: грамматика scope — импортируют движок ниже (BUG-026)
+    "agents/roles.json",  # J65.1: реестр ролей — источник политики зон role_zone_policy
     "scripts/flow_state.py",
     "scripts/flow_transition.py",
     "scripts/session_check.py",

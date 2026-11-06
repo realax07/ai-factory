@@ -85,11 +85,12 @@ class TestRoleZonePolicyUnit:
                          "pm"):
                 ok = rzp.narrow_zones(role, [path])["violations"] == []
                 assert ok == (role == owner), (path, role)
-        assert "J64.18" in rzp.policy_version()
+        # [test-adapted] J65.1: версия — sha256 реестра agents/roles.json
+        assert rzp.policy_version().startswith("agents/roles.json sha256 ")
 
     def test_policy_version_is_stable_string(self):
         v = rzp.policy_version()
-        assert "agents/README.md" in v and v == rzp.policy_version()
+        assert "agents/roles.json" in v and v == rzp.policy_version()  # [test-adapted] J65.1
 
 
 # --------------------------------------------- prepare: отказ/сужение/записи
@@ -129,7 +130,7 @@ class TestPrepareZonePolicy:
         assert data["reason"] == "ZONE_OUTSIDE_POLICY"
         assert data["zone_violations"] == ["docs/**"]
         assert data["role"] == "dev"
-        assert "agents/README.md" in data["policy_source"]
+        assert "agents/roles.json" in data["policy_source"]  # [test-adapted] J65.1
         assert data["policy_version"] == rzp.policy_version()
         # Side effects отсутствуют:
         assert json.loads(reg.read_text(encoding="utf-8")).get(

@@ -148,34 +148,19 @@ class TestRegressRunnerPolicy:
             start, end
 
     def test_policy_digest_matches_pinned_commit(self):
-        """TC-R3-003 (minor #2): digest воспроизводим. Если запиненный
-        коммит доступен (не shallow) — полная проверка с пином. В
-        shallow-клоне CI `git show` пина падает (128) — проверяем
-        самосогласованность: digest, задокументированным алгоритмом по
-        ТЕКУЩЕМУ agents/README.md, совпадает с POLICY_TABLE_DIGEST
-        (дайджест-в-коде обязан соответствовать текущему файлу)."""
-        m = re.search(r"agents/README\.md@([0-9a-f]+):.*?sha256 ([0-9a-f]{64})",
-                      rzp.POLICY_TABLE_DIGEST)
-        assert m, f"не парсится: {rzp.POLICY_TABLE_DIGEST!r}"
-        rev, digest = m.group(1), m.group(2)
-        pinned = subprocess.run(
-            ["git", "-C", str(FACTORY), "show", f"{rev}:agents/README.md"],
-            capture_output=True, text=True, check=False)
-        if pinned.returncode == 0:
-            # полный путь: таблица в запиненном коммите
-            calc, start, end = self._table_digest(pinned.stdout)
-            lines = pinned.stdout.splitlines()
-            assert calc == digest
-            assert any("regress_runner" in l for l in lines[start:end + 1])
-        else:
-            # shallow / коммит недоступен: самосогласованность кода и файла
-            assert pinned.returncode == 128, pinned.stderr
-            txt = (FACTORY / "agents" / "README.md").read_text(
-                encoding="utf-8")
-            calc, start, end = self._table_digest(txt)
-            assert calc == digest
-            lines = txt.splitlines()
-            assert any("regress_runner" in l for l in lines[start:end + 1])
+        """TC-R3-003 (minor #2) [test-adapted] J65.1: источник политики —
+        реестр agents/roles.json; версия — его sha256 (воспроизводима и в
+        shallow-клоне), таблица зон agents/README.md сгенерирована из него и
+        актуальна; regress_runner в ней есть."""
+        raw = (FACTORY / "agents" / "roles.json").read_bytes()
+        assert rzp.policy_version() == (
+            "agents/roles.json sha256 " + hashlib.sha256(raw).hexdigest())
+        gen = subprocess.run(
+            [sys.executable, str(FACTORY / "scripts" / "gen_role_docs.py"),
+             "--check"], capture_output=True, text=True, check=False)
+        assert gen.returncode == 0, gen.stderr
+        txt = (FACTORY / "agents" / "README.md").read_text(encoding="utf-8")
+        assert "regress_runner" in txt.split("<!-- roles:zones:start -->")[1]
 
 
 # ------------------------------------------------- minor #3: change-id

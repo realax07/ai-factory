@@ -257,7 +257,10 @@ class TestRoleZonesN13:
         assert rzp.allowed_zones_for("no_such_role") == ()
 
     def test_policy_version_marks_amendment(self):
-        assert "Н13" in rzp.policy_version()
+        # [test-adapted] J65.1: редакция политики — sha256 реестра ролей
+        # (любая правка зон меняет версию), а не текстовая пометка поправки
+        assert rzp.policy_version().startswith("agents/roles.json sha256 ")
+        assert rzp.allowed_zones_for("integrator")
 
 
 # -------------------------------------------------------- Н16: [chore]-PR

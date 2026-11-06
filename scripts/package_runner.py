@@ -380,6 +380,15 @@ def extract_pipeline(text: str) -> dict:
                         "(```yaml … pipeline: …```)")
 
 
+def policy_zones(pack: str, package: str) -> list[str]:
+    """Зона роли пака из реестра ролей (J65.1) с подстановкой change-id
+    пакета вместо сегмента '*'; движка нет или зоны нет — []."""
+    if rzp is None:
+        return []
+    return ["/".join(package if seg == "*" else seg for seg in z.split("/"))
+            for z in rzp.allowed_zones_for(flow_role(pack))]
+
+
 def parse_manifest(plan_path: Path) -> dict:
     """Валидирует манифест плана. Возвращает нормализованный dict:
     {package, flow, stages: [{id, kind, payload, zones, inputs, task,
@@ -435,10 +444,16 @@ def parse_manifest(plan_path: Path) -> dict:
                 f"{where}.run: роль pi — идентификатор "
                 f"[A-Za-z0-9._-]+, получено: {payload!r}")
         zones = raw.get("zones") or []
+        if kind == "pi" and not zones and "zones" not in raw:
+            # J65.1: без zones — зона роли целиком из реестра agents/roles.json
+            # ('*' — change-id пакета); зона манифеста ее только сужает.
+            zones = policy_zones(payload, package)
+            raw = {**raw, "zones": zones}
         if kind == "pi" and not (isinstance(zones, list) and zones):
             raise ManifestError(
                 f"{where}.zones обязателен для pi-шага (список globs — "
-                "env PI_ZONE_WRITE роль-пака)")
+                "env PI_ZONE_WRITE роль-пака): у роли нет зоны в реестре "
+                "agents/roles.json или движок фабрики недоступен")
         for field in ("zones", "inputs", "depends"):
             val = raw.get(field) or []
             if not isinstance(val, list) or not all(

@@ -16,23 +16,26 @@ env `PI_ZONE_WRITE="зона1:зона2"` (относительные globs от
 
 ## Оглавление паков
 
-| Пак | Роль (фабричный промпт) | Модель | Провайдер | Зоны записи (PI_ZONE_WRITE) |
+<!-- roles:packs:start -->
+<!-- генерируется scripts/gen_role_docs.py из agents/roles.json — руками не править -->
+| Пак | Роль (фабричный промпт) | Модель | Провайдер | Зоны записи (политика ворот) |
 |---|---|---|---|---|
-| [`regress-runner/`](regress-runner/README.md) | regress_runner (`agents/regress_runner_agent.md`) | **glm-5.3-flash** | zai-glm | `test-model/regress/<id>/**` (+ `tests/**` по брифу) |
-| [`auditor/`](auditor/README.md) | pi-auditor (ручной вызов ПМ, вне конвейера) | **kimi k3.1-pro** | kimi | read-only (auditor-readonly) |
-| [`sa/`](sa/README.md) | sa (`agents/sa_agent.md`) | **glm-5.3** | zai-glm | `openspec/changes/<id>/**:sdd.md` |
-| [`architect/`](architect/README.md) | architect (`agents/architect_agent.md`) | **glm-5.3** | zai-glm | `architecture/**:docs/**:test-model/reviews/**` |
-| [`dev/`](dev/README.md) | dev (`agents/dev_agent.md`) | **glm-5.3** | zai-glm | `backend/**:frontend/**:services/**:src/**:tests/**:e2e/**` |
-| [`ba/`](ba/README.md) | ba (`agents/ba_agent.md`) | **glm-5.3** | zai-glm | `requirements.md:docs/ba/**` |
-| [`code-reviewer/`](code-reviewer/README.md) | code_reviewer (`agents/code_reviewer_agent.md`) | **glm-5.3-flash** | zai-glm | `test-model/reviews/**` (вердикт — заголовком `## Вердикт: Одобрить|Вернуть`, J65.4) |
-| [`qa-case-author/`](qa-case-author/README.md) | qa_case_author (`agents/qa_case_author_agent.md`) | **glm-5.3-flash** | zai-glm | `test-model/new/**` (1 кейс = 1 файл TC-*.md) |
-| [`qa-case-reviewer/`](qa-case-reviewer/README.md) | qa_case_reviewer (`agents/qa_case_reviewer_agent.md`) | **glm-5.3-flash** | zai-glm | `test-model/reviews/**:test-model/approved/**` (append-only партиии) |
-| [`qa-automation/`](qa-automation/README.md) | qa_automation (`agents/qa_automation_agent.md`) | **glm-5.3-flash** | zai-glm | `tests/**:test-model/**` |
-| [`qa-impact-analyst/`](qa-impact-analyst/README.md) | qa_impact_analyst (`agents/qa_impact_analyst_agent.md`) | **glm-5.3-flash** | zai-glm | `test-model/impact/**` |
+| [`ba/`](ba/README.md) | ba (`agents/ba_agent.md`) | **glm-5.3** | zai-glm | `requirements.md`, `docs/ba/*` |
+| [`sa/`](sa/README.md) | sa (`agents/sa_agent.md`) | **glm-5.3** | zai-glm | `openspec/changes/*/proposal.md`, `openspec/changes/*/requirements.md`, `openspec/changes/*/research.md`, `openspec/changes/*/specs/**`, `openspec/changes/*/design.md`, `openspec/changes/*/tasks.md`, `sdd.md` |
+| [`dev/`](dev/README.md) | dev (`agents/dev_agent.md`) | **glm-5.3** | zai-glm | `openspec/changes/*/tasks.md`, `backend/**`, `frontend/**`, `e2e/**`, `services/**`, `scripts/**`, `contracts/**`, `deploy/**`, `src/**`, `tests/**`, `test-model/bugs/*`, `feature/*`, `plugins/**` |
+| [`code-reviewer/`](code-reviewer/README.md) | code_reviewer (`agents/code_reviewer_agent.md`) | **glm-5.3-flash** | zai-glm | `code-reviews/*/review-*.md` (вердикт — заголовком `## Вердикт: approve|return` (J65.4)) |
+| [`qa-case-author/`](qa-case-author/README.md) | qa_case_author (`agents/qa_case_author_agent.md`) | **glm-5.3-flash** | zai-glm | `test-model/new/*/**` |
+| [`qa-case-reviewer/`](qa-case-reviewer/README.md) | qa_case_reviewer (`agents/qa_case_reviewer_agent.md`) | **glm-5.3-flash** | zai-glm | `test-model/reviews/**`, `test-model/approved/**` (append-only партии) |
+| [`qa-automation/`](qa-automation/README.md) | qa_automation (`agents/qa_automation_agent.md`) | **glm-5.3-flash** | zai-glm | `tests/**`, `test-model/bugs/*`, `pytest.ini` |
+| [`qa-impact-analyst/`](qa-impact-analyst/README.md) | qa_impact_analyst (`agents/qa_impact_analyst_agent.md`) | **glm-5.3-flash** | zai-glm | `test-model/impact/*.md` |
 | [`ui-designer/`](ui-designer/README.md) | ui_designer (`agents/ui_designer_agent.md`) | **glm-5.3-flash** | zai-glm | `design/**` |
-| [`design-validator/`](design-validator/README.md) | design_validator (`agents/design_validator_agent.md`) | **glm-5.3-flash** | zai-glm | `test-model/reviews/**` (review-NNN-design.md) |
-| [`debug/`](debug/README.md) | debug (`agents/debug_agent.md`, вне flow-графа) | **glm-5.3-flash** | zai-glm | read-only диагностика; лог — `test-model/regress/**` (вердикт СРЕДА/КОД/ТЕСТ) |
-| [`devops/`](devops/README.md) | devops (`agents/devops_agent.md`) | **glm-5.3-flash** | zai-glm | `deploy/**:docs/ops/**` (боевой деплой — только по утверждению ПМ, hermes-стоп; пак готовит релизную инфру в worktree) |
+| [`debug/`](debug/README.md) | debug (`agents/debug_agent.md`) | **glm-5.3-flash** | zai-glm | только чтение (диагностика без правки продукта; вердикт СРЕДА/КОД/ТЕСТ; зоны политики нет — развилка J64.11) |
+| [`regress-runner/`](regress-runner/README.md) | regress_runner (`agents/regress_runner_agent.md`) | **glm-5.3-flash** | zai-glm | `test-model/regress/*/**` (артефакты прогонов пишет flowctl regress) |
+| [`architect/`](architect/README.md) | architect (`agents/architect_agent.md`) | **glm-5.3** | zai-glm | `architecture/**`, `test-model/reviews/*/review-*-architecture.md` |
+| [`devops/`](devops/README.md) | devops (`agents/devops_agent.md`) | **glm-5.3-flash** | zai-glm | `deploy/**`, `ops/**`, `.github/workflows/**` (боевой деплой — только по утверждению ПМ, hermes-стоп) |
+| [`design-validator/`](design-validator/README.md) | design_validator (`agents/design_validator_agent.md`) | **glm-5.3-flash** | zai-glm | `test-model/reviews/*/review-*-design.md` |
+| [`auditor/`](auditor/README.md) | auditor — Аудитор (pi-auditor, вне конвейера) | **kimi k3.1-pro** | kimi | только чтение (read-only guard, ручной вызов ПМ; модель — флагами CLI поверх settings.example.json) |
+<!-- roles:packs:end -->
 
 Распределение моделей — регруп J59 + досборка flash-паков J62: семантический
 ярус (SA/архитектор/DEV/BA) — glm-5.3, дешевые механические роли (QA-квартет,
@@ -40,7 +43,10 @@ env `PI_ZONE_WRITE="зона1:зона2"` (относительные globs от
 Kimi K3.1 (аудитор, вручную: `settings.example.json` единый, kimi/ro-guard —
 переопределение флагами CLI при вызове).
 
-Зоны в таблице — glob-форма манифеста; env `PI_ZONE_WRITE` задается в
+Зоны в таблице — политика ворот из `agents/roles.json` (J65.1): зона стадии
+манифеста может ее только сужать, без `zones:` раннер берет ее целиком
+(`*` — change-id пакета). Примеры зон в README отдельных паков могли
+отстать — источник правды эта таблица (J64.11). Env `PI_ZONE_WRITE` задается в
 префикс-форме (без glob-хвостов `/**`) — runner нормализует зоны манифеста
 перед прокидкой (`normalize_zone`, J61); обе формы задают одну зону, в
 README каждого пака показаны обе. Структура `settings.example.json` — единая
