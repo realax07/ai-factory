@@ -13,6 +13,19 @@
 | `settings.example.json` | Дефолты сессии: провайдер/модель `zai-glm`/`glm-5.3-flash`, tools `read/bash/edit/write`, `sessionDir`, подключение zone-guard. |
 | `extensions/zone-guard.ts` | Расширение — механическое исполнение зон (см. ниже). |
 
+## Зона записи (PI_ZONE_WRITE)
+
+<!-- roles:pack-zone:start -->
+<!-- генерируется scripts/gen_role_docs.py из agents/roles.json — руками не править -->
+```
+манифест (glob-форма):       test-model/regress/<id>/**
+env PI_ZONE_WRITE (префикс): test-model/regress/<id>
+```
+<!-- roles:pack-zone:end -->
+
+Зона политики ворот (agents/roles.json); раннер прокидывает ее в
+`PI_ZONE_WRITE` префикс-формой. Дефолт guard'а без env — ниже.
+
 ## Что охраняет zone-guard (fail-closed)
 
 Перехват `tool_call` в событийной модели Pi (формат — `export default function (pi: ExtensionAPI)`, TS без компиляции, грузит jiti):

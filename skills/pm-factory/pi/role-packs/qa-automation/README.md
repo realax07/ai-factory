@@ -18,14 +18,17 @@ zone-guard НЕ входит в пак: используется установ�
 
 ## Зона записи (PI_ZONE_WRITE)
 
+<!-- roles:pack-zone:start -->
+<!-- генерируется scripts/gen_role_docs.py из agents/roles.json — руками не править -->
 ```
-манифест (glob-форма):       tests/api/**:tests/web/**:tests/integration/**:tests/smoke_cross/**:tests/archive/**:tests/fixtures/**:tests/conftest.py:tests/README.md:tests/__init__.py:test-model/bugs/*
-env PI_ZONE_WRITE (префикс): tests/api:tests/web:tests/integration:tests/smoke_cross:tests/archive:tests/fixtures:tests/conftest.py:tests/README.md:tests/__init__.py:test-model/bugs
+манифест (glob-форма):       tests/api/**:tests/web/**:tests/integration/**:tests/smoke_cross/**:tests/archive/**:tests/conftest.py:tests/README.md:tests/__init__.py:tests/fixtures/**:test-model/bugs/*:pytest.ini
+env PI_ZONE_WRITE (префикс): tests/api:tests/web:tests/integration:tests/smoke_cross:tests/archive:tests/conftest.py:tests/README.md:tests/__init__.py:tests/fixtures:test-model/bugs:pytest.ini
 ```
+<!-- roles:pack-zone:end -->
 
 Обе строки задают ОДНУ зону: runner нормализует glob-хвосты зон манифеста в префикс-форму guard'а (`normalize_zone`, J61 — guard матчит зоны префиксом, не glob'ом). В env `PI_ZONE_WRITE` — префикс-форма (то, что прокидывает runner); в манифесте пакета (`stage.zones`) — glob-форма, как в гайде docs/guides/pipeline-manifest.md.
 
-`tests/api|web|integration|smoke_cross|archive` — автотесты (J66; `tests/unit` — зона dev), общие `tests/conftest.py` и `tests/README.md`; `test-model/bugs` — баг-репорты
+`tests/api|web|integration|smoke_cross|archive` — автотесты (J66; `tests/unit` — зона dev), общие `tests/conftest.py`, `tests/README.md`, `tests/__init__.py`, `tests/fixtures/`, `pytest.ini`; `test-model/bugs` — баг-репорты
 (guard сужен до политики, J66: `test-model/test-layout.json` — защищенный путь) (approved-кейсы и review — read-only вход). Код продукта,
 спеки, `requirements.md` — вне зон; `git push` блокируется. Вход — только
 кейсы `test-model/approved/<change-id>/` с вердиктом «Одобрить»: кейсы из
@@ -45,7 +48,7 @@ cp skills/pm-factory/pi/role-packs/qa-automation/settings.example.json ~/.pi/age
 
 ```bash
 cd /tmp/wt-<change> && \
-PI_ZONE_WRITE='tests/api:tests/web:tests/integration:tests/smoke_cross:tests/archive:tests/fixtures:tests/conftest.py:tests/README.md:tests/__init__.py:test-model/bugs' \
+PI_ZONE_WRITE='tests/api:tests/web:tests/integration:tests/smoke_cross:tests/archive:tests/conftest.py:tests/README.md:tests/__init__.py:tests/fixtures:test-model/bugs:pytest.ini' \
 pi --provider zai-glm --model glm-5.3-flash --no-session \
    -e ~/.pi/agent/extensions/zone-guard.ts \
    -p "<бриф: change C123, кейсы test-model/approved/C123/, sdd.md. Автотесты в tests/api|tests/web|tests/integration, TC-ID в docstring, tests/README.md с матрицей кейс→тест. Прогон: зеленый или каждое красное = баг-репорт в test-model/bugs/>"

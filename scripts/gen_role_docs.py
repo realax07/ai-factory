@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """gen_role_docs.py — таблицы ролей из реестра agents/roles.json (J65.1).
 
-Генерирует два блока между маркерами `<!-- roles:<имя>:start -->` /
+Генерирует блоки между маркерами `<!-- roles:<имя>:start -->` /
 `<!-- roles:<имя>:end -->`:
 
 - `zones` в agents/README.md — таблица зон записи (агент, режим, зона, push);
@@ -9,7 +9,11 @@
   роль, модель и провайдер (из `settings.example.json` пака — источник
   модели; поля `model`/`provider` реестра переопределяют, если модель
   задается флагами CLI), зоны записи (из реестра — та же политика, что у
-  ворот).
+  ворот);
+- `pack-zone` в README каждого пака с политикой зон — блок «Зона записи»
+  (glob-форма для манифеста и префикс-форма для env PI_ZONE_WRITE,
+  нормализация раннера) и примеры `PI_ZONE_WRITE='…'` в тексте README
+  (`<id>` → C123). У debug и auditor политики нет — их README не трогаются.
 
 Правка зон и описаний ролей — только в agents/roles.json; таблицы руками не
 правятся. Тест сверяет закоммиченное с сгенерированным (`--check`).
@@ -22,6 +26,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -86,6 +91,56 @@ def render_packs(roles: list[dict]) -> str:
 
 RENDER = {"zones": render_zones, "packs": render_packs}
 
+# Блок зоны в README каждого пака (J65.1/J64.11, обновление README
+# 2026-11-07): та же политика реестра в двух формах — glob для манифеста и
+# префикс для env PI_ZONE_WRITE (нормализация раннера normalize_zone).
+# Пример запуска в README (`PI_ZONE_WRITE='…'`) — та же префикс-форма,
+# плейсхолдер <id> → C123 (имя change-пакета в примерах паков).
+PACK_ZONE = "pack-zone"
+EXAMPLE_ID = "C123"
+_EXAMPLE_ENV_RE = re.compile(r"PI_ZONE_WRITE='[^'\n]*'")
+
+
+def _normalize_zone(zone: str) -> str:
+    sys.path.insert(0, str(FACTORY / "scripts"))
+    import package_runner  # noqa: E402  (одна нормализация с раннером)
+    return package_runner.normalize_zone(zone)
+
+
+def pack_zone_forms(role: dict) -> tuple[str, str]:
+    zones = list(role.get("zones") or ())
+    prefixes: list[str] = []
+    for z in zones:
+        p = _normalize_zone(z)
+        if p not in prefixes:
+            prefixes.append(p)
+    return ":".join(zones), ":".join(prefixes)
+
+
+def render_pack_zone(role: dict) -> str:
+    glob_form, prefix_form = pack_zone_forms(role)
+    return ("```\n"
+            f"манифест (glob-форма):       {glob_form}\n"
+            f"env PI_ZONE_WRITE (префикс): {prefix_form}\n"
+            "```")
+
+
+def apply_pack_example(text: str, role: dict) -> str:
+    _, prefix_form = pack_zone_forms(role)
+    value = prefix_form.replace(CHANGE_ID_PLACEHOLDER, EXAMPLE_ID)
+    return _EXAMPLE_ENV_RE.sub(f"PI_ZONE_WRITE='{value}'", text)
+
+
+CHANGE_ID_PLACEHOLDER = "<id>"
+
+
+def pack_targets(roles: list[dict]) -> list[tuple[Path, dict]]:
+    """README паков с политикой зон (у debug/auditor политики нет — их
+    README не генерируется, развилка J64.11)."""
+    return [(PACKS / r["pack"] / "README.md", r) for r in roles
+            if r.get("pack") and r.get("zones")
+            and (PACKS / r["pack"] / "README.md").is_file()]
+
 
 def apply(text: str, name: str, block: str) -> str:
     start, end = f"<!-- roles:{name}:start -->", f"<!-- roles:{name}:end -->"
@@ -104,9 +159,14 @@ def main(argv: list[str] | None = None) -> int:
     args = ap.parse_args(argv)
     roles = _roles()
     stale = []
-    for name, path in TARGETS.items():
+    jobs = [(path, lambda t, n=name: apply(t, n, RENDER[n](roles)))
+            for name, path in TARGETS.items()]
+    jobs += [(path, lambda t, r=role: apply_pack_example(
+                 apply(t, PACK_ZONE, render_pack_zone(r)), r))
+             for path, role in pack_targets(roles)]
+    for path, render in jobs:
         cur = path.read_text(encoding="utf-8")
-        new = apply(cur, name, RENDER[name](roles))
+        new = render(cur)
         if new != cur:
             stale.append(str(path.relative_to(FACTORY)))
             if not args.check:

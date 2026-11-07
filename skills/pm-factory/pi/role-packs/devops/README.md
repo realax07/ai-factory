@@ -25,10 +25,13 @@ zone-guard НЕ входит в пак: используется установ�
 
 ## Зона записи (PI_ZONE_WRITE)
 
+<!-- roles:pack-zone:start -->
+<!-- генерируется scripts/gen_role_docs.py из agents/roles.json — руками не править -->
 ```
-манифест (glob-форма):       deploy/**:docs/ops/**
-env PI_ZONE_WRITE (префикс): deploy:docs/ops
+манифест (glob-форма):       deploy/**:ops/**:.github/workflows/**
+env PI_ZONE_WRITE (префикс): deploy:ops:.github/workflows
 ```
+<!-- roles:pack-zone:end -->
 
 Обе строки задают ОДНУ зону: runner нормализует glob-хвосты зон манифеста в
 префикс-форму guard'а (`normalize_zone`, J61 — guard матчит зоны префиксом,
@@ -36,8 +39,8 @@ env PI_ZONE_WRITE (префикс): deploy:docs/ops
 runner); в манифесте пакета (`stage.zones`) — glob-форма, как в гайде
 docs/guides/pipeline-manifest.md.
 
-`deploy/**` — runbook и деплой-скрипты проекта; `docs/ops/**` — ops-доки
-фабрики. Код продукта, тесты, спеки — вне зон, zone-guard отклоняет запись
+`deploy/**` — runbook и деплой-скрипты проекта; `ops/**` — ops-артефакты;
+`.github/workflows/**` — CI-workflow (J64.18). Код продукта, тесты, спеки — вне зон, zone-guard отклоняет запись
 (`{block: true}`); `git push` блокируется.
 
 ## Сборка на хосте
@@ -54,7 +57,7 @@ cp skills/pm-factory/pi/role-packs/devops/settings.example.json ~/.pi/agent/sett
 
 ```bash
 cd /tmp/wt-<change> && \
-PI_ZONE_WRITE='deploy:docs/ops' \
+PI_ZONE_WRITE='deploy:ops:.github/workflows' \
 pi --provider zai-glm --model glm-5.3-flash --no-session \
    -e ~/.pi/agent/extensions/zone-guard.ts \
    -p "<бриф: что деплоим/меняем, целевой коммит, границы. Факты инфры командами ДО скрипта; выход: deploy/RUNBOOK.md + deploy/deploy.sh (бэкап, EXPECTED_COMMIT, смоук, DRY_RUN); верификация bash -n/dry-run/git diff --stat>"
