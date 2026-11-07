@@ -104,7 +104,9 @@ def check_env(need_pytest: bool = True) -> bool:
             ok = ok and not required
             continue
         if rc == 124:
-            print(f"  {name}: WARN — не ответил за 60s, версия не проверена")
+            print(f"  {name}: {'MISSING' if required else 'WARN'} — не ответил "
+                  "за 60s, работоспособность не подтверждена")
+            ok = ok and not required
             continue
         line = _first(out)
         print(f"  {name}: {line}")

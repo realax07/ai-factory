@@ -477,8 +477,8 @@ def is_legacy_impact_template(d: Path) -> bool:
     шаблон, который factory_init клал туда до 2026-11-07."""
     if d.name != "_template" or not d.is_dir():
         return False
-    files = [p for p in d.rglob("*") if p.is_file()]
-    return [p.name for p in files] == ["impact.md"]
+    files = [p.relative_to(d).as_posix() for p in d.rglob("*") if p.is_file()]
+    return files == ["impact.md"]
 
 
 def errs(*msg):
