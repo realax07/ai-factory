@@ -369,6 +369,74 @@ def map_verdict_ok(repo: Path, change_id: str) -> tuple[bool, str]:
     return False, ", ".join(rf.name for rf in files)
 
 
+# --- J66: раскладка автотестов (спека qa-pipeline, «Раскладка автотестов») ---
+# tests/unit — dev; tests/api|web|integration (+ smoke_cross, archive) —
+# qa_automation. Строгость — test-model/test-layout.json {"mode": ...}:
+# warn (дефолт, файла нет) → FLOW-WARNING, strict → FLOW-ERROR; битый файл —
+# FLOW-ERROR (не молчаливый дефолт). Смягчение strict → warn — решение
+# Заказчика (файл — PROTECTED_PATHS).
+TEST_LAYOUT_REL = "test-model/test-layout.json"
+TEST_LAYOUT_MODES = ("warn", "strict")
+TEST_LAYOUT_DIRS = ("unit", "api", "web", "integration", "smoke_cross", "archive")
+# Каталоги без требования TC-ID (тесты dev пишутся без кейсов).
+TEST_LAYOUT_NO_TC = ("unit",)
+# Стек уровня: запрещенные импорты (unit/integration — без сети и браузера).
+TEST_LAYOUT_FORBIDDEN = {
+    "unit": ("requests", "playwright"),
+    "integration": ("requests", "playwright"),
+    "api": ("playwright",),
+}
+
+
+def _import_re(mod: str) -> re.Pattern:
+    return re.compile(
+        rf"^\s*(?:import\s+{mod}\b|from\s+{mod}(?:\.\w+)*\s+import\b)", re.M)
+
+
+def layout_mode_of(repo: Path) -> tuple[str, str | None]:
+    """Режим раскладки проекта: (mode, problem). Файла нет → ("warn", None);
+    нечитаемый/неизвестный режим → ("strict", описание) — вызывающий
+    обязан выдать FLOW-ERROR."""
+    path = repo / TEST_LAYOUT_REL
+    if not path.is_file():
+        return "warn", None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        return "strict", f"{TEST_LAYOUT_REL} не читается ({exc})"
+    mode = data.get("mode") if isinstance(data, dict) else None
+    if mode not in TEST_LAYOUT_MODES:
+        return "strict", (f"{TEST_LAYOUT_REL}: mode={mode!r}, ожидается "
+                          f"{'|'.join(TEST_LAYOUT_MODES)}")
+    return mode, None
+
+
+def layout_level_of(repo: Path, tf: Path) -> str | None:
+    """Каталог уровня тестового файла (unit/api/…) или None — вне раскладки."""
+    parts = tf.relative_to(repo / "tests").parts
+    if len(parts) >= 2 and parts[0] in TEST_LAYOUT_DIRS:
+        return parts[0]
+    return None
+
+
+def layout_findings(repo: Path, test_files: list[Path]) -> list[str]:
+    """Нарушения раскладки и стека уровня (без учета режима)."""
+    out: list[str] = []
+    for tf in sorted(test_files):
+        rel = tf.relative_to(repo)
+        level = layout_level_of(repo, tf)
+        if level is None:
+            out.append(f"{rel}: тест вне раскладки tests/"
+                       f"{{{','.join(TEST_LAYOUT_DIRS)}}}/ (J66)")
+            continue
+        text = tf.read_text(encoding="utf-8", errors="replace")
+        for mod in TEST_LAYOUT_FORBIDDEN.get(level, ()):
+            if _import_re(mod).search(text):
+                out.append(f"{rel}: импорт {mod} в tests/{level}/ — "
+                           f"нарушение стека уровня (J66)")
+    return out
+
+
 def errs(*msg):
     for m in msg:
         print(f"FLOW-ERROR: {m}")
@@ -680,10 +748,22 @@ def check(repo: Path) -> int:
                 "tests/: автотесты без approved-кейсов и без as-is базы "
                 "test-model/regression/<domain>/ (контракт 6)"
             )
+        # J66: раскладка по уровням; режим warn|strict из test-layout.json.
+        layout_mode, layout_problem = layout_mode_of(repo)
+        if layout_problem:
+            errors += errs(layout_problem)
+        layout_report = errs if layout_mode == "strict" else warns
+        findings = layout_findings(repo, test_files)
+        if findings:
+            n = layout_report(*findings)
+            if layout_mode == "strict":
+                errors += n
         for tf in test_files:
             text = tf.read_text(encoding="utf-8", errors="replace")
             if re.search(r"\btime\.sleep\(", text):
                 errors += errs(f"{tf.relative_to(repo)}: time.sleep запрещен (спека qa-pipeline)")
+            if layout_level_of(repo, tf) in TEST_LAYOUT_NO_TC:
+                continue  # unit-тесты dev — без TC-ID (спека, «Трассировка»)
             doc_tests = re.findall(r'def (test_\w+)', text)
             if doc_tests and not TC_REF.search(text):
                 errors += errs(f"{tf.relative_to(repo)}: тесты без TC-трассировки в docstring (rule 6)")

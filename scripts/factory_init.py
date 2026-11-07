@@ -454,6 +454,43 @@ def install_impact_template(target: Path, force: bool = False) -> None:
     print(f"  {IMPACT_TEMPLATE_REL} создан (шаблон impact-карты СА, J58)")
 
 
+TEST_LAYOUT_REL = "test-model/test-layout.json"
+# Каталоги раскладки — паритет с flow_check.TEST_LAYOUT_DIRS (тест J66).
+TEST_LAYOUT_DIRS = ("unit", "api", "web", "integration", "smoke_cross", "archive")
+
+
+def misplaced_tests(target: Path) -> list[str]:
+    """Тестовые файлы проекта вне раскладки tests/<уровень>/ (J66)."""
+    tests = target / "tests"
+    if not tests.is_dir():
+        return []
+    out = []
+    for tf in sorted(tests.rglob("test_*.py")):
+        parts = tf.relative_to(tests).parts
+        if not (len(parts) >= 2 and parts[0] in TEST_LAYOUT_DIRS):
+            out.append(str(tf.relative_to(target)))
+    return out
+
+
+def install_test_layout(target: Path) -> None:
+    """J66: test-model/test-layout.json — режим проверки раскладки тестов.
+    Существующий файл не трогается никогда (и с --force: смягчение
+    strict → warn — решение Заказчика). Новый: strict, если тестов вне
+    раскладки нет; иначе warn (проект до миграции, flow_check предупреждает)."""
+    dst = target / TEST_LAYOUT_REL
+    if dst.exists():
+        print(f"  {TEST_LAYOUT_REL} уже существует — не тронут")
+        return
+    misplaced = misplaced_tests(target)
+    mode = "warn" if misplaced else "strict"
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    dst.write_text('{\n  "schema": "test-layout/1",\n  "mode": "%s"\n}\n' % mode,
+                   encoding="utf-8")
+    note = (f" ({len(misplaced)} тест(ов) вне раскладки — мигрируй и "
+            f"переключи на strict)" if misplaced else "")
+    print(f"  {TEST_LAYOUT_REL} создан: mode={mode}{note}")
+
+
 def install_regress_skeleton(target: Path, force: bool = False) -> None:
     """J54: скелеты эшелонированного регресса (идемпотентно, без force
     существующий контент проекта НЕ перезаписывается)."""
@@ -569,8 +606,14 @@ def main() -> int:
 
     # 3b. tests/test_smoke.py + as-is база regression/_bootstrap (контракт 6:
     # smoke — as-is база пустого проекта, TC-BOOTSTRAP-001)
-    smoke = target / "tests" / "test_smoke.py"
-    if not smoke.exists() or args.force:
+    # J66: smoke — unit-уровень (tests/unit/); легаси tests/test_smoke.py
+    # проекта до миграции не дублируется.
+    legacy_smoke = target / "tests" / "test_smoke.py"
+    smoke = target / "tests" / "unit" / "test_smoke.py"
+    if legacy_smoke.exists():
+        print("  tests/test_smoke.py (легаси, вне раскладки J66) — не тронут")
+    elif not smoke.exists() or args.force:
+        smoke.parent.mkdir(parents=True, exist_ok=True)
         smoke.write_text(
             '"""TC-BOOTSTRAP-001: smoke пустого проекта.'
             'Заменяется реальными тестами первого пакета."""\n\n\n'
@@ -578,9 +621,9 @@ def main() -> int:
             '    assert True\n',
             encoding="utf-8",
         )
-        print("  tests/test_smoke.py создан (CI pytest на пустом проекте)")
+        print("  tests/unit/test_smoke.py создан (CI pytest на пустом проекте)")
     else:
-        print("  tests/test_smoke.py уже существует — не тронут")
+        print("  tests/unit/test_smoke.py уже существует — не тронут")
     boot_dir = target / "test-model" / "regression" / "_bootstrap"
     boot_dir.mkdir(parents=True, exist_ok=True)
     boot_case = boot_dir / "smoke.md"
@@ -595,6 +638,10 @@ def main() -> int:
         print("  test-model/regression/_bootstrap/smoke.md создан (as-is база, контракт 6)")
     else:
         print("  regression/_bootstrap уже существует — не тронут")
+
+    # 3c. Режим раскладки тестов (J66) — после smoke: решение strict|warn
+    # учитывает фактические тесты проекта.
+    install_test_layout(target)
 
     # 4. Проверка среды
     ok = True

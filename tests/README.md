@@ -2,9 +2,14 @@
 
 Автотесты фабрики. Базлайн: `python3 -m pytest tests/ -q` — все green.
 
+Раскладка (J66, спека qa-pipeline): у фабрики нет HTTP API и UI — все её
+тесты лежат в `tests/unit/` (зона dev), режим проверки — `strict`
+(`test-model/test-layout.json`). Ссылки на `tests/test_*.py` в ревью,
+баг-репортах и архивах — исторические пути до переноса (append-only).
+
 ## J48 — инцидент-протокол Флоу 3 (change add-incident-protocol)
 
-Файл: `tests/test_j48_incident_protocol.py` (TC-J48-001…032).
+Файл: `tests/unit/test_j48_incident_protocol.py` (TC-J48-001…032).
 Approved-кейсы: `test-model/approved/add-incident-protocol/`
 (TC-SEV-001…004, TC-IRS-001…004, TC-PMG-001…007, TC-DEC-001…004 — 19 кейсов).
 

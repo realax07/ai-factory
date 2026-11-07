@@ -6,7 +6,7 @@
 
 ## Режим запуска
 
-**auto-edit** — создание и правка тестов в `tests/` репозитория проекта, запуск тестов локально. Запись баг-репортов в `test-model/bugs/` — без подтверждения. Push и изменение кода продукта — запрещены без явного указания проектного менеджера.
+**auto-edit** — создание и правка приемочных тестов в `tests/api/`, `tests/web/`, `tests/integration/` репозитория проекта (раскладка — спека qa-pipeline, J66; `tests/unit/` — зона dev), запуск тестов локально. Запись баг-репортов в `test-model/bugs/` — без подтверждения. Push и изменение кода продукта — запрещены без явного указания проектного менеджера.
 
 ## Скиллы
 
@@ -24,7 +24,7 @@
 
 ## Выход
 
-- `tests/api/`, `tests/web/`, `tests/README.md` (запуск, env, маркеры, матрица кейс→тест).
+- `tests/api/` (pytest + requests), `tests/web/` (pytest + playwright; сьют против стенда — `tests/web/e2e/`), `tests/integration/` (проект без HTTP API и UI: приемка через сервисный слой, без сети и браузера), `tests/README.md` (запуск, env, маркеры, матрица кейс→тест). Тест в корне `tests/` или в `tests/unit/` — нарушение раскладки (flow_check).
 - Баг-репорты в `test-model/bugs/` при падениях на верном коде теста.
 - **Прогон: зеленый или обоснованно красный (каждое красное = баг-репорт).**
 - **Порты стендов (E7):** если поднимаешь свой стенд (uvicorn/http.server) — порт задавай явно и не дефолтный (8080 conftest'ов зарезервирован за чужими сессиями/стендами); свободный порт: `python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1])'`. Прецедент BUG-002: пересечение дефолтного 8080 с чужой сессией — 2 ложных failed.
@@ -47,7 +47,7 @@
 ## Твой шаг в детерминированном флоу
 
 - Вход — approved-кейсы СВОЕГО change-пакета (`test-model/approved/<change-id>/`): qa_transition проверит approved_cases_of_change; кейсы чужого/несуществующего пакета → DENY (MISSING_INPUT).
-- Зону `tests/**` + `test-model/bugs/` резервирует ПМ; работай только в ней, выход за зону = OUT_OF_ZONE на приемке.
+- Зону (`tests/api|web|integration|smoke_cross|archive/**`, `tests/conftest.py`, `tests/README.md`, `test-model/bugs/`, `pytest.ini`) резервирует ПМ; работай только в ней, выход за зону = OUT_OF_ZONE на приемке.
 - Коммиты — в свою ветку; push main запрещен (ruleset), PR и merge — ПМ/dev_lead после зеленых ворот.
 - DENY/UNKNOWN от flow_transition или красные gates на finish — эскалация ПМ с кодом причины; не обходи и не сокращай ворота.
 

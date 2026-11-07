@@ -156,7 +156,7 @@ SINGLE_RE = {
 # фабрики (Ф1 change-id, Ф2 имя репорта BUG-…, Ф3 incident-ref S<1-3>-<slug>,
 # Ф4/Ф5 kebab-slug). Плагин работает копией внутри Hermes и не зависит от
 # доступности фабрики: фабрика недоступна → встроенная fallback-копия,
-# совпадение с модулем проверяет тест (tests/test_j65_flow_ids.py).
+# совпадение с модулем проверяет тест (tests/unit/test_j65_flow_ids.py).
 _FLOW_IDS_FALLBACK = {
     "CHANGE_ID_PATTERN": r"^[a-z0-9]+(?:-[a-z0-9]+)+$",
     "SLUG_PATTERN": r"^[a-z0-9]+(?:-[a-z0-9]+)*$",
@@ -275,7 +275,7 @@ NO_CHANGE_DETAIL_PATTERNS = (
 # обязательные предшественники среди ЗАВЕРШЕННЫХ этапов того же scope.
 # Производная от STAGE_TABLE (scripts/flow_transition.py): каждый предшественник
 # стоит в таблице флоу РАНЬШЕ действия — синхронизация проверяется тестом
-# (tests/test_j431_flow_aware.py::test_sequence_prereqs_match_stage_table).
+# (tests/unit/test_j431_flow_aware.py::test_sequence_prereqs_match_stage_table).
 # Возврат на доработку легален: предшественники уже в completed_actions.
 SEQUENCE_PREREQS: dict[int, dict[str, frozenset]] = {
     1: {
@@ -840,7 +840,7 @@ class FlowMarkerError(ValueError):
 # Пути машины (J64.5): те же env и дефолты, что scripts/factory_paths.py.
 # Плагин ставится копией в ~/.hermes/plugins и работает в процессе Hermes —
 # модуль фабрики не импортирует; паритет держит тест
-# (tests/test_factory_paths.py::test_enforcer_paths_parity).
+# (tests/unit/test_factory_paths.py::test_enforcer_paths_parity).
 def _env_path(name: str, default: Path) -> Path:
     raw = os.environ.get(name, "").strip()
     return Path(raw).expanduser() if raw else default

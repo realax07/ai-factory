@@ -66,6 +66,7 @@ PROTECTED_PATHS = tuple(
         "AGENTS.md",
         "agents/README.md",
         "agents/roles.json",  # J65.1: реестр ролей — источник политики зон
+        "test-model/test-layout.json",  # J66: строгость раскладки тестов
     )
     if p not in [x.strip() for x in __import__("os").environ.get("PM_PROTECTED_EXCLUDE", "").split(",") if x.strip()]
 )

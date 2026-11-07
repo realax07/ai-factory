@@ -44,3 +44,32 @@
 5. `flow_check`: тест в корне `tests/` — WARNING/дефект по п.6.
 6. Тесты на всё выше (TC-J66-*).
 7. Миграция проектов — отдельными PR: child_bot (основной объем), ekotov-wiki, auto-school.
+
+## Резолюции
+
+- **2026-11-07 — решения Заказчика** по вопросам (варианты дословно):
+  разделение — «Жёстко»; проекты без api/web — «Четвёртый каталог»,
+  имя — «tests/integration»; `e2e/` — «В tests/web/e2e»; строгость —
+  «WARNING, потом ошибка»; тесты фабрики — «Перенести в tests/unit».
+  Решения ПМ без развилки: общие `tests/conftest.py`, `tests/README.md`,
+  `pytest.ini` — qa_automation; unit-тесты dev без TC-ID; `flowctl regress`
+  не меняется («иное» → весь `tests/` шире, чем `tests/unit`, и не теряет
+  покрытие `src/`) — п.4 черновика снят.
+- **2026-11-07 — фабрика сделана** (PLAN-test-zones.md, Флоу 4): спека
+  qa-pipeline (раскладка, проверка, трассировка, стек), контракт 6, зоны
+  `agents/roles.json` (dev — `tests/unit/**` без `tests/**` и `e2e/**`;
+  qa_automation — `tests/api|web|integration|smoke_cross|archive/**`,
+  `tests/conftest.py`, `tests/README.md`), промпты и паки dev и
+  qa_automation, примеры манифестов; `flow_check` — раскладка и стек по
+  режиму `test-model/test-layout.json` (warn по умолчанию, strict, битый
+  файл — ошибка), unit без TC-ID; `factory_init` — smoke в `tests/unit/`,
+  режим strict/warn по факту тестов проекта; файл режима — защищенный путь;
+  тесты фабрики перенесены в `tests/unit/`, фабрика — strict; TC-J66-001…009.
+- **Открыто:** миграция проектов отдельными PR (до нее у них warn):
+  child_bot — ~25 тестов из корня в `tests/integration/` (или `tests/unit/`
+  для тестов dev); ekotov-wiki — 3 теста из корня, `e2e/` → `tests/web/e2e/`,
+  `REPORT-*.md` из корня `tests/` — вне зоны qa_automation (перенос в
+  `test-model/` или отчеты в `tests/README.md`); auto-school —
+  `test_container_contract.py` из корня. После миграции — `mode: strict`.
+  Строка AGENTS.md «Автотесты (`tests/**`)» в таблице роутинга ревью —
+  защищенная зона, правка по согласию Заказчика (J65.11).

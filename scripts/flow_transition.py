@@ -111,7 +111,8 @@ EXTERNAL_UNKNOWN = "UNKNOWN"
 
 # Защищенные пути конвейера (Флоу 4, J3 pm_bounds_check).
 PROTECTED_PATHS = ("openspec/", "contracts/", "AGENTS.md", "agents/README.md",
-                   "agents/roles.json")  # J65.1: реестр ролей — политика зон
+                   "agents/roles.json",  # J65.1: реестр ролей — политика зон
+                   "test-model/test-layout.json")  # J66: строгость раскладки
 
 # Формат зависимостей в строке задачи tasks.md: «(после 1.1, 1.2)» / «depends: 1.1».
 DEPS_RE = re.compile(
