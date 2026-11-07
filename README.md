@@ -390,7 +390,7 @@ openspec/specs (правила)  ──►  contracts (вход/выход эт�
 - **Раскладка тестов** (спека qa-pipeline): `tests/unit/` — dev,
   `tests/api/`, `tests/web/` (сьют стенда — `tests/web/e2e/`),
   `tests/integration/` — qa_automation; плюс `tests/smoke_cross/` и
-  `tests/archive/`. TC-ID в docstring обязателен для приемочных уровней.
+  `tests/archive/`. TC-ID в docstring обязателен везде, кроме `tests/unit/`.
   `flow_check` проверяет раскладку и стек уровня (в unit и integration нет
   `requests` и `playwright`) в режиме проекта `test-model/test-layout.json`:
   `warn` (по умолчанию) или `strict`.

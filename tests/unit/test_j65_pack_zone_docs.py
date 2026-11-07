@@ -12,7 +12,10 @@ gen_role_docs.py теперь рендерит блок между маркер�
                  совпадает с политикой (glob) и normalize_zone (префикс)
   TC-J65-PZ-002  пример PI_ZONE_WRITE в README пака — префикс-форма
                  политики с <id> → C123
-  TC-J65-PZ-003  паки без политики (debug, auditor) не генерируются
+  TC-J65-PZ-003  паки без политики (debug, auditor) не генерируются;
+                 плейсхолдер генератора = role_zone_policy.CHANGE_ID
+  TC-J65-PZ-004  пример в двойных кавычках не трогается; пак с политикой без
+                 маркеров — ошибка с именем файла (rc 2)
 """
 from __future__ import annotations
 
@@ -25,6 +28,7 @@ sys.path.insert(0, str(FACTORY / "scripts"))
 
 import gen_role_docs as gen  # noqa: E402
 import package_runner as pr  # noqa: E402
+import role_zone_policy as rzp  # noqa: E402
 
 ROLES = gen._roles()
 
@@ -41,17 +45,26 @@ def test_pack_zone_blocks_match_policy():
         glob = re.search(r"манифест \(glob-форма\):\s*(\S+)", block).group(1)
         pref = re.search(r"env PI_ZONE_WRITE \(префикс\):\s*(\S+)", block).group(1)
         assert glob.split(":") == list(role["zones"]), path
-        assert set(pref.split(":")) == {pr.normalize_zone(z) for z in role["zones"]}, path
+        # то, что раннер прокидывает стадии без zones: policy_zones → normalize
+        runner = []
+        for z in pr.policy_zones(role["pack"], rzp.CHANGE_ID):
+            n = pr.normalize_zone(z)
+            if n not in runner:
+                runner.append(n)
+        assert pref.split(":") == runner, path
 
 
 def test_pack_examples_use_policy_prefix():
     """TC-J65-PZ-002."""
+    found = 0
     for path, role in gen.pack_targets(ROLES):
         _, prefix = gen.pack_zone_forms(role)
         want = prefix.replace("<id>", gen.EXAMPLE_ID)
         for value in re.findall(r"PI_ZONE_WRITE='([^']*)'",
                                 path.read_text(encoding="utf-8")):
             assert value == want, path
+            found += 1
+    assert found >= len(gen.pack_targets(ROLES)) - 1   # regress-runner — без примера
 
 
 def test_packs_without_policy_untouched():
@@ -61,3 +74,20 @@ def test_packs_without_policy_untouched():
     for pack in ("debug", "auditor"):
         text = (gen.PACKS / pack / "README.md").read_text(encoding="utf-8")
         assert "roles:pack-zone" not in text
+    assert gen.CHANGE_ID_PLACEHOLDER == rzp.CHANGE_ID
+
+
+def test_double_quotes_and_missing_markers(tmp_path, monkeypatch, capsys):
+    """TC-J65-PZ-004."""
+    role = next(r for _, r in gen.pack_targets(ROLES) if r["pack"] == "dev")
+    text = 'PI_ZONE_WRITE="зона1:зона2" pi ...\n'
+    assert gen.apply_pack_example(text, role) == text
+    packs = tmp_path / "packs"
+    (packs / "dev").mkdir(parents=True)
+    (packs / "dev" / "README.md").write_text("# dev\n", encoding="utf-8")
+    monkeypatch.setattr(gen, "PACKS", packs)
+    monkeypatch.setattr(gen, "FACTORY", tmp_path)
+    monkeypatch.setattr(gen, "TARGETS", {})
+    monkeypatch.setattr(gen, "_roles", lambda: [role])
+    assert gen.main(["--check"]) == 2
+    assert "packs/dev/README.md" in capsys.readouterr().err

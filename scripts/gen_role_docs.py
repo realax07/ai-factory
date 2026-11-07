@@ -98,13 +98,25 @@ RENDER = {"zones": render_zones, "packs": render_packs}
 # плейсхолдер <id> → C123 (имя change-пакета в примерах паков).
 PACK_ZONE = "pack-zone"
 EXAMPLE_ID = "C123"
+# Плейсхолдер change-id в зонах реестра (= role_zone_policy.CHANGE_ID; паритет
+# держит тест TC-J65-PZ-003).
+CHANGE_ID_PLACEHOLDER = "<id>"
+# Только одинарные кавычки: пример-шаблон в двойных кавычках
+# (`PI_ZONE_WRITE="зона1:зона2"` в README regress-runner) не трогается.
 _EXAMPLE_ENV_RE = re.compile(r"PI_ZONE_WRITE='[^'\n]*'")
+_runner = None
 
 
 def _normalize_zone(zone: str) -> str:
-    sys.path.insert(0, str(FACTORY / "scripts"))
-    import package_runner  # noqa: E402  (одна нормализация с раннером)
-    return package_runner.normalize_zone(zone)
+    """Нормализация раннера (одна реализация); package_runner грузится один раз."""
+    global _runner
+    if _runner is None:
+        scripts = str(FACTORY / "scripts")
+        if scripts not in sys.path:
+            sys.path.insert(0, scripts)
+        import package_runner  # noqa: E402
+        _runner = package_runner
+    return _runner.normalize_zone(zone)
 
 
 def pack_zone_forms(role: dict) -> tuple[str, str]:
@@ -126,20 +138,20 @@ def render_pack_zone(role: dict) -> str:
 
 
 def apply_pack_example(text: str, role: dict) -> str:
+    """Каждый пример `PI_ZONE_WRITE='…'` в README пака → префикс-форма
+    политики. Суженный вручную пример будет перезаписан: сужение задается
+    в манифесте (`zones:`) или env при вызове, не в README."""
     _, prefix_form = pack_zone_forms(role)
     value = prefix_form.replace(CHANGE_ID_PLACEHOLDER, EXAMPLE_ID)
     return _EXAMPLE_ENV_RE.sub(f"PI_ZONE_WRITE='{value}'", text)
 
 
-CHANGE_ID_PLACEHOLDER = "<id>"
-
-
 def pack_targets(roles: list[dict]) -> list[tuple[Path, dict]]:
     """README паков с политикой зон (у debug/auditor политики нет — их
-    README не генерируется, развилка J64.11)."""
+    README не генерируется, развилка J64.11). README пака с политикой
+    обязан существовать — его отсутствие поднимается в main как ошибка."""
     return [(PACKS / r["pack"] / "README.md", r) for r in roles
-            if r.get("pack") and r.get("zones")
-            and (PACKS / r["pack"] / "README.md").is_file()]
+            if r.get("pack") and r.get("zones")]
 
 
 def apply(text: str, name: str, block: str) -> str:
@@ -165,8 +177,16 @@ def main(argv: list[str] | None = None) -> int:
                  apply(t, PACK_ZONE, render_pack_zone(r)), r))
              for path, role in pack_targets(roles)]
     for path, render in jobs:
-        cur = path.read_text(encoding="utf-8")
-        new = render(cur)
+        rel = path.relative_to(FACTORY)
+        try:
+            cur = path.read_text(encoding="utf-8")
+            new = render(cur)
+        except OSError as exc:
+            print(f"gen_role_docs: {rel}: не читается ({exc})", file=sys.stderr)
+            return 2
+        except ValueError as exc:
+            print(f"gen_role_docs: {rel}: {exc}", file=sys.stderr)
+            return 2
         if new != cur:
             stale.append(str(path.relative_to(FACTORY)))
             if not args.check:

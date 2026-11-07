@@ -28,7 +28,7 @@ env PI_ZONE_WRITE (префикс): openspec/changes/<id>/tasks.md:backend:front
 ```
 <!-- roles:pack-zone:end -->
 
-Обе строки задают ОДНУ зону: runner нормализует glob-хвосты зон манифеста в префикс-форму guard'а (`normalize_zone`, J61 — guard матчит зоны префиксом, не glob'ом). В env `PI_ZONE_WRITE` — префикс-форма (то, что прокидывает runner); в манифесте пакета (`stage.zones`) — glob-форма, как в гайде docs/guides/pipeline-manifest.md.
+Обе строки — одна зона политики (у масок внутри пути — `code-reviews/<id>/review-*.md`, `test-model/bugs/*` — префикс guard'а шире зоны: точную границу держит сверка диффа `session_check` на finish): runner нормализует glob-хвосты зон манифеста в префикс-форму guard'а (`normalize_zone`, J61 — guard матчит зоны префиксом, не glob'ом). В env `PI_ZONE_WRITE` — префикс-форма (то, что прокидывает runner); в манифесте пакета (`stage.zones`) — glob-форма, как в гайде docs/guides/pipeline-manifest.md.
 
 Зона политики ворот: продуктовое дерево (`backend/`, `frontend/`,
 `services/`, `src/`), unit-тесты `tests/unit/` (J66; приемочные
@@ -36,7 +36,7 @@ env PI_ZONE_WRITE (префикс): openspec/changes/<id>/tasks.md:backend:front
 баг-репорт `test-model/bugs/` (Флоу 2), код фабрики `scripts/`, `plugins/`,
 `contracts/`, `deploy/`. `requirements.md`, спеки (`openspec/**/spec.md`,
 design.md, proposal.md) — вне зоны. Вызывающий сужает env под фактические
-файлы задачи (явные `zones:` манифеста только сужают политику) (или правит env под конкретный пакет). Все остальное —
+файлы задачи или правит env под конкретный пакет (явные `zones:` манифеста только сужают политику). Все остальное —
 отказ zone-guard (`{ block: true }` на `write`/`edit`); `git push` блокируется
 (коммиты — локально в делегированную ветку `feature/<change-id>-<NN>`, push
 main запрещен, merge через PR делает ПМ).

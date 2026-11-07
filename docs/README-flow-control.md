@@ -329,8 +329,8 @@ expiration не истек. Непустая строка без записи ж
 Спека qa-pipeline: `tests/unit/` — unit-тесты dev; `tests/api/` (pytest +
 requests), `tests/web/` (pytest + playwright, сьют стенда — `tests/web/e2e/`),
 `tests/integration/` (приемка через сервисный слой без HTTP и браузера) —
-qa_automation; `tests/smoke_cross/`, `tests/archive/`. TC-ID — только у
-приемочных уровней. Зоны — `agents/roles.json`.
+qa_automation; `tests/smoke_cross/`, `tests/archive/`. TC-ID — везде, кроме
+`tests/unit/`. Зоны — `agents/roles.json`.
 
 `flow_check` сверяет: тест вне этих каталогов (и в корне `tests/`) и стек
 уровня (`requests`/`playwright` в unit и integration, `playwright` в api;
