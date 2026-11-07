@@ -12,7 +12,7 @@
 - **Прод ekotov-wiki:** systemd-сервис `ekotov-wiki`, uvicorn 127.0.0.1:8377 (пользователь wiki), nginx TLS :10443 (self-signed CN=IP), БД `/var/lib/ekotov-wiki/wiki.db`. Деплой: `deploy/deploy.sh` (EXPECTED_COMMIT — клон на целевом коммите), бэкапы `/var/backups/ekotov-wiki/`.
 - **Локальные стенды:** порт 8080 (dev/PM-стенд), env: `EKOTOV_WIKI_DB_PATH`, `EKOTOV_WIKI_AVATARS_DIR` (тесты) + `AVATARS_DIR` (приложение) — задавать ОБА; после seed ОБЯЗАТЕЛЬНО `python -m app.migrate_r4` (нужен SECRET_KEY), иначе роль wife=NULL.
 - **Реестр сессий:** `~/.hermes/state/active_sessions.json` — вне git, оперативный источник; путь в тесты передавать параметром, реальный в тестах не трогать.
-- **Сессии Telegram:** главный чат — сессия с title `main` (возврат `/resume main`); вотчдог `scripts/session_watchdog.py` (крон */2, no_agent) возвращает тайтл и предупреждает о dropped-делегациях.
+- **Сессии Telegram:** главный чат — сессия с title `main` (возврат `/resume main`); вотчдог `scripts/session_watchdog.py` (крон Hermes */5 через обертку-делегат, no_agent; политика 2026-10-23) возвращает тайтл и предупреждает о dropped-делегациях.
 - **Hermes-баг #92859 (наш репорт приложен):** delegate_task, отправленный ровно на границе ротации сессии чата, поглощается чатом (ТЗ становится первым сообщением новой сессии), результат — delivery_state=dropped. Правило: не диспатчить делегацию в ходу чужого входящего/steer-сообщения; результат dropped читается из `state.db → async_delegations.result_json`.
 
 ## 2. Модели и конфигурация

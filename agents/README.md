@@ -62,7 +62,7 @@
 **Зачем:** превращает требования в формальный контракт поведения (спека OpenSpec) и план реализации (tasks.md). Здесь требования становятся тестируемыми: каждый Requirement получает Scenario GIVEN/WHEN/THEN.
 
 - **Вход:** УТВЕРЖДЕННЫЙ `requirements.md` (+ answers-артефакты всех раундов).
-- **Выход:** `openspec/changes/<id>/` (proposal, дельты specs, design, tasks) + `sdd.md` (стек, API-контракты, модель данных — служебные эндпоинты обязательны) + **impact-карта (J58)**: `impact.md` в пакете (шаблон `openspec/changes/_template/impact.md`) или секция «## Impact» в design.md/proposal.md — затронутые сервисы / контракты / статика (static_v?) / deploy-матрица + RUNBOOK / миграции / тесты; пишется при create_change, до dev-задач.
+- **Выход:** `openspec/changes/<id>/` (proposal, дельты specs, design, tasks) + `sdd.md` (стек, API-контракты, модель данных — служебные эндпоинты обязательны) + **impact-карта (J58)**: `impact.md` в пакете (шаблон `templates/impact.template.md`) или секция «## Impact» в design.md/proposal.md — затронутые сервисы / контракты / статика (static_v?) / deploy-матрица + RUNBOOK / миграции / тесты; пишется при create_change, до dev-задач.
 - **Ключевые границы:** спека описывает наблюдаемое поведение, не реализацию; не начинает без УТВЕРЖДЕНО и без плана пакета (J41 — PLAN-файл пишет ПМ); не трогает чужие change-пакеты.
 - **Скиллы:** `openspec-authoring`, `service-decomposition` (границы сервисов, владение схемой, сквозные процессы, швы делегаций — при нарезке пакета), `requirements-elaboration` (трактовка ТЗ), `factory-flow`.
 - **Передает:** dev (задачи), qa_case_author (спека как прямой источник кейсов — remove-qa-checklist). После реализации — архивация дельт в master-spec (контракт 7).

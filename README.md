@@ -129,19 +129,29 @@ git clone https://github.com/realax07/ai-factory ~/ai-factory && cd ~/ai-factory
 python3 scripts/factory_bootstrap.py
 ```
 
-Bootstrap проверяет окружение (python, git, node/npx, pytest), создает
-каталог состояния движка `~/.hermes/state/` с файлом режима `flow_mode.json`
-(реестр сессий появится там при первой резервации), ставит кроны вотчдогов и
-прогоняет полный сьют фабрики как приемку. Режим ворот после установки — **shadow**
-(решения считаются, но не блокируют); боевой режим включает Заказчик:
-`python3 scripts/flow_mode.py set enforcing --by customer`. Секреты не
-переносятся — кладутся вручную в `~/.hermes/.env`.
+Bootstrap проверяет окружение (python, git, node/npm, OpenSpec CLI, pytest в
+том же python; нет `pi` — предупреждение), создает каталог состояния движка
+(`AF_STATE_DIR`, по умолчанию `~/.hermes/state/`) с файлом режима
+`flow_mode.json` (реестр сессий появится там при первой резервации), ставит
+zone-guard исполнителя Pi (см. «Шаг 2») и — если на машине есть Hermes — обертки
+кронов вотчдогов, затем прогоняет полный сьют фабрики как приемку. Системный
+crontab bootstrap не правит. Режим ворот нового файла — **shadow** (решения
+считаются, но не блокируют), повторный запуск режим не меняет; боевой режим
+включает Заказчик: `python3 scripts/flow_mode.py set enforcing --by customer`.
+Секреты не переносятся — ключи кладутся вручную (`~/.hermes/.env`,
+`~/.pi/agent/models.json`). Флаги: `--skip-pi`, `--skip-cron`, `--skip-tests`,
+`--flow-mode`.
 
 Пути машины не прошиты в коде: каждый задается переменной окружения
 (`AF_STATE_DIR`, `HERMES_HOME`, `AI_FACTORY_HOME`, `AF_PROJECTS_ROOT`,
 `PI_AGENT_DIR`). Текущие значения: `python3 scripts/factory_paths.py`.
 
 ### Шаг 2. Исполнитель Pi
+
+Сам Pi ставится через npm (таблица требований). Zone-guard —
+`~/.pi/agent/extensions/zone-guard.ts` — ставит bootstrap (шаг 1); если там
+уже лежит отличающаяся копия, bootstrap ее не перезаписывает и предупреждает.
+Вручную:
 
 ```bash
 mkdir -p ~/.pi/agent/extensions
@@ -168,11 +178,12 @@ python3 ~/ai-factory/scripts/factory_init.py --target /path/to/repo --name "My P
 
 Создает структуру каталогов (openspec, test-model, docs…), копирует ворота,
 CI-workflow, контракты, шаблоны, промпты ролей и скиллы, `CONSTITUTION.md` и
-скелет глоссария, smoke-тест `tests/unit/test_smoke.py` и режим раскладки
+скелет глоссария, шаблон impact-карты `templates/impact.template.md`,
+smoke-тест `tests/unit/test_smoke.py` и режим раскладки
 тестов `test-model/test-layout.json` (`strict`, если тестов вне раскладки нет,
-иначе `warn`), затем проверяет, что `flow_check` на пустом проекте проходит. Заодно ставит плагин flow-enforcer в `~/.hermes/plugins/`
-(`--skip-plugin` — пропустить, если оркестратор не Hermes) и обертки кронов в
-`~/.hermes/scripts/` (`--skip-crons`).
+иначе `warn`), затем проверяет, что `flow_check` на пустом проекте проходит. Если на машине есть Hermes, заодно ставит плагин flow-enforcer в
+`~/.hermes/plugins/` (`--skip-plugin`) и обертки кронов в `~/.hermes/scripts/`
+(`--skip-crons`); без Hermes оба шага пропускаются сами.
 
 Повторный запуск без `--force` докопирует только недостающее. `--force`
 перезаписывает копируемые файлы — ворота, `flow.yml`, промпты `agents/`, а

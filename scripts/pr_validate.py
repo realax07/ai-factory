@@ -728,7 +728,7 @@ def impact_map_problem(repo: Path, change_id: str) -> str | None:
     return (
         f"openspec/changes/{change_id}/impact.md: impact-карта отсутствует "
         "(J58: обязательный артефакт СА — создай impact.md по шаблону "
-        "openspec/changes/_template/impact.md или добавь секцию "
+        "templates/impact.template.md или добавь секцию "
         "«## Impact» в design.md/proposal.md: затронутые сервисы / контракты / "
         "статика (static_v?) / deploy-матрица + RUNBOOK / миграции / тесты)"
     )

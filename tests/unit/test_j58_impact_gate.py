@@ -18,7 +18,8 @@
   TC-J58-016       парсер диффа: PR_CHANGED_FILES со статусами и без
   TC-J58-017       статус-фильтр правила: IR-02 не срабатывает на 'M'
   TC-J58-018       фабричный impact_rules.json валиден и содержит 4 правила
-  TC-J58-019       factory_init ставит шаблон openspec/changes/_template/impact.md
+  TC-J58-019       factory_init ставит шаблон templates/impact.template.md
+                   (не под openspec/changes/ — там его ломали validate и flow_check)
   TC-J58-020       change-PR без пакета: карта не дублируется (пакет ловит check_change)
   TC-J58-021       exists-guard: фабричный PR (contracts/ без openapi.json в
                    HEAD, services/, frontend/, migrate_) — правила молчат
@@ -306,6 +307,7 @@ def test_j58_factory_init_impact_template(tmp_path):
     install_impact_template(target)
     dst = target / IMPACT_TEMPLATE_REL
     assert dst.is_file()
+    assert not IMPACT_TEMPLATE_REL.startswith("openspec/")
     text = dst.read_text(encoding="utf-8")
     for section in ("Затронутые сервисы", "Контракты", "Статика",
                     "Deploy-матрица", "Миграции", "Тесты"):
