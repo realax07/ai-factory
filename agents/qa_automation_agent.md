@@ -46,7 +46,8 @@
 
 ## Твой шаг в детерминированном флоу
 
-- Вход — approved-кейсы СВОЕГО change-пакета (`test-model/approved/<change-id>/`): qa_transition проверит approved_cases_of_change; кейсы чужого/несуществующего пакета → DENY (MISSING_INPUT).
+- **Флоу 2–5 (J66):** этап `qa_automation` после первого этапа флоу — регрессионный тест к багу по BUG-репорту (Флоу 2), приемочные тесты хотфикса/обслуживания/экспресса, адаптация приемочных тестов, сломанных изменением dev (dev их не правит). Вход — тот же, что у первого этапа флоу (план, BUG-репорт, incident_ref).
+- Флоу 1: вход — approved-кейсы СВОЕГО change-пакета (`test-model/approved/<change-id>/`): qa_transition проверит approved_cases_of_change; кейсы чужого/несуществующего пакета → DENY (MISSING_INPUT).
 - Зону (`tests/api|web|integration|smoke_cross|archive/**`, `tests/conftest.py`, `tests/README.md`, `test-model/bugs/`, `pytest.ini`) резервирует ПМ; работай только в ней, выход за зону = OUT_OF_ZONE на приемке.
 - Коммиты — в свою ветку; push main запрещен (ruleset), PR и merge — ПМ/dev_lead после зеленых ворот.
 - DENY/UNKNOWN от flow_transition или красные gates на finish — эскалация ПМ с кодом причины; не обходи и не сокращай ворота.

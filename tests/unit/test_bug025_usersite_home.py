@@ -8,7 +8,7 @@ Python вычисляет user-site из HOME, поэтому дочерний `
 18 фейлов. В CI и на чистой машине user-site не задействован, дефект не
 виден.
 
-Фикс (tests/unit/conftest.py): до подмены HOME реальный user base фиксируется в
+Фикс (tests/conftest.py): до подмены HOME реальный user base фиксируется в
 PYTHONUSERBASE; HOME и HERMES_HOME по-прежнему временные.
 
 Трассировка:
@@ -29,7 +29,7 @@ import sys
 import types
 from pathlib import Path
 
-CONFTEST = Path(__file__).resolve().parent / "conftest.py"
+CONFTEST = Path(__file__).resolve().parents[1] / "conftest.py"  # J66: корневой conftest
 
 
 def _py(code: str) -> str:

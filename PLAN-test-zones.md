@@ -25,6 +25,14 @@
 - `flowctl regress` не меняется: «иное» → весь `tests/` (включая unit и
   integration) — это шире, чем `tests/unit`, и не теряет покрытие src/.
 
+## Развилка из ревью review-001 (2026-11-07)
+
+Во Флоу 2–5 этапа qa_automation не было — жесткая зона dev оставляла
+регрессионный api/web-тест к багу и адаптацию приемочных тестов без
+исполнителя. Решение Заказчика — «Этап qa_automation»: во Флоу 2–5 этап
+`qa_automation` (роль qa_automation) сразу после первого этапа флоу, вход
+тот же (`STAGE_TABLE`, `SEQUENCE_PREREQS` enforcer).
+
 ## Целевая раскладка
 
 | Каталог | Стек | Зона |
@@ -50,7 +58,11 @@
    вне четырех каталогов; импорт `requests`/`playwright` в `tests/unit/`;
    `playwright` в `tests/api/`; web-файл без `playwright`; TC-трассировка
    не требуется в `tests/unit/`. warn — FLOW-WARNING, strict — FLOW-ERROR.
-   Битый файл настройки — FLOW-ERROR (не молчаливый дефолт).
+   Битый файл настройки — FLOW-ERROR (не молчаливый дефолт). Импорты —
+   разбором `ast` (не регексом). Проверка «web-файл без playwright» снята:
+   web-тесты получают `page` фикстурой из conftest и playwright не
+   импортируют — проверка дала бы ложные срабатывания.
+   Правило контракта 6 «автотесты без кейс-базы» — только приемочные тесты.
 6. **`factory_init`**: smoke нового проекта — `tests/unit/test_smoke.py`;
    `test-model/test-layout.json` ставится `strict`, если в проекте нет
    тестов вне раскладки, иначе `warn` (существующий файл не трогается).
@@ -58,7 +70,11 @@
    (`pm_bounds_check`, `flow_transition`): смягчение strict → warn —
    решение Заказчика.
 8. **Тесты фабрики** → `tests/unit/` (git mv; глубина путей
-   `parents[1]` → `parents[2]`); фабрика — `strict`.
+   `parents[1]` → `parents[2]`); фабрика — `strict`. `tests/conftest.py`
+   остается в корне: pytest вызывает `pytest_sessionstart` только у
+   conftest, загруженных до сбора (корень `tests/`); в `tests/unit/` сторож
+   дерева J64.1 молча отключался (review-001 #1). Цена — правка корневого
+   conftest фабрики вне зоны dev (зона qa_automation).
 9. Тесты TC-J66-*; бэклог: резолюция J66, MAP.
 
 ## Вне объема

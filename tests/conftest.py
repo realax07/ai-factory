@@ -100,7 +100,7 @@ def isolated_home(tmp_path_factory, monkeypatch):
     yield home
 
 
-FACTORY_ROOT = Path(__file__).resolve().parents[2]
+FACTORY_ROOT = Path(__file__).resolve().parent.parent
 
 
 def _tree_status() -> set[str] | None:

@@ -86,7 +86,8 @@ def test_policy_from_registry():
     assert rzp.ROLE_ZONE_POLICY["qa_automation"] == (
         "tests/api/**", "tests/web/**", "tests/integration/**",
         "tests/smoke_cross/**", "tests/archive/**", "tests/conftest.py",
-        "tests/README.md", "test-model/bugs/*", "pytest.ini")
+        "tests/README.md", "tests/__init__.py", "tests/fixtures/**",
+        "test-model/bugs/*", "pytest.ini")
     assert "tests/unit/**" in rzp.ROLE_ZONE_POLICY["dev"]
     assert "tests/**" not in rzp.ROLE_ZONE_POLICY["dev"]
     assert set(rzp.EMPTY_POLICY_ROLES) == {

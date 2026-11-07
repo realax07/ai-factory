@@ -40,7 +40,7 @@ import delegate_watchdog as dw  # noqa: E402
 
 # J41: этот файл — тесты САМОГО правила плана релиза. Маркер no_plan_fixture
 # (зарегистрирован в pytest_configure ниже) отключает autouse-фикстуру
-# plan_release_fixture из tests/unit/conftest.py: здесь fixture-репозитории
+# plan_release_fixture из tests/conftest.py: здесь fixture-репозитории
 # строятся БЕЗ PLAN-файла, а планы создаются руками в каждом сценарии
 # (missing / undeclared / valid).
 pytestmark = pytest.mark.no_plan_fixture

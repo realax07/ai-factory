@@ -105,7 +105,7 @@
       "id": "qa_automation",
       "title": "QA: автоматизатор",
       "mode": "auto-edit",
-      "zone_text": "`tests/api/**`, `tests/web/**`, `tests/integration/**`, `tests/smoke_cross/**`, `tests/archive/**`, общие `tests/conftest.py` и `tests/README.md` (J66); `test-model/bugs/`, `pytest.ini` (J64.18), dev-зависимости",
+      "zone_text": "`tests/api/**`, `tests/web/**`, `tests/integration/**`, `tests/smoke_cross/**`, `tests/archive/**`, общие `tests/conftest.py`, `tests/README.md`, `tests/__init__.py`, `tests/fixtures/**` (J66); `test-model/bugs/`, `pytest.ini` (J64.18), dev-зависимости",
       "push": "нет",
       "zones": [
         "tests/api/**",
@@ -115,6 +115,8 @@
         "tests/archive/**",
         "tests/conftest.py",
         "tests/README.md",
+        "tests/__init__.py",
+        "tests/fixtures/**",
         "test-model/bugs/*",
         "pytest.ini"
       ],

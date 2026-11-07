@@ -29,7 +29,7 @@
 | Код-ревьюер | auto-edit | `code-reviews/<change-id>/review-*.md` | нет |
 | QA: автор кейсов | auto-edit | `test-model/new/<change-id>/` | нет |
 | QA: ревьюер кейсов | auto-edit | `test-model/reviews/`, перенос в `test-model/approved/` | нет |
-| QA: автоматизатор | auto-edit | `tests/api/**`, `tests/web/**`, `tests/integration/**`, `tests/smoke_cross/**`, `tests/archive/**`, общие `tests/conftest.py` и `tests/README.md` (J66); `test-model/bugs/`, `pytest.ini` (J64.18), dev-зависимости | нет |
+| QA: автоматизатор | auto-edit | `tests/api/**`, `tests/web/**`, `tests/integration/**`, `tests/smoke_cross/**`, `tests/archive/**`, общие `tests/conftest.py`, `tests/README.md`, `tests/__init__.py`, `tests/fixtures/**` (J66); `test-model/bugs/`, `pytest.ini` (J64.18), dev-зависимости | нет |
 | QA: impact-аналитик | auto-edit | `test-model/impact/<change-id>.md` | нет (роль создается при первом change с MODIFIED-дельтами, H5) |
 | QA: регресс-аналитик | auto-edit | `test-model/regression/manifest.md` | нет (роль создается при первом релизе, G5) |
 | Дизайнер UI | auto-edit | `design/**` проекта | нет (роль создается 2026-09-22 для R2/задачи 2.5, Д-5; мокапы и токены, продукт-код не пишет) |

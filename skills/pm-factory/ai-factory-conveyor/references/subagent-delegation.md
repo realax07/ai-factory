@@ -94,7 +94,7 @@ An external agent attached to the repo (Codex as copilot) is an EXTERNAL delegat
 ## New-project onboarding (factory_init)
 
 - Recipe: clone the empty repo → `python3 ~/ai-factory/scripts/factory_init.py --target <path> --name "<Name>" --skip-plugin` (the flow-enforcer plugin lives on the machine once, per-machine — never per-project) → drop the customer's ТЗ/docs into the root → one init commit → push → CI must be GREEN on the empty project.
-- A fresh empty project needs three things factory_init now supplies (added after a 3rd-project init went red): `openspec/config.yaml` (root marker — without it `openspec validate` errors «No OpenSpec root found»), `tests/test_smoke.py` with TC-BOOTSTRAP-001 in the docstring, and `test-model/regression/_bootstrap/smoke.md` (as-is base satisfying flow_check контракт 6: tests without approved cases require a regression base).
+- A fresh empty project needs three things factory_init now supplies (added after a 3rd-project init went red): `openspec/config.yaml` (root marker — without it `openspec validate` errors «No OpenSpec root found»), `tests/unit/test_smoke.py` with TC-BOOTSTRAP-001 in the docstring (J66; plus `test-model/test-layout.json`, mode strict), and `test-model/regression/_bootstrap/smoke.md` (as-is base satisfying flow_check контракт 6: tests without approved cases require a regression base).
 - The machine's GitHub account has per-repo permissions: a NEW repo under the customer's account gives the runner account READ only — the first push is rejected until the customer adds it as a collaborator (Write). Detect with `gh repo view <repo> --json viewerPermission` before diagnosing anything else.
 
 ## Customer-message interpretation before machine changes

@@ -65,11 +65,27 @@
   файл — ошибка), unit без TC-ID; `factory_init` — smoke в `tests/unit/`,
   режим strict/warn по факту тестов проекта; файл режима — защищенный путь;
   тесты фабрики перенесены в `tests/unit/`, фабрика — strict; TC-J66-001…009.
+- **2026-11-07 — возврат ревью review-001** (2 major, 10 minor), исправлено:
+  `tests/conftest.py` фабрики оставлен в корне (в `tests/unit/` pytest не
+  вызывал `pytest_sessionstart` — сторож дерева J64.1 молча отключался;
+  TC-J66-010); развилка Заказчика по Флоу 2–5 — «Этап qa_automation»: этап
+  после первого этапа флоу с тем же входом (STAGE_TABLE, SEQUENCE_PREREQS
+  enforcer; TC-J66-015); импорты — `ast`; контракт 6 «без кейс-базы» — только
+  приемочные тесты; archive — с TC в спеке; factory_init — разбор flow_check;
+  guard пака qa-automation сужен до `test-model/bugs`; ничьи
+  `tests/__init__.py`, `tests/fixtures/**` — qa_automation; устаревшие
+  тексты в skills и qa_case_reviewer; subject коммита с `[pipeline]`.
+- **Известное ограничение (review-001 #12):** `flowctl regress` по диффу
+  только `backend/` гоняет `tests/api`, только `frontend/` — `tests/web`;
+  unit-тесты dev (`tests/unit/`) в доменный регресс не попадают (дефект не
+  новый, J66 делает его системным). Добавление `tests/unit` к доменам
+  свернет прогон в полный `tests/` (правило дедупа BUG-005) — решать вместе
+  с картой доменов J52; кандидат следующей волны.
 - **Открыто:** миграция проектов отдельными PR (до нее у них warn):
   child_bot — ~25 тестов из корня в `tests/integration/` (или `tests/unit/`
   для тестов dev); ekotov-wiki — 3 теста из корня, `e2e/` → `tests/web/e2e/`,
   `REPORT-*.md` из корня `tests/` — вне зоны qa_automation (перенос в
   `test-model/` или отчеты в `tests/README.md`); auto-school —
-  `test_container_contract.py` из корня. После миграции — `mode: strict`.
+  `test_container_contract.py` из корня. После миграции — `mode: strict` (правка защищенного пути — `[pipeline]` в subject коммита).
   Строка AGENTS.md «Автотесты (`tests/**`)» в таблице роутинга ревью —
   защищенная зона, правка по согласию Заказчика (J65.11).

@@ -55,6 +55,7 @@ import sys
 from pathlib import Path
 
 import factory_paths as fp  # noqa: E402  (J64.5: пути машины — только оттуда)
+import flow_check as _fc  # noqa: E402  (J66: раскладка тестов — одна реализация)
 
 FACTORY = Path(__file__).resolve().parent.parent
 PLUGIN_NAME = "flow-enforcer"
@@ -454,22 +455,16 @@ def install_impact_template(target: Path, force: bool = False) -> None:
     print(f"  {IMPACT_TEMPLATE_REL} создан (шаблон impact-карты СА, J58)")
 
 
-TEST_LAYOUT_REL = "test-model/test-layout.json"
-# Каталоги раскладки — паритет с flow_check.TEST_LAYOUT_DIRS (тест J66).
-TEST_LAYOUT_DIRS = ("unit", "api", "web", "integration", "smoke_cross", "archive")
+TEST_LAYOUT_REL = _fc.TEST_LAYOUT_REL
 
 
 def misplaced_tests(target: Path) -> list[str]:
-    """Тестовые файлы проекта вне раскладки tests/<уровень>/ (J66)."""
+    """Нарушения раскладки и стека уровня тестов проекта (J66) — тот же
+    разбор, что у flow_check (layout_findings)."""
     tests = target / "tests"
     if not tests.is_dir():
         return []
-    out = []
-    for tf in sorted(tests.rglob("test_*.py")):
-        parts = tf.relative_to(tests).parts
-        if not (len(parts) >= 2 and parts[0] in TEST_LAYOUT_DIRS):
-            out.append(str(tf.relative_to(target)))
-    return out
+    return _fc.layout_findings(target, list(tests.rglob("test_*.py")))
 
 
 def install_test_layout(target: Path) -> None:
@@ -486,7 +481,7 @@ def install_test_layout(target: Path) -> None:
     dst.parent.mkdir(parents=True, exist_ok=True)
     dst.write_text('{\n  "schema": "test-layout/1",\n  "mode": "%s"\n}\n' % mode,
                    encoding="utf-8")
-    note = (f" ({len(misplaced)} тест(ов) вне раскладки — мигрируй и "
+    note = (f" ({len(misplaced)} нарушени(й) раскладки — мигрируй и "
             f"переключи на strict)" if misplaced else "")
     print(f"  {TEST_LAYOUT_REL} создан: mode={mode}{note}")
 

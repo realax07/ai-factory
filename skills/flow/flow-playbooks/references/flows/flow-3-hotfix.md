@@ -1,5 +1,5 @@
 # Флоу 3 — хотфикс (прод в огне)
 
-- emergency_stabilize (dev/devops) → последующий PR-цикл → accept_review → merge → deploy_rollback при нужде (внешние полномочия).
+- emergency_stabilize (dev/devops) → [qa_automation по необходимости, J66] → последующий PR-цикл → accept_review → merge → deploy_rollback при нужде (внешние полномочия).
 - Долг: хотфикс без полного ревью помечается (STALE_EVIDENCE при незакрытии) — долг закрывается нормальным ревью в течение следующего рабочего дня.
 - Прод-тома: откат = compose stop (не down -v), rollback предыдущим тегом.

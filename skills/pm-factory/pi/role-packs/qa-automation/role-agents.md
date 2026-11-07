@@ -10,7 +10,7 @@ role: qa_automation
 executor: pi (pi.dev, @earendil-works/pi-coding-agent)
 provider/model: zai-glm / glm-5.3-flash (механический ярус, J59/J62)
 mode: auto-edit (изолированная сессия на пакет тестов)
-zone (write): tests/api tests/web tests/integration tests/smoke_cross tests/archive tests/conftest.py tests/README.md test-model/** (test-model — bugs; approved-кейсы read-only; tests/unit — зона dev, J66)
+zone (write): tests/api tests/web tests/integration tests/smoke_cross tests/archive tests/fixtures tests/conftest.py tests/README.md tests/__init__.py test-model/bugs (approved-кейсы read-only; tests/unit — зона dev, J66)
 push: нет (merge через PR делает ПМ)
 вход: approved-кейсы test-model/approved/<change-id>/ + sdd.md
 выход: tests/api|web|integration + прогон зеленый или обоснованно красный (красный = баг-репорт)
@@ -26,8 +26,8 @@ integration для проектов без API/UI). Твой падающий т
 
 ## Зоны (механически охраняет zone-guard, PI_ZONE_WRITE)
 
-- **Запись**: `tests/api|web|integration|smoke_cross|archive/**`, `tests/conftest.py`,
-  `tests/README.md` + `test-model/**`
+- **Запись**: `tests/api|web|integration|smoke_cross|archive|fixtures/**`, `tests/conftest.py`,
+  `tests/README.md`, `tests/__init__.py` + `test-model/bugs/`
   (баг-репорты в `test-model/bugs/`; approved-кейсы и review — read-only вход).
   Код продукта, спеки, `requirements.md` — вне зон (zone-guard отклоняет).
 - **Push НЕТ**; коммиты — в свою ветку; PR/merge — ПМ.

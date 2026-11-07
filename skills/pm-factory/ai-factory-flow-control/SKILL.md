@@ -264,8 +264,10 @@ beats a visible chain of rejected attempts.
 
 ## Pitfalls
 
-- Every test file in ai-factory `tests/**` needs a `TC-…` id in EACH test's
-  docstring (flow_check rule 6 — CI job `flow` fails «тесты без TC-трассировки»
+- Every acceptance test file (`tests/api|web|integration|smoke_cross|archive/`)
+  needs a `TC-…` id in EACH test's docstring; `tests/unit/` (dev, incl. all
+  factory tests since J66) is exempt, factory practice still puts TC ids there
+  (flow_check rule 6 — CI job `flow` fails «тесты без TC-трассировки»
   otherwise). Batch-inserting TC labels by script: the naive sed-class rewrite
   corrupts multiline signatures (docstring inside a wrapped def line) — verify
   with `ast.parse` and pytest collection before pushing.

@@ -433,9 +433,13 @@ class TestAppendOnlyAndIsolation:
                 "merge_task", "qa_cases", "qa_review", "qa_impact_analysis",
                 "qa_automation", "design_validation", "archive_change",
                 "release"),
-            2: ("bug_fix", "code_review", "accept_review", "merge_task"),
-            4: ("chore_task", "code_review", "accept_review", "merge_task"),
-            5: ("express_task", "express_close"),
+            # J66 (решение Заказчика 2026-11-07): этап qa_automation во
+            # Флоу 2/4/5 — после первого этапа флоу; J48-этапов там нет.
+            2: ("bug_fix", "qa_automation", "code_review", "accept_review",
+                "merge_task"),
+            4: ("chore_task", "qa_automation", "code_review", "accept_review",
+                "merge_task"),
+            5: ("express_task", "qa_automation", "express_close"),
         }
         for flow, actions in expected.items():
             got = tuple(s.action for s in ft.STAGE_TABLE[flow])

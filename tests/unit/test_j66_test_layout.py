@@ -21,10 +21,22 @@
   TC-J66-008  test-layout.json — защищенный путь (pm_bounds_check,
               flow_transition)
   TC-J66-009  фабрика сама по раскладке: strict, тестов вне tests/unit/ нет
+  TC-J66-010  сторож дерева J64.1 активен при `pytest tests/` (корневой
+              conftest — sessionstart вызван; регресс review-001 #1)
+  TC-J66-011  разбор импортов через ast: `import os, requests`, `as`,
+              `from … import`, вложенные каталоги, importorskip/importlib;
+              текст в строках — не импорт
+  TC-J66-012  только unit-тесты без кейс-базы — не нарушение контракта 6
+  TC-J66-013  зоны по поведению narrow_zones: dev ↛ tests/api, qa ↛ tests/unit
+  TC-J66-014  коммит с test-layout.json без [pipeline] — нарушение J3
+  TC-J66-015  Флоу 2–5: этап qa_automation (роль qa_automation) сразу после
+              первого этапа флоу, его вход — вход первого этапа; enforcer —
+              тот же порядок
 """
 from __future__ import annotations
 
 import json
+import subprocess
 import sys
 from pathlib import Path
 
@@ -37,6 +49,7 @@ import factory_init as fi  # noqa: E402
 import flow_check as fc  # noqa: E402
 import flow_transition as ft  # noqa: E402
 import pm_bounds_check as pbc  # noqa: E402
+import role_zone_policy as rzp  # noqa: E402
 
 
 def make_repo(tmp_path: Path, files: dict[str, str], mode: str | None = None,
@@ -174,10 +187,20 @@ def test_broken_layout_file_fails(tmp_path, capsys):
 
 
 class TestFactoryInit:
-    def test_dirs_parity_with_flow_check(self):
-        """TC-J66-006: каталоги раскладки factory_init = flow_check."""
-        assert fi.TEST_LAYOUT_DIRS == fc.TEST_LAYOUT_DIRS
+    def test_single_implementation(self):
+        """TC-J66-006: factory_init использует разбор flow_check (одна
+        реализация раскладки и стека)."""
         assert fi.TEST_LAYOUT_REL == fc.TEST_LAYOUT_REL
+        assert fi._fc is fc
+
+    def test_stack_violation_keeps_warn(self, tmp_path):
+        """TC-J66-006: тест на месте, но с запрещенным импортом — warn."""
+        (tmp_path / "tests" / "unit").mkdir(parents=True)
+        (tmp_path / "tests" / "unit" / "test_n.py").write_text(
+            "import requests\n", encoding="utf-8")
+        fi.install_test_layout(tmp_path)
+        data = json.loads((tmp_path / fi.TEST_LAYOUT_REL).read_text(encoding="utf-8"))
+        assert data["mode"] == "warn"
 
     def test_new_project_strict(self, tmp_path):
         """TC-J66-006: тестов вне раскладки нет — strict."""
@@ -191,7 +214,8 @@ class TestFactoryInit:
         """TC-J66-006: легаси-тесты в корне tests/ — warn."""
         (tmp_path / "tests").mkdir()
         (tmp_path / "tests" / "test_old.py").write_text("", encoding="utf-8")
-        assert fi.misplaced_tests(tmp_path) == ["tests/test_old.py"]
+        found = fi.misplaced_tests(tmp_path)
+        assert len(found) == 1 and found[0].startswith("tests/test_old.py: тест вне раскладки")
         fi.install_test_layout(tmp_path)
         data = json.loads((tmp_path / fi.TEST_LAYOUT_REL).read_text(encoding="utf-8"))
         assert data["mode"] == "warn"
@@ -232,3 +256,103 @@ def test_factory_follows_layout():
     assert fc.layout_mode_of(FACTORY) == ("strict", None)
     files = list((FACTORY / "tests").rglob("test_*.py"))
     assert files and fc.layout_findings(FACTORY, files) == []
+
+
+def test_tree_guard_active(request):
+    """TC-J66-010: хук sessionstart корневого conftest отработал — сторож
+    FACTORY-TREE-LEAK видит снимок дерева при любом запуске сьюта."""
+    assert (FACTORY / "tests" / "conftest.py").is_file()
+    assert not (FACTORY / "tests" / "unit" / "conftest.py").exists()
+    assert hasattr(request.config, "_factory_tree_before")
+
+
+class TestImportParsing:
+    @pytest.mark.parametrize("src", [
+        "import os, requests",
+        "import requests as r",
+        "from requests.adapters import HTTPAdapter",
+        "def f():\n    import requests\n",
+        "import pytest\nrequests = pytest.importorskip('requests')",
+        "import importlib\nimportlib.import_module('requests.sessions')",
+    ])
+    def test_detected(self, tmp_path, capsys, src):
+        """TC-J66-011: формы импорта requests в unit — нарушение."""
+        repo = make_repo(tmp_path, {"tests/unit/deep/er/test_s.py": src + "\n" + TC_TEST},
+                         mode="strict")
+        rc, out = run_check(repo, capsys)
+        assert rc == 1 and "импорт requests в tests/unit/" in out
+
+    def test_text_in_string_is_not_import(self, tmp_path, capsys):
+        """TC-J66-011: строка «import requests» в docstring — не импорт."""
+        src = '"""Пример:\nimport requests\n"""\n' + TC_TEST
+        repo = make_repo(tmp_path, {"tests/unit/test_s.py": src}, mode="strict")
+        rc, out = run_check(repo, capsys)
+        assert rc == 0, out
+
+
+def test_unit_only_needs_no_case_base(tmp_path, capsys):
+    """TC-J66-012: проект только с unit-тестами и без кейс-базы — норма."""
+    repo = tmp_path / "proj"
+    (repo / "tests" / "unit").mkdir(parents=True)
+    (repo / "tests" / "unit" / "test_u.py").write_text(NO_TC_TEST, encoding="utf-8")
+    rc, out = run_check(repo, capsys)
+    assert rc == 0, out
+    (repo / "tests" / "api").mkdir()
+    (repo / "tests" / "api" / "test_a.py").write_text(TC_TEST, encoding="utf-8")
+    rc, out = run_check(repo, capsys)
+    assert rc == 1 and "контракт 6" in out
+
+
+def test_narrow_zones_behaviour():
+    """TC-J66-013: зона роли по поведению политики, не по строкам реестра."""
+    def ok(role, path):
+        return rzp.narrow_zones(role, [path])["zones"] == [path]
+    assert ok("dev", "tests/unit/test_x.py")
+    assert ok("dev", "tests/unit/sub/conftest.py")
+    for p in ("tests/api/test_x.py", "tests/web/e2e/test_s.py",
+              "tests/integration/test_x.py", "tests/test_root.py",
+              "e2e/test_stand.py"):
+        assert not ok("dev", p), p
+    for p in ("tests/api/test_x.py", "tests/web/e2e/test_s.py",
+              "tests/integration/test_x.py", "tests/conftest.py",
+              "tests/README.md"):
+        assert ok("qa_automation", p), p
+    for p in ("tests/unit/test_x.py", "tests/test_root.py"):
+        assert not ok("qa_automation", p), p
+
+
+def test_layout_change_needs_pipeline_marker(tmp_path):
+    """TC-J66-014: правка test-layout.json без [pipeline] — нарушение J3."""
+    repo = tmp_path / "r"
+    repo.mkdir()
+    def git(*a):
+        subprocess.run(["git", "-C", str(repo), *a], check=True,
+                       capture_output=True)
+    git("init", "-q")
+    git("config", "user.email", "t@t")
+    git("config", "user.name", "t")
+    f = repo / fc.TEST_LAYOUT_REL
+    f.parent.mkdir(parents=True)
+    f.write_text('{"mode": "warn"}', encoding="utf-8")
+    git("add", "-A")
+    git("commit", "-q", "-m", "[chore] смягчить раскладку")
+    assert pbc.check_commit(repo, "HEAD")
+    f.write_text('{"mode": "strict"}', encoding="utf-8")
+    git("commit", "-qam", "[pipeline] J66: раскладка strict")
+    assert pbc.check_commit(repo, "HEAD") == []
+
+
+@pytest.mark.parametrize("flow,first", [(2, "bug_fix"), (3, "emergency_stabilize"),
+                                        (4, "chore_task"), (5, "express_task")])
+def test_qa_automation_stage_in_maintenance_flows(flow, first):
+    """TC-J66-015: регрессионный/адаптированный приемочный тест во Флоу 2–5 —
+    легальный этап qa_automation (dev пишет только tests/unit)."""
+    sys.path.insert(0, str(FACTORY / "plugins" / "flow-enforcer"))
+    import enforcer  # noqa: E402
+    stages = ft.STAGE_TABLE[flow]
+    actions = [s.action for s in stages]
+    assert actions[0] == first and actions[1] == "qa_automation"
+    qa, head = stages[1], stages[0]
+    assert qa.roles == ("qa_automation",)
+    assert qa.check is head.check
+    assert enforcer.SEQUENCE_PREREQS[flow]["qa_automation"] == frozenset({first})

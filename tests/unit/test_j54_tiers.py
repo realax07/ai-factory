@@ -86,7 +86,7 @@ def stage(repo: Path, rel: str, text: str) -> None:
 def make_repo(tmp_path: Path) -> Path:
     """Минимальный git-репозиторий: smoke-сьют и домен tests/web.
     tmp_path/proj уже создан autouse-фикстурой plan_release_fixture
-    (tests/unit/conftest.py, J41) — exist_ok обязателен."""
+    (tests/conftest.py, J41) — exist_ok обязателен."""
     repo = tmp_path / "proj"
     repo.mkdir(parents=True, exist_ok=True)
     subprocess.run(["git", "init", "-q", "-b", "main"], cwd=repo, check=True)

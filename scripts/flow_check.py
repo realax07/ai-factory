@@ -388,9 +388,31 @@ TEST_LAYOUT_FORBIDDEN = {
 }
 
 
-def _import_re(mod: str) -> re.Pattern:
-    return re.compile(
-        rf"^\s*(?:import\s+{mod}\b|from\s+{mod}(?:\.\w+)*\s+import\b)", re.M)
+def imported_top_modules(text: str) -> set[str] | None:
+    """Верхние имена импортируемых модулей (ast: import a, b / from a.b import
+    c; вложенные в функции — тоже). Динамика `importlib.import_module("x")` и
+    `pytest.importorskip("x")` со строковым литералом учитывается. Строки и
+    docstring не считаются. SyntaxError → None (вызывающий решает)."""
+    import ast
+    try:
+        tree = ast.parse(text)
+    except SyntaxError:
+        return None
+    mods: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            mods |= {a.name.split(".")[0] for a in node.names}
+        elif isinstance(node, ast.ImportFrom) and node.module and node.level == 0:
+            mods.add(node.module.split(".")[0])
+        elif (isinstance(node, ast.Call) and node.args
+              and isinstance(node.args[0], ast.Constant)
+              and isinstance(node.args[0].value, str)):
+            fn = node.func
+            name = fn.attr if isinstance(fn, ast.Attribute) else (
+                fn.id if isinstance(fn, ast.Name) else "")
+            if name in ("import_module", "importorskip", "__import__"):
+                mods.add(node.args[0].value.split(".")[0])
+    return mods
 
 
 def layout_mode_of(repo: Path) -> tuple[str, str | None]:
@@ -429,9 +451,17 @@ def layout_findings(repo: Path, test_files: list[Path]) -> list[str]:
             out.append(f"{rel}: тест вне раскладки tests/"
                        f"{{{','.join(TEST_LAYOUT_DIRS)}}}/ (J66)")
             continue
-        text = tf.read_text(encoding="utf-8", errors="replace")
-        for mod in TEST_LAYOUT_FORBIDDEN.get(level, ()):
-            if _import_re(mod).search(text):
+        forbidden = TEST_LAYOUT_FORBIDDEN.get(level, ())
+        if not forbidden:
+            continue
+        mods = imported_top_modules(
+            tf.read_text(encoding="utf-8", errors="replace"))
+        if mods is None:
+            out.append(f"{rel}: не разбирается (SyntaxError) — стек уровня "
+                       f"tests/{level}/ не проверен (J66)")
+            continue
+        for mod in forbidden:
+            if mod in mods:
                 out.append(f"{rel}: импорт {mod} в tests/{level}/ — "
                            f"нарушение стека уровня (J66)")
     return out
@@ -743,7 +773,11 @@ def check(repo: Path) -> int:
         has_regression_cases = reg_dir.is_dir() and any(
             d.is_dir() and not d.name.startswith(".") for d in reg_dir.iterdir()
         ) and any(f.suffix == ".md" for f in reg_dir.rglob("*.md"))
-        if test_files and not any(approved_by_change.values()) and not has_regression_cases:
+        # J66: unit-тесты dev пишутся без кейсов — правило контракта 6 о
+        # кейс-базе касается только приемочных тестов.
+        acceptance_files = [tf for tf in test_files
+                            if layout_level_of(repo, tf) not in TEST_LAYOUT_NO_TC]
+        if acceptance_files and not any(approved_by_change.values()) and not has_regression_cases:
             errors += errs(
                 "tests/: автотесты без approved-кейсов и без as-is базы "
                 "test-model/regression/<domain>/ (контракт 6)"

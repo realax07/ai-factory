@@ -299,12 +299,14 @@ SEQUENCE_PREREQS: dict[int, dict[str, frozenset]] = {
     },
     2: {
         "bug_fix": frozenset(),
+        "qa_automation": frozenset({"bug_fix"}),  # J66
         "code_review": frozenset({"bug_fix"}),
         "accept_review": frozenset({"code_review"}),
         "merge_task": frozenset({"accept_review"}),
     },
     3: {
         "emergency_stabilize": frozenset(),
+        "qa_automation": frozenset({"emergency_stabilize"}),  # J66
         "accept_review": frozenset({"emergency_stabilize"}),
         "merge_task": frozenset({"accept_review"}),
         "deploy_rollback": frozenset({"merge_task"}),
@@ -316,12 +318,14 @@ SEQUENCE_PREREQS: dict[int, dict[str, frozenset]] = {
     },
     4: {
         "chore_task": frozenset(),
+        "qa_automation": frozenset({"chore_task"}),  # J66
         "code_review": frozenset({"chore_task"}),
         "accept_review": frozenset({"code_review"}),
         "merge_task": frozenset({"accept_review"}),
     },
     5: {
         "express_task": frozenset(),
+        "qa_automation": frozenset({"express_task"}),  # J66
         "express_close": frozenset({"express_task"}),
     },
 }

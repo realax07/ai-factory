@@ -40,7 +40,7 @@ QA-работа MUST выполняться в порядке: автор тес
 - **THEN** кейсы переносятся в test-model/approved/<change-id>/
 
 ### Requirement: Трассировка автотестов
-Каждый приемочный автотест (tests/api/, tests/web/, tests/integration/, tests/smoke_cross/) MUST ссылаться на ID тест-кейса в docstring. Приемочный тест без ссылки на кейс MUST NOT приниматься. Матрица кейс → тест MUST находиться в tests/README.md. Unit-тесты разработчика (tests/unit/) пишутся без тест-кейсов: ссылка на TC-ID для них MUST NOT требоваться, ссылка на FR-N или задачу tasks.md SHOULD присутствовать.
+Каждый приемочный автотест (tests/api/, tests/web/, tests/integration/, tests/smoke_cross/, tests/archive/) MUST ссылаться на ID тест-кейса в docstring. Приемочный тест без ссылки на кейс MUST NOT приниматься. Матрица кейс → тест MUST находиться в tests/README.md. Unit-тесты разработчика (tests/unit/) пишутся без тест-кейсов: ссылка на TC-ID для них MUST NOT требоваться, ссылка на FR-N или задачу tasks.md SHOULD присутствовать.
 
 #### Scenario: Тест без трассировки
 - **GIVEN** автотест не содержит ID кейса в docstring
