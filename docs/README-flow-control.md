@@ -266,12 +266,12 @@ devops) получает резервацию по политике роли (`R
 | `flow_transition.py` | flowctl, enforcer | enforcing | ALLOW/DENY/UNKNOWN этапов + коды причин, графы флоу |
 | `session_check.py` | flowctl (prepare/finish) | enforcing | Резервация зон, post-check (OUT_OF_ZONE), reconcile |
 | `gate_runner.py` | flowctl finish | enforcing | Единый запуск ворот (digest/STALE, SKIPPED≠PASS), provenance, audit JSONL |
-| `flow_check.py` | CI job `flow`, gate_runner | GitHub-enforced + ворота | Ворота state machine: артефакты, трассировка, правило 6 |
+| `flow_check.py` | CI job `flow`, gate_runner | GitHub-enforced + ворота | Ворота state machine: артефакты, трассировка, правило 6; раскладка и стек тестов по `test-model/test-layout.json` (J66); единый парсер вердикта ревью (J65.4) |
 | `flow_mode.py` | ПМ (вручную) | config | Переключатель shadow/enforcing |
 | `pr_validate.py` | CI job `flow`, gate_runner | GitHub-enforced + ворота | PR-ворота: маркер/стадия, артефакты контрактов, J58-правила (вкл. pr_body IR-05/06) |
 | `pm_bounds_check.py` | gate_runner, ПМ | enforcing | Границы записи ПМ: защищенные пути, реестр сессий, продукт-коммиты |
 | `role_zone_policy.py` | session_check/flowctl (import) | enforcing | Политика зон записи ролей (источник — реестр `agents/roles.json`, версия — его sha256; J65.1) |
-| `gen_role_docs.py` | ПМ после правки реестра, тест (`--check`) | manual | Таблица зон `agents/README.md` и оглавление роль-паков из `agents/roles.json` |
+| `gen_role_docs.py` | ПМ после правки реестра, тест (`--check`) | manual | Таблица зон `agents/README.md`, оглавление роль-паков и блок зоны в README каждого пака (glob и `PI_ZONE_WRITE`) из `agents/roles.json` |
 | `flow_ids.py` | flow_state/flowctl/flow_transition (import), энфорсер (import или fallback-копия) | enforcing | Грамматика scope флоу 1–5 (J65.3); `python3 scripts/flow_ids.py <flow> <scope>` — ручная проверка |
 | `factory_paths.py` | все скрипты ворот (import), ПМ | config | Пути машины из env (J64.5); `--doctor LABEL` / `--compare` — сверка контекстов шелл/крон/Hermes (J65.12) |
 | `package_runner.py` | ПМ (`package_runner.py <PLAN> [--dry-run]`) | enforcing | Пакетный раннер по манифесту `pipeline:`: стадии `pi:<роль>` через prepare/run/finish, сверка git diff с зоной, коммит стадии; `gate:`/`hermes:` стадии (J62/J63) |
@@ -289,7 +289,7 @@ devops) получает резервацию по политике роли (`R
 | `smoke_static.py` | post-deploy (E10) | manual | Смоук отдачи статики: ссылки шаблонов vs диск vs прод-URL (DEF-002) |
 | `check_auth_timing.py` | QA/dev на backend проекта (F5) | manual | Timing-safety аутентификации: bcrypt, dummy-проверки, нет прямых сравнений секретов |
 | `factory_bootstrap.py` | разово на новой машине | manual | Установка фабрики: окружение, state, крон вотчдога, приемка переносимости |
-| `factory_init.py` | разово на новый проект (E15) | manual | Развертывание конвейера в проект + post-init ворота (flow_check = OK); `install_crons()` — обертки-делегаты кронов в ~/.hermes/scripts (политика 2026-10-23) |
+| `factory_init.py` | разово на новый проект (E15) | manual | Развертывание конвейера в проект + post-init ворота (flow_check = OK); smoke `tests/unit/` и режим раскладки тестов (J66); `install_crons()` — обертки-делегаты кронов в ~/.hermes/scripts (политика 2026-10-23) |
 | `archive/pm-instruction-channel/` | — (архив, волна 4 Н2/Н3) | архив | `watchdog_daily_digest.py` + `pm_instruction_monitor.py`: мертвые каналы, ниоткуда не вызываются |
 
 Данные (не скрипт): `impact_rules.json` — декларативные правила J58 для
@@ -324,6 +324,26 @@ expiration не истек. Непустая строка без записи ж
 Журнал — НЕ защищенная подпись: «решение зафиксировано», не «личность
 подтверждена».
 
+## Раскладка автотестов (J66, 2026-11-07)
+
+Спека qa-pipeline: `tests/unit/` — unit-тесты dev; `tests/api/` (pytest +
+requests), `tests/web/` (pytest + playwright, сьют стенда — `tests/web/e2e/`),
+`tests/integration/` (приемка через сервисный слой без HTTP и браузера) —
+qa_automation; `tests/smoke_cross/`, `tests/archive/`. TC-ID — везде, кроме
+`tests/unit/`. Зоны — `agents/roles.json`.
+
+`flow_check` сверяет: тест вне этих каталогов (и в корне `tests/`) и стек
+уровня (`requests`/`playwright` в unit и integration, `playwright` в api;
+импорты — разбор ast). Режим — `test-model/test-layout.json`:
+`{"mode": "warn"}` (по умолчанию, файла нет) — FLOW-WARNING, `strict` —
+FLOW-ERROR, битый файл — FLOW-ERROR. Файл — защищенный путь (правка — с
+`[pipeline]`). Во Флоу 2–5 приемочные тесты пишет этап `qa_automation`
+после первого этапа флоу (dev — только `tests/unit/`).
+
+Известное ограничение: `flowctl regress` по диффу только `backend/` или
+`frontend/` гоняет `tests/api` или `tests/web` — `tests/unit/` в доменный
+прогон не входит (бэклог J66).
+
 ## Regress (J51.2/J51.3, 2026-10-17)
 
 `flowctl regress --change <id> [--final] [--tier smoke]` — детерминированный
@@ -353,7 +373,7 @@ J52-w2: после regress-final tooling-пути `scripts/**`, `.github/**` н�
 коммитятся до merge — мета-коммит после артефакта = перегон).
 
 Обкатка ворот в CI (J52-w3): ворота проверяются harness-имитацией
-CI-среды до merge — `tests/test_gate_harness.py` строит эталонное
+CI-среды до merge — `tests/unit/test_gate_harness.py` строит эталонное
 tmp-репо с артефактами change-пакета (коммиты датированы:
 GIT_AUTHOR/COMMITTER_DATE, NOW минус N минут, шаг ≥60с — без дат
 секундная гранулярность схлопывает свежестную сверку `ts > art_ts`),

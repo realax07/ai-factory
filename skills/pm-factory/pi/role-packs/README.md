@@ -9,7 +9,7 @@
 
 **Zone-guard — общий для всех паков**: `regress-runner/extensions/zone-guard.ts`,
 устанавливается один раз в `~/.pi/agent/extensions/`, зоны записи на вызове —
-env `PI_ZONE_WRITE="зона1:зона2"` (относительные globs от cwd) + флаг
+env `PI_ZONE_WRITE="зона1:зона2"` (префиксы путей от cwd) + флаг
 `-e ~/.pi/agent/extensions/zone-guard.ts`. Механическая гарантия — только для
 `write`/`edit` (fail-closed); bash-канал эвристический, `git push` блокируется
 всем ролям. Общие подводные камни Pi — в `regress-runner/README.md`.
@@ -45,11 +45,18 @@ Kimi K3.1 (аудитор, вручную: `settings.example.json` единый,
 
 Зоны в таблице — политика ворот из `agents/roles.json` (J65.1): зона стадии
 манифеста может ее только сужать, без `zones:` раннер берет ее целиком
-(`*` — change-id пакета). Примеры зон в README отдельных паков могли
-отстать — источник правды эта таблица (J64.11). Env `PI_ZONE_WRITE` задается в
+(плейсхолдер `<id>` — change-id пакета). Блок «Зона записи» и пример
+`PI_ZONE_WRITE='…'` в README каждого пака тоже генерируются из реестра
+(`gen_role_docs.py`, `--check` в тестах): README паков синхронны с политикой;
+пример с суженной зоной в README генератор перезапишет политикой — сужение
+задается в манифесте (`zones:`) или env при вызове, не в README. Остаток J64.11:
+промпты паков `role-agents.md` (code-reviewer, architect, devops) еще
+расходятся с политикой; у debug и auditor политики зон нет (развилка J64.11),
+их README не генерируются. Env `PI_ZONE_WRITE` задается в
 префикс-форме (без glob-хвостов `/**`) — runner нормализует зоны манифеста
-перед прокидкой (`normalize_zone`, J61); обе формы задают одну зону, в
-README каждого пака показаны обе. Структура `settings.example.json` — единая
+перед прокидкой (`normalize_zone`, J61); в README каждого пака показаны
+обе формы (у масок внутри пути префикс guard'а шире зоны — точную границу
+держит сверка диффа на finish). Структура `settings.example.json` — единая
 во всех паках (J62): `zai-glm` + `glm-5.3` (sa/architect/dev/ba) или
 `glm-5.3-flash` (остальные), thinking `off`, tools `read/bash/edit/write`
 (у debug — `read/bash`), `sessionDir` роли, zone-guard, quietStartup,

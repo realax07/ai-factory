@@ -20,12 +20,15 @@ Hermes/ПМ.
 
 ## Зона записи (PI_ZONE_WRITE)
 
+<!-- roles:pack-zone:start -->
+<!-- генерируется scripts/gen_role_docs.py из agents/roles.json — руками не править -->
 ```
-манифест (glob-форма):       requirements.md:docs/ba/**
+манифест (glob-форма):       requirements.md:docs/ba/*
 env PI_ZONE_WRITE (префикс): requirements.md:docs/ba
 ```
+<!-- roles:pack-zone:end -->
 
-Обе строки задают ОДНУ зону: runner нормализует glob-хвосты зон манифеста в префикс-форму guard'а (`normalize_zone`, J61 — guard матчит зоны префиксом, не glob'ом). В env `PI_ZONE_WRITE` — префикс-форма (то, что прокидывает runner); в манифесте пакета (`stage.zones`) — glob-форма, как в гайде docs/guides/pipeline-manifest.md.
+Обе строки — одна зона политики (у масок внутри пути — `code-reviews/<id>/review-*.md`, `test-model/bugs/*` — префикс guard'а шире зоны: точную границу держит сверка диффа `session_check` на finish — при запуске через раннер/flowctl; ручной `pi` по примеру охраняет только guard): runner нормализует glob-хвосты зон манифеста в префикс-форму guard'а (`normalize_zone`, J61 — guard матчит зоны префиксом, не glob'ом). В env `PI_ZONE_WRITE` — префикс-форма (то, что прокидывает runner); в манифесте пакета (`stage.zones`) — glob-форма, как в гайде docs/guides/pipeline-manifest.md.
 
 Только два артефакта роли. Черновики — в диалоге; запись в репозиторий —
 только согласованные версии (черновик → подтверждение Заказчика → запись).

@@ -18,12 +18,15 @@ zone-guard НЕ входит в пак: используется установ�
 
 ## Зона записи (PI_ZONE_WRITE)
 
+<!-- roles:pack-zone:start -->
+<!-- генерируется scripts/gen_role_docs.py из agents/roles.json — руками не править -->
 ```
-манифест (glob-форма):       test-model/reviews/**
-env PI_ZONE_WRITE (префикс): test-model/reviews
+манифест (glob-форма):       test-model/reviews/<id>/review-*-design.md
+env PI_ZONE_WRITE (префикс): test-model/reviews/<id>
 ```
+<!-- roles:pack-zone:end -->
 
-Обе строки задают ОДНУ зону: runner нормализует glob-хвосты зон манифеста в префикс-форму guard'а (`normalize_zone`, J61 — guard матчит зоны префиксом, не glob'ом). В env `PI_ZONE_WRITE` — префикс-форма (то, что прокидывает runner); в манифесте пакета (`stage.zones`) — glob-форма, как в гайде docs/guides/pipeline-manifest.md.
+Обе строки — одна зона политики (у масок внутри пути — `code-reviews/<id>/review-*.md`, `test-model/bugs/*` — префикс guard'а шире зоны: точную границу держит сверка диффа `session_check` на finish — при запуске через раннер/flowctl; ручной `pi` по примеру охраняет только guard): runner нормализует glob-хвосты зон манифеста в префикс-форму guard'а (`normalize_zone`, J61 — guard матчит зоны префиксом, не glob'ом). В env `PI_ZONE_WRITE` — префикс-форма (то, что прокидывает runner); в манифесте пакета (`stage.zones`) — glob-форма, как в гайде docs/guides/pipeline-manifest.md.
 
 Ровно один review-файл: `test-model/reviews/<change-id>/review-NNN-design.md`
 (вердикт approve/return + таблица расхождений). Код/стили не правятся;
@@ -44,10 +47,10 @@ cp skills/pm-factory/pi/role-packs/design-validator/settings.example.json ~/.pi/
 
 ```bash
 cd /tmp/wt-<change> && \
-PI_ZONE_WRITE='test-model/reviews' \
+PI_ZONE_WRITE='test-model/reviews/C123' \
 pi --provider zai-glm --model glm-5.3-flash --no-session \
    -e ~/.pi/agent/extensions/zone-guard.ts \
-   -p "<бриф: change C123, затронутые страницы/компоненты, пути эталона (design/README.md, design/tokens.html, утвержденный мокап), стенд по tests/README.md. Аудит покрытия стилей (computed styles), токены, состояния → review-файл test-model/reviews/C123/review-NNN-design.md с маркером «Одобрить»/«Вернуть»>"
+   -p "<бриф: change C123, затронутые страницы/компоненты, пути эталона (design/README.md, design/tokens.html, утвержденный мокап), стенд по tests/README.md. Аудит покрытия стилей (computed styles), токены, состояния → review-файл test-model/reviews/C123/review-NNN-design.md с заголовком `## Вердикт: Одобрить|Вернуть`>"
 ```
 
 - Одна валидация = одна сессия; стенд можно поднять стадией `stand:`

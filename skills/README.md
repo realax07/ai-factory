@@ -10,11 +10,11 @@
 | [openspec-authoring](roles/openspec-authoring/) | Спеки, change-пакеты, SDD по конвенциям Fission-AI | СА |
 | [brainstorming](roles/brainstorming/) | Прояснение замысла до требований (альтернативы, anti-scope) | БА |
 | [service-decomposition](roles/service-decomposition/) | Границы сервисов, владение схемой БД, сквозные процессы, швы делегаций | СА, dev_lead |
-| [test-case-design](roles/test-case-design/) | Чеклисты и тест-кейсы: покрытие, границы, трассировка | QA-чеклисты, QA-автор |
+| [test-case-design](roles/test-case-design/) | Тест-кейсы по спеке (без чеклиста, J23): покрытие, границы, трассировка | QA-автор |
 | [case-review](roles/case-review/) | Ревью кейсов: оси проверки, серьезности, итерации | QA-ревьюер |
 | [implementation](roles/implementation/) | Реализация одной задачи спека с трассировкой и self-review | dev |
 | [code-review](roles/code-review/) | Ревью задачного диффа против спеки и стандартов | code_reviewer |
-| [test-automation](roles/test-automation/) | Автотесты pytest/requests/playwright с трассировкой | QA-автоматизатор |
+| [test-automation](roles/test-automation/) | Приемочные автотесты по раскладке J66: `tests/api` (requests), `tests/web` (playwright), `tests/integration`; трассировка TC | QA-автоматизатор |
 | [playwright-pro](roles/playwright-pro/) | Playwright: golden rules, локаторы, anti-patterns, flaky-таксономия | QA-автоматизатор |
 | [handoff](pm-factory/handoff/) | Handoff-документ при завершении/обрыве сессии | ПМ |
 | [factory-flow](flow/factory-flow/) | Скелет детерминированного флоу: стадии 5 флоу, карта блокеров, правила эскалации | Все роли (входит во все бандлы) |

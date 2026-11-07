@@ -18,18 +18,21 @@ zone-guard НЕ входит в пак: используется установ�
 
 ## Зона записи (PI_ZONE_WRITE)
 
+<!-- roles:pack-zone:start -->
+<!-- генерируется scripts/gen_role_docs.py из agents/roles.json — руками не править -->
 ```
 манифест (glob-форма):       test-model/reviews/**:test-model/approved/**
 env PI_ZONE_WRITE (префикс): test-model/reviews:test-model/approved
 ```
+<!-- roles:pack-zone:end -->
 
-Обе строки задают ОДНУ зону: runner нормализует glob-хвосты зон манифеста в префикс-форму guard'а (`normalize_zone`, J61 — guard матчит зоны префиксом, не glob'ом). В env `PI_ZONE_WRITE` — префикс-форма (то, что прокидывает runner); в манифесте пакета (`stage.zones`) — glob-форма, как в гайде docs/guides/pipeline-manifest.md.
+Обе строки — одна зона политики (у масок внутри пути — `code-reviews/<id>/review-*.md`, `test-model/bugs/*` — префикс guard'а шире зоны: точную границу держит сверка диффа `session_check` на finish — при запуске через раннер/flowctl; ручной `pi` по примеру охраняет только guard): runner нормализует glob-хвосты зон манифеста в префикс-форму guard'а (`normalize_zone`, J61 — guard матчит зоны префиксом, не glob'ом). В env `PI_ZONE_WRITE` — префикс-форма (то, что прокидывает runner); в манифесте пакета (`stage.zones`) — glob-форма, как в гайде docs/guides/pipeline-manifest.md.
 
 Review-файлы, **append-only партиии**: итерации нумеруются сквозно по пакету
 (`test-model/reviews/<change-id>/review-NNN.md`), история не удаляется.
 При вердикте «Одобрить» ревьюер переносит файлы партии в
 `test-model/approved/<change-id>/` — зона `test-model/approved/**` входит в
-дефолт пака (вторая строка блока выше). Кейсы в `new/` ревьюер не
+зону политики (блок «Зона записи» выше). Кейсы в `new/` ревьюер не
 правит; `git push` блокируется. **Вердикт — заголовком**
 `## Вердикт: Одобрить` / `## Вердикт: Вернуть` — вердикт-ворота раннера читают последний заголовок `## Вердикт:` (approve/Одобрить → проход; return/Вернуть/«Не одобрить» → STOP «ЖДУ ПМ: возврат ревью»; нет заголовка → STOP).
 
@@ -50,7 +53,7 @@ cd /tmp/wt-<change> && \
 PI_ZONE_WRITE='test-model/reviews:test-model/approved' \
 pi --provider zai-glm --model glm-5.3-flash --no-session \
    -e ~/.pi/agent/extensions/zone-guard.ts \
-   -p "<бриф: change C123, партия: список файлов test-model/new/C123/TC-*.md. Ревью файл-за-файлом, review-файл test-model/reviews/C123/review-NNN.md с маркером «Одобрить»/«Вернуть»; при «Одобрить» — перенос партии в test-model/approved/C123/>"
+   -p "<бриф: change C123, партия: список файлов test-model/new/C123/TC-*.md. Ревью файл-за-файлом, review-файл test-model/reviews/C123/review-NNN.md с заголовком `## Вердикт: Одобрить|Вернуть`; при «Одобрить» — перенос партии в test-model/approved/C123/>"
 ```
 
 - Одна партия = одна сессия; ревью — файл за файлом, append в процессе.

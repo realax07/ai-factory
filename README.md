@@ -92,12 +92,12 @@ GLM-5.3-flash), потому что проверку делает не моде�
 | ba — бизнес-аналитик | `requirements.md` (FR/NFR, дословные решения Заказчика) | glm-5.3 |
 | sa — системный аналитик | change-пакет OpenSpec + `sdd.md`, задачи `tasks.md` | glm-5.3 |
 | architect | ревью пакета до разработки, `architecture/map.md` | glm-5.3 |
-| dev | код одной задачи + тесты | glm-5.3 |
+| dev | код одной задачи + unit-тесты `tests/unit/` | glm-5.3 |
 | dev_lead | сборка веток параллельных задач пакета в интеграционную ветку | — (вне роль-паков) |
 | code_reviewer | ревью диффа: approve / return | glm-5.3-flash |
 | qa_impact_analyst | что из регресса затронуто дельтами спек | glm-5.3-flash |
 | qa_case_author → qa_case_reviewer | тест-кейсы по спеке → их ревью | glm-5.3-flash |
-| qa_automation | автотесты по одобренным кейсам | glm-5.3-flash |
+| qa_automation | приемочные автотесты по кейсам: `tests/api` (requests), `tests/web` (playwright), `tests/integration` (без HTTP и браузера) | glm-5.3-flash |
 | regress_runner | прогон и разбор регресса, артефакт прогона | glm-5.3-flash |
 | ui_designer / design_validator | мокапы / сверка UI с мокапами | glm-5.3-flash |
 | devops | RUNBOOK и деплой-инфраструктура (боевой деплой — по утверждению) | glm-5.3-flash |
@@ -168,8 +168,9 @@ python3 ~/ai-factory/scripts/factory_init.py --target /path/to/repo --name "My P
 
 Создает структуру каталогов (openspec, test-model, docs…), копирует ворота,
 CI-workflow, контракты, шаблоны, промпты ролей и скиллы, `CONSTITUTION.md` и
-скелет глоссария, затем проверяет, что `flow_check` на пустом проекте
-проходит. Заодно ставит плагин flow-enforcer в `~/.hermes/plugins/`
+скелет глоссария, smoke-тест `tests/unit/test_smoke.py` и режим раскладки
+тестов `test-model/test-layout.json` (`strict`, если тестов вне раскладки нет,
+иначе `warn`), затем проверяет, что `flow_check` на пустом проекте проходит. Заодно ставит плагин flow-enforcer в `~/.hermes/plugins/`
 (`--skip-plugin` — пропустить, если оркестратор не Hermes) и обертки кронов в
 `~/.hermes/scripts/` (`--skip-crons`).
 
@@ -191,10 +192,14 @@ CI-workflow, контракты, шаблоны, промпты ролей и с
 | Флоу | Когда | Цепочка | scope |
 |---|---|---|---|
 | **1** полный | новое поведение, меняется спека | ba → sa → architect → [dev → review] на каждую задачу → QA-контур → архивация дельт в master-spec | `add-widget` (change-id) |
-| **2** багфикс | реализация расходится со спекой | баг-репорт → dev → review → merge | `BUG-042` (имя репорта) |
-| **3** хотфикс | прод сломан | severity S1–S3 → стабилизация → обязательный PR-цикл → post-mortem | `S1-prod-down` |
-| **4** обслуживание | поведение продукта не меняется (инфра, ворота, доки) | план → работа → review → merge | `chore` или `repo-cleanup` |
-| **5** экспресс | малая правка, артефакты оформляются после | работа → ретро-артефакты → закрытие | `fix-typo` |
+| **2** багфикс | реализация расходится со спекой | баг-репорт → dev → [qa_automation] → review → merge | `BUG-042` (имя репорта) |
+| **3** хотфикс | прод сломан | severity S1–S3 → стабилизация → [qa_automation] → обязательный PR-цикл → post-mortem | `S1-prod-down` |
+| **4** обслуживание | поведение продукта не меняется (инфра, ворота, доки) | план → работа → [qa_automation] → review → merge | `chore` или `repo-cleanup` |
+| **5** экспресс | малая правка, артефакты оформляются после | работа → [qa_automation] → ретро-артефакты → закрытие | `fix-typo` |
+
+`[qa_automation]` — этап по необходимости: dev пишет только `tests/unit/`,
+поэтому регрессионный приемочный тест к багу и адаптацию сломанных приемочных
+тестов делает автоматизатор.
 
 Формат scope проверяет `python3 scripts/flow_ids.py <флоу> <scope>`. Подробно
 по каждому флоу, с развилками и кодами отказов, —
@@ -382,6 +387,13 @@ openspec/specs (правила)  ──►  contracts (вход/выход эт�
   CI-ворота (`flow_check` + `flow.yml` работают без машины фабрики). Ядро
   работает экземпляром фабрики (`--repo` проекта — параметр); копии ядра
   `factory_init` тоже кладет в проект, сверка копий — `check_mirrors.py`.
+- **Раскладка тестов** (спека qa-pipeline): `tests/unit/` — dev,
+  `tests/api/`, `tests/web/` (сьют стенда — `tests/web/e2e/`),
+  `tests/integration/` — qa_automation; плюс `tests/smoke_cross/` и
+  `tests/archive/`. TC-ID в docstring обязателен везде, кроме `tests/unit/`.
+  `flow_check` проверяет раскладку и стек уровня (в unit и integration нет
+  `requests` и `playwright`) в режиме проекта `test-model/test-layout.json`:
+  `warn` (по умолчанию) или `strict`.
 
 ---
 
