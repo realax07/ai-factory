@@ -394,8 +394,13 @@ def imported_top_modules(text: str) -> set[str] | None:
     `pytest.importorskip("x")` со строковым литералом учитывается. Строки и
     docstring не считаются. SyntaxError → None (вызывающий решает)."""
     import ast
+    import warnings
     try:
-        tree = ast.parse(text)
+        # SyntaxWarning (например, "\\d" в строке теста) — не дело ворот:
+        # без подавления она шумит в stderr, а под -W error ломает разбор.
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", SyntaxWarning)
+            tree = ast.parse(text, filename="<test>")
     except SyntaxError:
         return None
     mods: set[str] = set()
