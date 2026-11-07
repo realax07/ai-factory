@@ -38,6 +38,8 @@ Usage:
 (плагин — про проект/конвейер: его ставит factory_init.py, здесь только
 подсказка, если он отсутствует).
 """
+from __future__ import annotations
+
 import argparse
 import filecmp
 import shutil
@@ -65,11 +67,13 @@ def step(msg: str) -> None:
 
 
 def _run(cmd: list[str]) -> tuple[int, str]:
-    """(rc, вывод); бинаря нет или таймаут — (127, '')."""
+    """(rc, вывод); бинаря нет — (127, ''), таймаут — (124, 'timeout')."""
     try:
         r = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
-    except (FileNotFoundError, subprocess.TimeoutExpired):
+    except FileNotFoundError:
         return 127, ""
+    except subprocess.TimeoutExpired:
+        return 124, "timeout (60s)"
     return r.returncode, (r.stdout or r.stderr).strip()
 
 
@@ -99,6 +103,9 @@ def check_env(need_pytest: bool = True) -> bool:
             print(f"  {name}: {'MISSING' if required else 'WARN: нет'} — {hint}")
             ok = ok and not required
             continue
+        if rc == 124:
+            print(f"  {name}: WARN — не ответил за 60s, версия не проверена")
+            continue
         line = _first(out)
         print(f"  {name}: {line}")
         if name == "openspec" and OPENSPEC_VERSION not in line:
@@ -119,6 +126,10 @@ def state_dirs(flow_mode: str | None = None) -> str:
     ARCHIVE_DIR.mkdir(parents=True, exist_ok=True)
     mode_file = fm.mode_file()
     if flow_mode:
+        if mode_file.exists() and fm.get_mode() == "enforcing" and flow_mode == "shadow":
+            step("режим ворот: WARN — флаг --flow-mode shadow понижает боевой "
+                 "enforcing (решение Заказчика); вернуть — flow_mode.py set "
+                 "enforcing --by customer")
         fm.set_mode(flow_mode, by="bootstrap-flag")
         step(f"режим ворот установлен флагом: {flow_mode} ({mode_file})")
         return flow_mode
@@ -177,7 +188,8 @@ def setup_crons() -> bool:
              f"(удали: crontab -e): {line}")
     if not HERMES_HOME.is_dir():
         step(f"кроны: Hermes не найден ({HERMES_HOME}) — вотчдоги Hermes не "
-             "ставятся (оркестратор — другой кодагент)")
+             "ставятся (оркестратор — другой кодагент; поставишь Hermes — "
+             "перезапусти bootstrap)")
         return True
     scripts = str(FACTORY / "scripts")
     if scripts not in sys.path:

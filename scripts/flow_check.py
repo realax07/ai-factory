@@ -472,6 +472,15 @@ def layout_findings(repo: Path, test_files: list[Path]) -> list[str]:
     return out
 
 
+def is_legacy_impact_template(d: Path) -> bool:
+    """openspec/changes/_template/ с одним impact.md (и без specs/) —
+    шаблон, который factory_init клал туда до 2026-11-07."""
+    if d.name != "_template" or not d.is_dir():
+        return False
+    files = [p for p in d.rglob("*") if p.is_file()]
+    return [p.name for p in files] == ["impact.md"]
+
+
 def errs(*msg):
     for m in msg:
         print(f"FLOW-ERROR: {m}")
@@ -620,10 +629,13 @@ def check(repo: Path) -> int:
         for d in sorted(p for p in ch_dir.iterdir() if p.is_dir()):
             if d.name == "archive":
                 continue
-            if d.name.startswith("_"):
-                # шаблоны (factory_init: _template/impact.md, J58) — не
-                # change-пакет: без этого post-init flow_check нового проекта
-                # краснел контрактами 1/2 на _template/
+            if is_legacy_impact_template(d):
+                # прежнее место шаблона impact-карты (factory_init до
+                # 2026-11-07): только _template/impact.md, без дельт — не
+                # change-пакет. Любой другой _* проверяется как пакет.
+                warns(f"openspec/changes/{d.name}/: легаси-шаблон impact-карты "
+                      "— удали каталог (шаблон теперь templates/impact.template.md; "
+                      "openspec validate --strict на нем падает)")
                 continue
             active_changes.append(d)
             change_req = d / "requirements.md"

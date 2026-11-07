@@ -19,7 +19,9 @@ FLOW_MODE_FILE, не проверял OpenSpec и Pi; factory_init создав�
   TC-INST-004  check_env: отсутствие openspec — MISSING (False), отсутствие
                pi — только WARN
   TC-INST-005  factory_init: без test-model/checklists; без Hermes —
-               плагин и кроны пропущены, init OK
+               плагин и кроны пропущены, init OK; шаблон impact — в templates/
+  TC-INST-006  flow_check: легаси _template/impact.md — WARN и пропуск;
+               любой другой openspec/changes/_* проверяется как пакет
 """
 from __future__ import annotations
 
@@ -35,15 +37,40 @@ FACTORY = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(FACTORY / "scripts"))
 
 
-def _bootstrap(monkeypatch, tmp_path, hermes: bool = True):
-    """Свежий импорт bootstrap с путями машины во временном каталоге."""
-    home = tmp_path / "hermes"
-    if hermes:
-        home.mkdir()
-    monkeypatch.setenv("HERMES_HOME", str(home))
-    monkeypatch.setenv("AF_STATE_DIR", str(tmp_path / "state"))
-    monkeypatch.setenv("PI_AGENT_DIR", str(tmp_path / "pi"))
-    monkeypatch.delenv("FLOW_MODE_FILE", raising=False)
+_ENV_KEYS = ("HERMES_HOME", "AF_STATE_DIR", "PI_AGENT_DIR", "FLOW_MODE_FILE")
+
+
+@pytest.fixture
+def bootstrap_env(tmp_path):
+    """Свежий импорт bootstrap с путями машины во временном каталоге.
+
+    reload переписывает константы модулей (flow_mode._STATE_DIR и т.п.),
+    поэтому после теста env восстанавливается и модули перезагружаются
+    заново — состояние не протекает в другие тесты сьюта.
+    """
+    import os
+    saved = {k: os.environ.get(k) for k in _ENV_KEYS}
+
+    def make(hermes: bool = True):
+        home = tmp_path / "hermes"
+        if hermes:
+            home.mkdir(exist_ok=True)
+        os.environ["HERMES_HOME"] = str(home)
+        os.environ["AF_STATE_DIR"] = str(tmp_path / "state")
+        os.environ["PI_AGENT_DIR"] = str(tmp_path / "pi")
+        os.environ.pop("FLOW_MODE_FILE", None)
+        return _reload_all()
+
+    yield make
+    for k, v in saved.items():
+        if v is None:
+            os.environ.pop(k, None)
+        else:
+            os.environ[k] = v
+    _reload_all()
+
+
+def _reload_all():
     import factory_paths
     import flow_mode
     importlib.reload(factory_paths)
@@ -53,37 +80,38 @@ def _bootstrap(monkeypatch, tmp_path, hermes: bool = True):
 
 
 class TestFlowMode:
-    def test_new_file_shadow_in_state_dir(self, monkeypatch, tmp_path):
+    def test_new_file_shadow_in_state_dir(self, bootstrap_env, monkeypatch, tmp_path):
         """TC-INST-001: файл режима — в AF_STATE_DIR, тот же, что у flow_mode."""
-        fb = _bootstrap(monkeypatch, tmp_path)
+        fb = bootstrap_env()
         assert fb.state_dirs() == "shadow"
         f = tmp_path / "state" / "flow_mode.json"
         assert fb.fm.mode_file() == f
         assert json.loads(f.read_text(encoding="utf-8"))["mode"] == "shadow"
         assert not (tmp_path / "hermes" / "state").exists()
 
-    def test_flow_mode_file_env_respected(self, monkeypatch, tmp_path):
+    def test_flow_mode_file_env_respected(self, bootstrap_env, monkeypatch, tmp_path):
         """TC-INST-001: FLOW_MODE_FILE — приоритет, как у flow_mode.py."""
-        fb = _bootstrap(monkeypatch, tmp_path)
+        fb = bootstrap_env()
         custom = tmp_path / "custom" / "mode.json"
         monkeypatch.setenv("FLOW_MODE_FILE", str(custom))
         fb.state_dirs()
         assert custom.is_file()
 
-    def test_existing_mode_kept_without_flag(self, monkeypatch, tmp_path):
+    def test_existing_mode_kept_without_flag(self, bootstrap_env, monkeypatch, tmp_path, capsys):
         """TC-INST-001: боевой режим не сбрасывается повторным bootstrap."""
-        fb = _bootstrap(monkeypatch, tmp_path)
+        fb = bootstrap_env()
         fb.fm.set_mode("enforcing", by="customer")
         assert fb.state_dirs() == "enforcing"
         assert fb.fm.get_mode() == "enforcing"
         assert fb.state_dirs("shadow") == "shadow"   # явный флаг
         assert fb.fm.get_mode() == "shadow"
+        assert "понижает боевой" in capsys.readouterr().out
 
 
 class TestCrons:
-    def test_no_system_crontab_write(self, monkeypatch, tmp_path, capsys):
+    def test_no_system_crontab_write(self, bootstrap_env, monkeypatch, tmp_path, capsys):
         """TC-INST-002: crontab только читается; legacy-запись — WARN."""
-        fb = _bootstrap(monkeypatch, tmp_path)
+        fb = bootstrap_env()
         calls = []
 
         def fake_run(cmd, **kw):
@@ -102,9 +130,9 @@ class TestCrons:
         wrappers = tmp_path / "hermes" / "scripts"
         assert (wrappers / "session_watchdog.py").is_file()
 
-    def test_no_hermes_no_wrappers(self, monkeypatch, tmp_path, capsys):
+    def test_no_hermes_no_wrappers(self, bootstrap_env, monkeypatch, tmp_path, capsys):
         """TC-INST-002: оркестратор не Hermes — обертки не ставятся."""
-        fb = _bootstrap(monkeypatch, tmp_path, hermes=False)
+        fb = bootstrap_env(hermes=False)
         monkeypatch.setattr(fb, "legacy_crontab_entries", lambda: [])
         assert fb.setup_crons() is True
         assert "Hermes не найден" in capsys.readouterr().out
@@ -112,9 +140,9 @@ class TestCrons:
 
 
 class TestZoneGuard:
-    def test_install_same_differs(self, monkeypatch, tmp_path, capsys):
+    def test_install_same_differs(self, bootstrap_env, monkeypatch, tmp_path, capsys):
         """TC-INST-003."""
-        fb = _bootstrap(monkeypatch, tmp_path)
+        fb = bootstrap_env()
         dst = tmp_path / "pi" / "extensions" / "zone-guard.ts"
         assert fb.install_zone_guard() is True
         assert dst.read_bytes() == fb.ZONE_GUARD_SRC.read_bytes()
@@ -128,9 +156,9 @@ class TestZoneGuard:
         assert "models.json" in out
 
 
-def test_check_env_openspec_required_pi_optional(monkeypatch, tmp_path, capsys):
+def test_check_env_openspec_required_pi_optional(bootstrap_env, monkeypatch, tmp_path, capsys):
     """TC-INST-004."""
-    fb = _bootstrap(monkeypatch, tmp_path)
+    fb = bootstrap_env()
     missing = {"openspec"}
 
     def fake(cmd):
@@ -163,3 +191,33 @@ def test_factory_init_without_hermes(tmp_path):
     assert not (tmp_path / "no-hermes").exists()
     assert not (target / "test-model" / "checklists").exists()
     assert "post-init flow_check" in r.stdout and "(exit 0)" in r.stdout
+    # rc 0, либо 1 только из-за отсутствия openspec CLI на машине сьюта
+    assert r.returncode == 0 or (r.returncode == 1 and "openspec CLI: НЕ найден" in r.stdout), r.stdout
+    assert (target / "templates" / "impact.template.md").is_file()
+    assert not (target / "openspec" / "changes" / "_template").exists()
+
+
+def _repo_with_change_dir(tmp_path, name, files):
+    repo = tmp_path / "chk"
+    for rel, text in files.items():
+        p = repo / "openspec" / "changes" / name / rel
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(text, encoding="utf-8")
+    return repo
+
+
+def test_flow_check_legacy_template_only(tmp_path, capsys):
+    """TC-INST-006."""
+    import flow_check as fc
+    repo = _repo_with_change_dir(tmp_path, "_template", {"impact.md": "# Impact\n"})
+    assert fc.check(repo) == 0
+    assert "легаси-шаблон impact-карты" in capsys.readouterr().out
+    # _template с дельтой спеки — уже не шаблон: контракты 1/2 действуют
+    (repo / "openspec" / "changes" / "_template" / "specs" / "x").mkdir(parents=True)
+    (repo / "openspec" / "changes" / "_template" / "specs" / "x" / "spec.md").write_text(
+        "## ADDED Requirements\n", encoding="utf-8")
+    assert fc.check(repo) > 0
+    capsys.readouterr()
+    other = _repo_with_change_dir(tmp_path / "o", "_x", {"proposal.md": "# p\n"})
+    assert fc.check(other) > 0
+    assert "openspec/changes/_x" in capsys.readouterr().out

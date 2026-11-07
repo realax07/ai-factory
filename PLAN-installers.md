@@ -31,8 +31,8 @@ J64.5, J23, J58, J66) и прогон init на чистом проекте.
   impact-карты J58 лежал в `openspec/changes/_template/`: `flow_check`
   (контракты 1/2) и `openspec validate --strict` («Change must have at least
   one delta») принимали его за change-пакет. Шаблон перенесен в
-  `templates/impact.template.md`; `flow_check` пропускает каталоги `_*` под
-  `openspec/changes/` (старые проекты); прежнее место — WARN.
+  `templates/impact.template.md`; `flow_check` пропускает только легаси `_template/`
+  с одним `impact.md` (WARN); прежнее место — WARN и в init.
 - **factory_init создавал упраздненный `test-model/checklists`** (J23) — убран.
 - **factory_init без Hermes** ставил плагин и обертки кронов в несуществующий
   `~/.hermes` — теперь оба шага пропускаются с пометкой (оркестратор —
@@ -41,9 +41,21 @@ J64.5, J23, J58, J66) и прогон init на чистом проекте.
   реестр скриптов в docs/README-flow-control.md, agents/README.md (путь
   шаблона), pr_validate (подсказка пути шаблона).
 
+## Возврат ревью review-001 (1 major, 9 minor) — исправлено
+
+Пропуск `openspec/changes/_*` снимал контракты 1/2 с любого такого каталога
+(change `_x` уходил из-под ворот) — сужен до легаси-шаблона: `_template/` с
+единственным `impact.md` (WARN «удали каталог»), любой другой `_*` —
+проверяется как пакет (TC-INST-006). Явный `--flow-mode shadow` при боевом
+enforcing — WARN; `from __future__ import annotations` (проверка python <
+3.10 достижима); таймаут команды — не «MISSING»; подсказка «поставишь Hermes
+— перезапусти»; изоляция reload-модулей в тестах; TC-INST-005 проверяет rc;
+устаревшие тексты: скилл flow-control (bootstrap и вотчдог-крон),
+process-context (`*/2` → `*/5` через обертку), README.
+
 ## Тесты
 
-TC-INST-001…005 (`tests/unit/test_installers.py`); TC-J58-019 — шаблон не под
+TC-INST-001…006 (`tests/unit/test_installers.py`); TC-J58-019 — шаблон не под
 `openspec/` [test-adapted].
 
 ## Внимание при выкатке

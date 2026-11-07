@@ -80,7 +80,8 @@ def install_plugin(skip: bool = False) -> bool:
     hermes_home = fp.hermes_home()
     if not hermes_home.is_dir():
         print(f"  плагин flow-enforcer: пропуск — Hermes не найден ({hermes_home}); "
-              "оркестратор не Hermes — плагин не нужен")
+              "оркестратор не Hermes — плагин не нужен (поставишь Hermes — "
+              "перезапусти init)")
         return True
     src = FACTORY / "plugins" / PLUGIN_NAME
     dst = hermes_home / "plugins" / PLUGIN_NAME
@@ -612,7 +613,7 @@ def main() -> int:
     # пустые манифест smoke и regress-domains.json, baseline.json = []
     install_regress_skeleton(target, force=args.force)
 
-    # 3a-4. Шаблон impact-карты СА (J58): openspec/changes/_template/impact.md
+    # 3a-4. Шаблон impact-карты СА (J58): templates/impact.template.md
     install_impact_template(target, force=args.force)
 
     # 3b. tests/test_smoke.py + as-is база regression/_bootstrap (контракт 6:
@@ -682,7 +683,7 @@ def main() -> int:
         print("  кроны: пропуск (--skip-crons)")
     elif not fp.hermes_home().is_dir():
         print(f"  кроны: пропуск — Hermes не найден ({fp.hermes_home()}); "
-              "вотчдоги Hermes не нужны")
+              "вотчдоги Hermes не нужны (поставишь Hermes — перезапусти init)")
     else:
         hermes_scripts = fp.hermes_home() / "scripts"
         crons = install_crons(hermes_scripts)
