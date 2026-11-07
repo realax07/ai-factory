@@ -1,21 +1,37 @@
 #!/usr/bin/env python3
 """factory_bootstrap.py — установка AI Factory на новую машину.
 
-Одна команда для чистой машины: проверяет окружение, развертывает state-каталоги,
-ставит крон вотчдога и прогоняет приемочный тест переносимости. Секреты НЕ
-переносит (кладутся вручную в ~/.hermes/.env).
+Одна команда для чистой машины: проверяет окружение, развертывает каталог
+состояния движка и файл режима ворот, ставит zone-guard исполнителя Pi,
+обертки кронов (если оркестратор — Hermes) и прогоняет сьют фабрики как
+приемку. Секреты НЕ переносит (ключи — вручную: ~/.hermes/.env,
+~/.pi/agent/models.json).
 
 Usage:
-  python3 scripts/factory_bootstrap.py [--flow-mode shadow|enforcing] [--skip-cron]
+  python3 scripts/factory_bootstrap.py [--flow-mode shadow|enforcing]
+                                       [--skip-cron] [--skip-pi] [--skip-tests]
 
 Что делает:
-  1. Проверка окружения: python >= 3.10, git, node/npx (для openspec CLI), pytest.
-  2. State-каталоги: ~/.hermes/state/ (реестр, flow_mode.json с дефолтом),
-     ~/.hermes/state/session-archive/.
-  3. flow_mode.json — дефолт shadow (безопасно; enforcing — явное решение Заказчика).
-  4. Крон вотчдога session_watchdog.py (*/2, no-agent) — если не --skip-cron.
-  5. Приемочный тест переносимости: pytest tests/ фабрики (полный).
-     Опционально --with-e2e: плюс smoke flowctl на fixture-репо.
+  1. Окружение: python >= 3.10 (тот, что запустил bootstrap), git, node/npm,
+     OpenSpec CLI (рекомендуемая версия — OPENSPEC_VERSION), pytest в этом
+     python, исполнитель Pi (`pi`; отсутствие — предупреждение).
+  2. Каталог состояния движка — factory_paths.state_dir() (AF_STATE_DIR,
+     дефолт ~/.hermes/state) + session-archive/; файл режима — тот же, что
+     читает flow_mode.py (FLOW_MODE_FILE или <state>/flow_mode.json).
+     Нового файла режим — shadow (решения считаются, не блокируют); боевой
+     enforcing — решение Заказчика (`flow_mode.py set enforcing --by
+     customer`) или явный флаг --flow-mode enforcing. Существующий режим без
+     флага не меняется.
+  3. Pi: zone-guard из репо → <PI_AGENT_DIR>/extensions/zone-guard.ts, если
+     его там нет; отличающаяся копия не перезаписывается (WARN). Наличие
+     models.json проверяется (содержимое не читается).
+  4. Кроны (политика 2026-10-23, docs/README-flow-control.md «Кроны и
+     вотчдоги»): только при наличии Hermes — обертки-делегаты в
+     <HERMES_HOME>/scripts (factory_init.install_crons) и таблица
+     рекомендуемых кронов; системный crontab НЕ правится. Записи прежнего
+     bootstrap в crontab (session_watchdog / delegate_watchdog) — WARN
+     «удалить вручную».
+  5. Приемка: `python -m pytest tests/ -q` фабрики (полный сьют).
 
 Ничего НЕ делает: не трогает секреты, не пушит, не создает проектов
 (проекты — factory_init.py --target), НЕ ставит плагин flow-enforcer
@@ -23,107 +39,157 @@ Usage:
 подсказка, если он отсутствует).
 """
 import argparse
-import json
-import os
+import filecmp
 import shutil
 import subprocess
 import sys
-from datetime import datetime, timezone
 from pathlib import Path
+
 import factory_paths as fp  # noqa: E402  (J64.5: пути машины — только оттуда)
+import flow_mode as fm  # noqa: E402  (файл режима — один с flow_mode.py)
 
 FACTORY = Path(__file__).resolve().parent.parent
 HERMES_HOME = fp.hermes_home()
-STATE = HERMES_HOME / "state"
-MODE_FILE = STATE / "flow_mode.json"
+STATE = fp.state_dir()
 ARCHIVE_DIR = STATE / "session-archive"
-WATCHDOG = FACTORY / "scripts" / "session_watchdog.py"
-DELEGATE_WATCHDOG = FACTORY / "scripts" / "delegate_watchdog.py"
+ZONE_GUARD_SRC = (FACTORY / "skills" / "pm-factory" / "pi" / "role-packs"
+                  / "regress-runner" / "extensions" / "zone-guard.ts")
+OPENSPEC_VERSION = "1.14.0"  # README «Требования»
+# Записи системного crontab, которые ставил bootstrap до политики кронов
+# 2026-10-23 (*/2 session_watchdog, */5 delegate_watchdog мимо Hermes).
+LEGACY_CRON_MARKERS = ("session_watchdog.py", "delegate_watchdog.py")
 
 
 def step(msg: str) -> None:
     print(f"[bootstrap] {msg}")
 
 
-def check_env() -> bool:
+def _run(cmd: list[str]) -> tuple[int, str]:
+    """(rc, вывод); бинаря нет или таймаут — (127, '')."""
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return 127, ""
+    return r.returncode, (r.stdout or r.stderr).strip()
+
+
+def _first(text: str) -> str:
+    return text.splitlines()[0] if text else ""
+
+
+def check_env(need_pytest: bool = True) -> bool:
+    """Окружение машины; False — есть обязательный MISSING."""
     ok = True
-    def _run(cmd: list[str]) -> str:
-        nonlocal ok
-        try:
-            r = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
-        except FileNotFoundError:
-            print(f"  MISSING: {cmd[0]}")
-            ok = False
-            return ""
-        out = (r.stdout or r.stderr).strip().splitlines()
-        line = out[0] if out else ""
-        print(f"  {cmd[0]}: {line}")
-        return line
-    v = _run(["python3", "--version"])
-    if v and v.startswith("Python 3."):
-        try:
-            minor = int(v.split()[1].split(".")[1])
-            if minor < 10:
-                print("  python < 3.10 — недостаточно")
-                ok = False
-        except (IndexError, ValueError):
-            pass
-    _run(["git", "--version"])
-    if shutil.which("npx") is None:
-        print("  npx: MISSING (нужен для openspec CLI: npm i -g @fission-ai/openspec)")
+    v = sys.version_info
+    print(f"  python: {sys.executable} {v.major}.{v.minor}.{v.micro}")
+    if (v.major, v.minor) < (3, 10):
+        print("  python < 3.10 — недостаточно")
         ok = False
+    for name, cmd, required, hint in (
+        ("git", ["git", "--version"], True, "установи git >= 2.40"),
+        ("node", ["node", "--version"], True, "нужен для OpenSpec CLI и Pi"),
+        ("npm", ["npm", "--version"], True, "нужен для OpenSpec CLI и Pi"),
+        ("openspec", ["openspec", "--version"], True,
+         f"npm i -g @fission-ai/openspec@{OPENSPEC_VERSION}"),
+        ("pi", ["pi", "--version"], False,
+         "npm i -g @earendil-works/pi-coding-agent (исполнитель ролей)"),
+    ):
+        rc, out = _run(cmd)
+        if rc == 127:
+            print(f"  {name}: {'MISSING' if required else 'WARN: нет'} — {hint}")
+            ok = ok and not required
+            continue
+        line = _first(out)
+        print(f"  {name}: {line}")
+        if name == "openspec" and OPENSPEC_VERSION not in line:
+            print(f"  openspec: WARN — рекомендуемая версия {OPENSPEC_VERSION}")
+    rc, out = _run([sys.executable, "-m", "pytest", "--version"])
+    if rc != 0:
+        print(f"  pytest: {'MISSING' if need_pytest else 'WARN: нет'} в "
+              f"{sys.executable} — {sys.executable} -m pip install pytest")
+        ok = ok and not need_pytest
     else:
-        _run(["npx", "--version"])
-    if shutil.which("pytest") is None and not (FACTORY / "venv").exists():
-        print("  pytest: MISSING (pip install pytest)")
-        # не роняем: pytest может быть в venv
+        print(f"  pytest: {_first(out)}")
     return ok
 
 
-def state_dirs() -> None:
+def state_dirs(flow_mode: str | None = None) -> str:
+    """Каталог состояния + файл режима. Возврат — итоговый режим."""
     STATE.mkdir(parents=True, exist_ok=True)
     ARCHIVE_DIR.mkdir(parents=True, exist_ok=True)
-    if not MODE_FILE.exists():
-        payload = {"mode": "shadow",
-                   "since": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-                   "by": "bootstrap-default"}
-        tmp = MODE_FILE.with_suffix(".tmp")
-        tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=1), encoding="utf-8")
-        os.replace(tmp, MODE_FILE)
-        step(f"flow_mode.json создан (дефолт shadow): {MODE_FILE}")
+    mode_file = fm.mode_file()
+    if flow_mode:
+        fm.set_mode(flow_mode, by="bootstrap-flag")
+        step(f"режим ворот установлен флагом: {flow_mode} ({mode_file})")
+        return flow_mode
+    if not mode_file.exists():
+        fm.set_mode("shadow", by="bootstrap-default")
+        step(f"режим ворот: shadow (новый файл {mode_file}); боевой — "
+             "flow_mode.py set enforcing --by customer")
+        return "shadow"
+    mode = fm.get_mode()
+    step(f"режим ворот: {mode} (файл уже есть: {mode_file})")
+    return mode
+
+
+def install_zone_guard() -> bool:
+    """zone-guard исполнителя Pi; False — не удалось поставить."""
+    ext = fp.pi_agent_dir() / "extensions"
+    dst = ext / "zone-guard.ts"
+    if not ZONE_GUARD_SRC.is_file():
+        step(f"zone-guard: эталон {ZONE_GUARD_SRC} не найден")
+        return False
+    if dst.is_file():
+        if filecmp.cmp(ZONE_GUARD_SRC, dst, shallow=False):
+            step(f"zone-guard: актуален ({dst})")
+        else:
+            step(f"zone-guard: WARN — {dst} отличается от репо, не перезаписан. "
+                 f"Обнови: cp {ZONE_GUARD_SRC} {dst}")
     else:
-        step(f"flow_mode.json уже есть: {json.loads(MODE_FILE.read_text())['mode']}")
+        try:
+            ext.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(ZONE_GUARD_SRC, dst)
+        except OSError as exc:
+            step(f"zone-guard: НЕ установлен ({exc})")
+            return False
+        step(f"zone-guard: установлен {dst}")
+    models = fp.pi_agent_dir() / "models.json"
+    if not models.is_file():
+        step(f"Pi: ключа провайдера нет — создай {models} (chmod 600, не в git)")
+    return True
 
 
-def ensure_watchdog_cron() -> None:
-    if not WATCHDOG.exists():
-        step("session_watchdog.py не найден — крон пропущен")
-        return
-    job = f"*/2 * * * * cd {FACTORY} && python3 {WATCHDOG} >> {STATE / 'watchdog.log'} 2>&1"
-    try:
-        cur = subprocess.run(["crontab", "-l"], capture_output=True, text=True)
-        existing = cur.stdout if cur.returncode == 0 else ""
-    except FileNotFoundError:
-        step("crontab недоступен — вотчдог пропущен (поставить вручную)")
-        return
-    changed = False
-    if "session_watchdog.py" not in existing:
-        existing = (existing.rstrip("\n") + "\n" + job + "\n") if existing.strip() else job + "\n"
-        changed = True
-    if DELEGATE_WATCHDOG.exists() and "delegate_watchdog.py" not in existing:
-        job2 = f"*/5 * * * * cd {FACTORY} && python3 {DELEGATE_WATCHDOG} >> {STATE / 'delegate_watchdog.log'} 2>&1"
-        existing = (existing.rstrip("\n") + "\n" + job2 + "\n") if existing.strip() else job2 + "\n"
-        changed = True
-    if not changed:
-        step("крон вотчдогов уже стоят")
-        return
-    w = subprocess.run(["crontab", "-"], input=existing, capture_output=True, text=True)
-    step("кроны вотчдогов установлены (*/2 + */5)" if w.returncode == 0
-         else f"кроны НЕ установлены: {w.stderr.strip()}")
+def legacy_crontab_entries() -> list[str]:
+    """Строки системного crontab, оставленные прежним bootstrap."""
+    rc, out = _run(["crontab", "-l"])
+    if rc != 0:
+        return []
+    return [line for line in out.splitlines()
+            if not line.lstrip().startswith("#")
+            and any(m in line for m in LEGACY_CRON_MARKERS)]
+
+
+def setup_crons() -> bool:
+    """Обертки-делегаты кронов Hermes (политика 2026-10-23). Системный
+    crontab не правится. False — ошибка установки оберток."""
+    for line in legacy_crontab_entries():
+        step("кроны: WARN — запись прежнего bootstrap в системном crontab "
+             f"(удали: crontab -e): {line}")
+    if not HERMES_HOME.is_dir():
+        step(f"кроны: Hermes не найден ({HERMES_HOME}) — вотчдоги Hermes не "
+             "ставятся (оркестратор — другой кодагент)")
+        return True
+    scripts = str(FACTORY / "scripts")
+    if scripts not in sys.path:
+        sys.path.insert(0, scripts)
+    import factory_init as fi  # noqa: E402  (одна реализация оберток)
+    report = fi.install_crons(HERMES_HOME / "scripts")
+    fi.print_recommended_crons()
+    return not report["errors"]
 
 
 def acceptance_tests() -> bool:
-    step("приемочный тест переносимости: pytest tests/ ...")
+    step("приемка: pytest tests/ фабрики ...")
     r = subprocess.run([sys.executable, "-m", "pytest", "tests/", "-q"],
                        cwd=FACTORY, capture_output=True, text=True)
     tail = r.stdout.strip().splitlines()[-1] if r.stdout.strip() else "?"
@@ -139,46 +205,43 @@ def plugin_hint() -> None:
         step(f"плагин flow-enforcer: установлен ({dst})")
         return
     step("плагин flow-enforcer НЕ установлен (J43: pre_tool_call-энфорсер "
-         "делегаций). Поставь при развертывании проекта:\n"
+         "делегаций Hermes). Поставь при развертывании проекта:\n"
          "  python3 scripts/factory_init.py --target <repo> --name <name>   # ставит плагин\n"
          "  # или штатно: hermes plugins install realax07/ai-factory --ref <commit>\n"
          "  # и включи: plugins.enabled: [flow-enforcer] в ~/.hermes/config.yaml\n"
-         "  # см. plugins/README.md. Bootstrap плагин не ставит (init про проекты).")
+         "  # см. plugins/README.md. Оркестратор не Hermes — плагин не нужен.")
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--flow-mode", choices=("shadow", "enforcing"), default="shadow",
-                    help="начальный режим (дефолт shadow — безопасно)")
-    ap.add_argument("--skip-cron", action="store_true", help="не ставить крон вотчдога")
-    ap.add_argument("--skip-tests", action="store_true", help="не гонять приемочные тесты")
-    args = ap.parse_args()
+    ap.add_argument("--flow-mode", choices=fm.VALID_MODES, default=None,
+                    help="установить режим ворот (без флага: новый файл — "
+                         "shadow, существующий не меняется)")
+    ap.add_argument("--skip-cron", action="store_true",
+                    help="не ставить обертки кронов Hermes")
+    ap.add_argument("--skip-pi", action="store_true",
+                    help="не ставить zone-guard исполнителя Pi")
+    ap.add_argument("--skip-tests", action="store_true",
+                    help="не гонять приемочный сьют")
+    args = ap.parse_args(argv)
 
-    step("1/4 окружение")
-    env_ok = check_env()
-    step("2/4 state-каталоги и режим")
-    state_dirs()
+    step("1/5 окружение")
+    env_ok = check_env(need_pytest=not args.skip_tests)
+    step("2/5 состояние движка и режим ворот")
+    state_dirs(args.flow_mode)
     plugin_hint()
-    if args.flow_mode != "shadow":
-        # перезаписываем дефолт, если явно попросили
-        payload = json.loads(MODE_FILE.read_text(encoding="utf-8"))
-        payload.update({"mode": args.flow_mode,
-                        "since": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-                        "by": "bootstrap-flag"})
-        tmp = MODE_FILE.with_suffix(".tmp")
-        tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=1), encoding="utf-8")
-        os.replace(tmp, MODE_FILE)
-        step(f"режим установлен: {args.flow_mode}")
-    step("3/4 вотчдог")
-    if not args.skip_cron:
-        ensure_watchdog_cron()
-    step("4/4 приемочные тесты")
+    step("3/5 исполнитель Pi")
+    pi_ok = True if args.skip_pi else install_zone_guard()
+    step("4/5 кроны")
+    cron_ok = True if args.skip_cron else setup_crons()
+    step("5/5 приемочный сьют")
     tests_ok = True if args.skip_tests else acceptance_tests()
 
     print()
-    if env_ok and tests_ok:
+    if env_ok and pi_ok and cron_ok and tests_ok:
         print("FACTORY-BOOTSTRAP OK: фабрика готова.")
-        print("Дальше: секреты в ~/.hermes/.env; проекты — scripts/factory_init.py --target <repo> --name <name>")
+        print("Дальше: ключи (~/.hermes/.env, ~/.pi/agent/models.json); "
+              "проекты — scripts/factory_init.py --target <repo> --name <name>")
         return 0
     print("FACTORY-BOOTSTRAP ЗАВЕРШЕН С ПРЕДУПРЕЖДЕНИЯМИ — исправь MISSING выше и перезапусти.")
     return 1

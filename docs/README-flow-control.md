@@ -100,7 +100,7 @@ Impact-анализ — обязательный артефакт change-пак�
 каждое минус цикл.
 
 - **Карта** — `openspec/changes/<id>/impact.md` (шаблон:
-  `openspec/changes/_template/impact.md`, ставит factory_init) ИЛИ секция
+  `templates/impact.template.md`, ставит factory_init) ИЛИ секция
   «## Impact» в design.md/proposal.md. Секции: затронутые сервисы /
   контракты / статика (static_v?) / deploy-матрица + RUNBOOK / миграции /
   тесты.
@@ -288,7 +288,7 @@ devops) получает резервацию по политике роли (`R
 | `codegraph.py` | dev/ПМ, артефакт репо (E14) | manual | Граф зависимостей кода (backend AST + frontend ES-imports, stdlib) |
 | `smoke_static.py` | post-deploy (E10) | manual | Смоук отдачи статики: ссылки шаблонов vs диск vs прод-URL (DEF-002) |
 | `check_auth_timing.py` | QA/dev на backend проекта (F5) | manual | Timing-safety аутентификации: bcrypt, dummy-проверки, нет прямых сравнений секретов |
-| `factory_bootstrap.py` | разово на новой машине | manual | Установка фабрики: окружение, state, крон вотчдога, приемка переносимости |
+| `factory_bootstrap.py` | разово на новой машине | manual | Установка фабрики: окружение (git, node/npm, OpenSpec, pytest, Pi), state + режим ворот (файл flow_mode.py), zone-guard Pi, обертки кронов Hermes (системный crontab не правит), приемка — сьют фабрики |
 | `factory_init.py` | разово на новый проект (E15) | manual | Развертывание конвейера в проект + post-init ворота (flow_check = OK); smoke `tests/unit/` и режим раскладки тестов (J66); `install_crons()` — обертки-делегаты кронов в ~/.hermes/scripts (политика 2026-10-23) |
 | `archive/pm-instruction-channel/` | — (архив, волна 4 Н2/Н3) | архив | `watchdog_daily_digest.py` + `pm_instruction_monitor.py`: мертвые каналы, ниоткуда не вызываются |
 

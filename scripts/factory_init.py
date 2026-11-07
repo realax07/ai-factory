@@ -5,44 +5,47 @@
 под проект и прогоняет post-init ворота (flow_check на пустом проекте = OK).
 
 Usage:
-  python3 ~/ai-factory/scripts/factory_init.py --target /path/to/repo --name "My Project" [--force] [--skip-plugin]
+  python3 ~/ai-factory/scripts/factory_init.py --target /path/to/repo --name "My Project"
+      [--force] [--skip-plugin] [--skip-crons]
 
-Что устанавливается:
-  scripts/flow_check.py, scripts/pr_validate.py, scripts/session_worktree.sh,
-  scripts/codegraph.py, scripts/smoke_static.py, scripts/session_archive.py,
-  scripts/delegate_gate.py, scripts/delegate_watchdog.py, scripts/pm_bounds_check.py,
-  scripts/stand_reaper.py, scripts/session_watchdog.py,
-  scripts/flow_state.py, flow_transition.py, session_check.py, gate_runner.py,
-  flowctl.py, flow_mode.py, role_zone_policy.py (ядро Flow Control),
-  scripts/flow_scope_check.py (АУД-4, Н21: enforcing — коммиты ветки
-  соответствуют change-id), scripts/flow_preflight.py (АУД-4, Н24: advisory
-  — дешевые чеки до dev-цикла); check_mirrors.py — FACTORY-ONLY, в проект
-  и в списки НЕ входит (сверка зеркал имеет смысл только на машине фабрики);
-  contracts/artifact_contract.md, contracts/flow_control_contract.md,
-  templates/constitution.template.md, templates/task_delegation.md, templates/pm_launch.md,
-  .github/workflows/flow.yml,
-  openspec/ (скелет specs/ + changes/archive/), test-model/ (checklists/new/reviews/approved/bugs),
-  architecture/ (пустая, для map.md архитектора),
-  docs/glossary.md — скелет глоссария проекта (J53): свободная форма,
-  без машинных ворот;
-  J54: эшелонированный регресс — скелеты tests/smoke_cross/README.md,
-  test-model/smoke-cross/manifest.json (пустой), test-model/regress-domains.json
-  (пустой) и test-model/regress/baseline.json ([]) — контент у проекта;
-  J58: impact-контур — scripts/impact_rules.json (правила механической
-  сверки diff→требование) и openspec/changes/_template/impact.md
-  (шаблон impact-карты СА);
-  tests/ (smoke TC-BOOTSTRAP-001), openspec/config.yaml (root-маркер CLI),
-  skills/ — 12 скиллов конвейера (flow/factory-flow, roles/* + J45: brainstorming,
-  service-decomposition, playwright-pro),
-  ПЛЮС плагин flow-enforcer (J43): копия plugins/flow-enforcer/ в
-  ~/.hermes/plugins/flow-enforcer/ (машина, не проект) и — если в
-  ~/.hermes/config.yaml уже есть блок plugins.enabled — добавление строки
-  '- flow-enforcer' в него. Нет блока → печатается инструкция, конфиг НЕ
-  правится автоматически. Отключить шаг: --skip-plugin.
+Что устанавливается (списки — COPY_FILES, FLOW_CONTROL_FILES, SKILL_DIRS,
+MKDIRS ниже; они и есть источник правды):
+  - ворота и утилиты проекта: flow_check, pr_validate, pm_bounds_check,
+    flow_preflight, delegate_gate, вотчдоги, codegraph, smoke_static,
+    session_archive, session_worktree.sh, check_auth_timing, factory_paths
+    (пути машины, J64.5), impact_rules.json (J58);
+  - копии ядра Flow Control: flow_state, flow_transition, session_check,
+    gate_runner, flowctl, flow_mode, role_zone_policy, flow_scope_check и их
+    зависимости flow_ids (J65.3) и agents/roles.json (реестр ролей, J65.1);
+    работает экземпляр фабрики (--repo проекта), копии — для автономности;
+  - контракты, шаблоны (constitution, task_delegation, pm_launch),
+    .github/workflows/flow.yml, промпты ролей agents/*.md (шапка с sha
+    эталона: flow_check предупреждает о рассинхроне), 12 скиллов конвейера;
+  - скелеты: openspec/ (specs, changes/archive, config.yaml), шаблон
+    impact-карты templates/impact.template.md (J58), test-model/ (new, reviews, approved, bugs, regress,
+    smoke-cross, regress-domains.json, baseline.json), architecture/,
+    docs/glossary.md (J53), tests/smoke_cross/README.md (J54),
+    CONSTITUTION.md;
+  - тесты (J66): smoke tests/unit/test_smoke.py (TC-BOOTSTRAP-001 + as-is
+    база test-model/regression/_bootstrap) и режим раскладки
+    test-model/test-layout.json — strict, если тестов вне раскладки нет,
+    иначе warn; существующий файл режима не трогается никогда.
 
-Промпты ролей копируются в <target>/agents/ — фабрика самодостаточна после установки.
-Каждый промпт получает шапку-версию (yaml-комментарий с sha эталона); при наличии
-~/ai-factory на машине flow_check предупреждает о рассинхроне (WARNING).
+Машина, не проект (только если есть каталог Hermes — HERMES_HOME):
+  - плагин flow-enforcer (J43) в <HERMES_HOME>/plugins/ + строка в
+    существующем блоке plugins.enabled config.yaml (нет блока — инструкция,
+    конфиг не правится); --skip-plugin — пропуск;
+  - обертки-делегаты кронов в <HERMES_HOME>/scripts + таблица рекомендуемых
+    кронов (политика 2026-10-23); --skip-crons — пропуск.
+  Оркестратор не Hermes (каталога нет) — оба шага пропускаются с пометкой.
+
+check_mirrors.py, package_runner.py, gen_role_docs.py — FACTORY-ONLY, в
+проект не копируются.
+
+Без --force существующие файлы не трогаются (докопируется недостающее); с
+--force перезаписываются копируемые файлы, включая flow.yml, промпты,
+CONSTITUTION.md и glossary — после него сверить required-checks и проектные
+правки. Каталоги скиллов, уже существующие в проекте, не перекопируются.
 
 Post-init ворота: flow_check <target> должен завершиться exit 0.
 """
@@ -75,6 +78,10 @@ def install_plugin(skip: bool = False) -> bool:
         return True
 
     hermes_home = fp.hermes_home()
+    if not hermes_home.is_dir():
+        print(f"  плагин flow-enforcer: пропуск — Hermes не найден ({hermes_home}); "
+              "оркестратор не Hermes — плагин не нужен")
+        return True
     src = FACTORY / "plugins" / PLUGIN_NAME
     dst = hermes_home / "plugins" / PLUGIN_NAME
     if not src.is_dir():
@@ -360,7 +367,6 @@ MKDIRS = [
     "openspec/changes/archive",
     "tests",
     "tests/smoke_cross",
-    "test-model/checklists",
     "test-model/new",
     "test-model/reviews",
     "test-model/approved",
@@ -438,14 +444,24 @@ REGRESS_BASELINE_REL = "test-model/regress/baseline.json"
 REGRESS_BASELINE_EMPTY = "[]\n"
 
 # J58 (2026-10-19): шаблон impact-карты СА (обязательный артефакт change-пакета).
-# Ставится как openspec/changes/_template/impact.md — заготовка, из которой СА
+# Ставится как templates/impact.template.md проекта — заготовка, из которой СА
 # копирует карту в свой пакет (или оформляет секцией «## Impact» в design.md).
-IMPACT_TEMPLATE_REL = "openspec/changes/_template/impact.md"
+# До 2026-11-07 — openspec/changes/_template/impact.md: каталог под changes/
+# openspec CLI и flow_check принимали за change-пакет, и post-init ворота
+# нового проекта краснели (validate --strict: «Change must have at least one
+# delta»; flow_check: контракты 1/2).
+IMPACT_TEMPLATE_REL = "templates/impact.template.md"
+LEGACY_IMPACT_TEMPLATE_REL = "openspec/changes/_template/impact.md"
 
 
 def install_impact_template(target: Path, force: bool = False) -> None:
     """J58: impact.md-заготовка change-пакета (идемпотентно, без force
     существующий файл проекта НЕ перезаписывается)."""
+    legacy = target / LEGACY_IMPACT_TEMPLATE_REL
+    if legacy.is_file():
+        print(f"  FACTORY-INIT WARNING: {LEGACY_IMPACT_TEMPLATE_REL} — прежнее "
+              "место шаблона ломает openspec validate --strict; удали каталог "
+              f"openspec/changes/_template/ (шаблон теперь {IMPACT_TEMPLATE_REL})")
     dst = target / IMPACT_TEMPLATE_REL
     if dst.exists() and not force:
         return
@@ -664,6 +680,9 @@ def main() -> int:
     # источник — репо фабрики; standalone-копии устарели (инцидент сессии).
     if args.skip_crons:
         print("  кроны: пропуск (--skip-crons)")
+    elif not fp.hermes_home().is_dir():
+        print(f"  кроны: пропуск — Hermes не найден ({fp.hermes_home()}); "
+              "вотчдоги Hermes не нужны")
     else:
         hermes_scripts = fp.hermes_home() / "scripts"
         crons = install_crons(hermes_scripts)

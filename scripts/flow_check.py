@@ -620,6 +620,11 @@ def check(repo: Path) -> int:
         for d in sorted(p for p in ch_dir.iterdir() if p.is_dir()):
             if d.name == "archive":
                 continue
+            if d.name.startswith("_"):
+                # шаблоны (factory_init: _template/impact.md, J58) — не
+                # change-пакет: без этого post-init flow_check нового проекта
+                # краснел контрактами 1/2 на _template/
+                continue
             active_changes.append(d)
             change_req = d / "requirements.md"
             if not change_req.is_file() and not change_req_ok:
