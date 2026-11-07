@@ -43,7 +43,10 @@
 ## Флоу 2 — багфикс
 
 ```
-BUG-NNN + существующая спека → dev_task (без БА/СА)
+BUG-NNN + существующая спека → bug_fix (dev, без БА/СА; тесты — tests/unit)
+  → [qa_automation] (qa_automation, по необходимости: регрессионный
+     api/web/integration-тест к багу, адаптация приемочных тестов — J66)
+  → code_review → accept_review → merge_task
   └─ если меняет ожидаемое поведение/API/схему → ЭСКАЛАЦИЯ:
        next_candidates = [create_change (Флоу 1), escalate_to_customer]
 ```
@@ -56,6 +59,7 @@ incident_ref=S<1|2|3>-<kebab-slug> (severity-классификация J48 — 
   делегации; без префикса enforcer → FLOW_MARKER_INVALID; движок принимает
   и легаси BUG-NNN — грамматика scripts/flow_ids.py, J65.3)
   → emergency_stabilize (dev/devops; неклассифицированный incident_ref — DENY)
+  → [qa_automation] (по необходимости: приемочные тесты — J66)
   → ПОСЛЕ стабилизации ОБЯЗАТЕЛЬНЫЙ PR-цикл: dev_task → code_review → merge_task
   └─ пока PR-цикл не закрыт: все post-emergency действия несут STALE_EVIDENCE
      (долг хотфикса) — «завершить» merge без последующего PR нельзя
@@ -70,7 +74,9 @@ incident_ref=S<1|2|3>-<kebab-slug> (severity-классификация J48 — 
 ## Флоу 4 — обслуживание фабрики/проекта
 
 ```
-[chore]-маркер → chore_task (dev) → code_review → merge_task
+[chore]-маркер → chore_task (dev) → [qa_automation] → code_review → merge_task
+  └─ [qa_automation] — по необходимости: dev пишет только tests/unit,
+     приемочные tests/api|web|integration правит qa_automation (J66)
   └─ НЕ обходится PR/review; изменение ПРАВИЛ фабрики = отдельное решение
      Заказчика (rules_change) — без него DENY
 ```
@@ -79,7 +85,8 @@ incident_ref=S<1|2|3>-<kebab-slug> (severity-классификация J48 — 
 ## Флоу 5 — экспресс
 
 ```
-условия экспресс-режима из BACKLOG/README → минимальный цикл
+условия экспресс-режима из BACKLOG/README → express_task (dev)
+  → [qa_automation] (по необходимости, J66) → express_close
   └─ до ЗАКРЫТИЯ обязательны ретроспективные артефакты:
      requirements (ретроспектива) + spec delta + кейсы
   └─ без них закрытие → DENY (урок R1.3)

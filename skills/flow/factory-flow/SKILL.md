@@ -33,7 +33,7 @@ metadata:
 
 **Флоу 3 — хотфикс:** `incident_ref` → `emergency_stabilize` (dev/pm, минимальный цикл) → ОБЯЗАТЕЛЬный последующий PR-цикл (dev_task → code_review → merge_task). Пока PR-цикл не закрыт — все post-emergency действия несут STALE_EVIDENCE (долг хотфикса). Deploy/rollback — только при существующем approval_ref; локальный PASS ≠ защита main (EXTERNAL_ENFORCEMENT_UNKNOWN).
 
-**Флоу 4 — обслуживание:** `[chore]`-маркер → `chore_task` (dev) → code_review → merge_task. PR/review не обходится; изменение правил фабрики — отдельное решение Заказчика (rules_change), без него DENY.
+**Флоу 4 — обслуживание:** `[chore]`-маркер → `chore_task` (dev) → [`qa_automation`, если нужны приемочные тесты — J66] → code_review → merge_task. PR/review не обходится; изменение правил фабрики — отдельное решение Заказчика (rules_change), без него DENY.
 
 **Флоу 5 — экспресс:** условия экспресс-режима из BACKLOG → минимальный цикл, но до закрытия обязательны ретроспективные артефакты: requirements + spec delta + кейсы. Без них закрытие = DENY.
 

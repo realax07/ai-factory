@@ -44,3 +44,57 @@
 5. `flow_check`: тест в корне `tests/` — WARNING/дефект по п.6.
 6. Тесты на всё выше (TC-J66-*).
 7. Миграция проектов — отдельными PR: child_bot (основной объем), ekotov-wiki, auto-school.
+
+## Резолюции
+
+- **2026-11-07 — решения Заказчика** по вопросам (варианты дословно):
+  разделение — «Жёстко»; проекты без api/web — «Четвёртый каталог»,
+  имя — «tests/integration»; `e2e/` — «В tests/web/e2e»; строгость —
+  «WARNING, потом ошибка»; тесты фабрики — «Перенести в tests/unit».
+  Решения ПМ без развилки: общие `tests/conftest.py`, `tests/README.md`,
+  `pytest.ini` — qa_automation; unit-тесты dev без TC-ID; `flowctl regress`
+  не меняется («иное» → весь `tests/` шире, чем `tests/unit`, и не теряет
+  покрытие `src/`) — п.4 черновика снят.
+- **2026-11-07 — фабрика сделана** (PLAN-test-zones.md, Флоу 4): спека
+  qa-pipeline (раскладка, проверка, трассировка, стек), контракт 6, зоны
+  `agents/roles.json` (dev — `tests/unit/**` без `tests/**` и `e2e/**`;
+  qa_automation — `tests/api|web|integration|smoke_cross|archive/**`,
+  `tests/conftest.py`, `tests/README.md`), промпты и паки dev и
+  qa_automation, примеры манифестов; `flow_check` — раскладка и стек по
+  режиму `test-model/test-layout.json` (warn по умолчанию, strict, битый
+  файл — ошибка), unit без TC-ID; `factory_init` — smoke в `tests/unit/`,
+  режим strict/warn по факту тестов проекта; файл режима — защищенный путь;
+  тесты фабрики перенесены в `tests/unit/`, фабрика — strict; TC-J66-001…009.
+- **2026-11-07 — возврат ревью review-001** (2 major, 10 minor), исправлено:
+  `tests/conftest.py` фабрики оставлен в корне (в `tests/unit/` pytest не
+  вызывал `pytest_sessionstart` — сторож дерева J64.1 молча отключался;
+  TC-J66-010); развилка Заказчика по Флоу 2–5 — «Этап qa_automation»: этап
+  после первого этапа флоу с тем же входом (STAGE_TABLE, SEQUENCE_PREREQS
+  enforcer; TC-J66-015); импорты — `ast`; контракт 6 «без кейс-базы» — только
+  приемочные тесты; archive — с TC в спеке; factory_init — разбор flow_check;
+  guard пака qa-automation сужен до `test-model/bugs`; ничьи
+  `tests/__init__.py`, `tests/fixtures/**` — qa_automation; устаревшие
+  тексты в skills и qa_case_reviewer; subject коммита с `[pipeline]`.
+- **Известное ограничение (review-001 #12):** `flowctl regress` по диффу
+  только `backend/` гоняет `tests/api`, только `frontend/` — `tests/web`;
+  unit-тесты dev (`tests/unit/`) в доменный регресс не попадают (дефект не
+  новый, J66 делает его системным). Добавление `tests/unit` к доменам
+  свернет прогон в полный `tests/` (правило дедупа BUG-005) — решать вместе
+  с картой доменов J52; кандидат следующей волны.
+- **2026-11-07 — review-002: approve** (3 minor): SyntaxWarning при разборе
+  `ast` подавлен; этап qa_automation дописан в контракт flow_control
+  (Флоу 2–5); правка спеки оформлена change-пакетом и заархивирована
+  (`openspec/changes/archive/2026-11-07-test-zones/`, контракт 7).
+- **Вне объема (зафиксировано):** корневой `e2e/` вне `tests/` раскладкой не
+  проверяется — до миграции ekotov-wiki он вне ворот; PR миграции `e2e/` →
+  `tests/web/e2e/` требует явной зоны в брифе ПМ (удаление `e2e/**` — вне
+  зон обеих ролей). Прочие `tests/*.md`, кроме README, — без владельца
+  (отказ: отчеты прогонов — `test-model/`, не `tests/`).
+- **Открыто:** миграция проектов отдельными PR (до нее у них warn):
+  child_bot — ~25 тестов из корня в `tests/integration/` (или `tests/unit/`
+  для тестов dev); ekotov-wiki — 3 теста из корня, `e2e/` → `tests/web/e2e/`,
+  `REPORT-*.md` из корня `tests/` — вне зоны qa_automation (перенос в
+  `test-model/` или отчеты в `tests/README.md`); auto-school —
+  `test_container_contract.py` из корня. После миграции — `mode: strict` (правка защищенного пути — `[pipeline]` в subject коммита).
+  Строка AGENTS.md «Автотесты (`tests/**`)» в таблице роутинга ревью —
+  защищенная зона, правка по согласию Заказчика (J65.11).

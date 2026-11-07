@@ -13,7 +13,7 @@
       stages:
         - id: impl
           run: pi:dev
-          zones: [backend/**, tests/**]
+          zones: [backend/**, tests/unit/**]
           inputs: [openspec/changes/my-package/spec.md]
           task: реализовать …
         - id: check

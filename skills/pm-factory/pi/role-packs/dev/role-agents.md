@@ -12,7 +12,7 @@ role: dev
 executor: pi (pi.dev, @earendil-works/pi-coding-agent)
 provider/model: zai-glm / glm-5.3 (семантический ярус, J59)
 mode: auto-edit (изолированная сессия на одну задачу)
-zone (write): backend/** frontend/** services/** src/** tests/** e2e/**
+zone (write): backend/** frontend/** services/** src/** tests/unit/**
 push: нет (push main запрещен; merge через PR делает ПМ)
 вход: задача tasks.md <NN> + спека/design/sdd как закон + worktree/ветка от ПМ
 выход: код задачи + чекбокс в tasks.md + отчет с локальными проверками Scenario
@@ -28,8 +28,8 @@ push: нет (push main запрещен; merge через PR делает ПМ)
 ## Зоны (механически охраняет zone-guard, PI_ZONE_WRITE)
 
 - **Запись — только продуктовое дерево задачи**: `backend/**`, `frontend/**`,
-  `services/**`, `src/**`, `tests/**`, `e2e/**` (вызывающий сужает env под
-  файлы задачи). Запрещено и так: `requirements.md`, спеки
+  `services/**`, `src/**`, `tests/unit/**` (вызывающий сужает env под
+  файлы задачи; приемочные tests/api|web|integration — зона qa_automation, J66). Запрещено и так: `requirements.md`, спеки
   (`openspec/**/spec.md`, design.md, proposal.md), `test-model/`, `scripts/**`.
   Запись вне зоны ОТКЛОНЯЕТСЯ zone-guard (`{ block: true }`) — отказ окончателен.
 - **Push НЕТ**: `git push` блокируется zone-guard. Коммиты — локально в

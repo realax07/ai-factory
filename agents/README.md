@@ -25,11 +25,11 @@
 |---|---|---|---|
 | Бизнес-аналитик | plan-write | `requirements.md`, `docs/ba/answers_roundN.md` | нет |
 | Системный аналитик | auto-edit | `openspec/changes/<id>/**` (вкл. requirements.md, research.md — решение 2026-10-05 ekotov-wiki), `sdd.md` | нет |
-| Разработчик | auto-edit | файлы своей задачи, чекбокс в `tasks.md`, своя ветка `feature/*`; код фабрики — `scripts/**`, `plugins/**` (J64.18) | своей ветки — да; main — нет |
+| Разработчик | auto-edit | файлы своей задачи, чекбокс в `tasks.md`, своя ветка `feature/*`; unit-тесты — только `tests/unit/**` (J66); код фабрики — `scripts/**`, `plugins/**` (J64.18) | своей ветки — да; main — нет |
 | Код-ревьюер | auto-edit | `code-reviews/<change-id>/review-*.md` | нет |
 | QA: автор кейсов | auto-edit | `test-model/new/<change-id>/` | нет |
 | QA: ревьюер кейсов | auto-edit | `test-model/reviews/`, перенос в `test-model/approved/` | нет |
-| QA: автоматизатор | auto-edit | `tests/**`, `test-model/bugs/`, `pytest.ini` (J64.18), dev-зависимости | нет |
+| QA: автоматизатор | auto-edit | `tests/api/**`, `tests/web/**`, `tests/integration/**`, `tests/smoke_cross/**`, `tests/archive/**`, общие `tests/conftest.py`, `tests/README.md`, `tests/__init__.py`, `tests/fixtures/**` (J66); `test-model/bugs/`, `pytest.ini` (J64.18), dev-зависимости | нет |
 | QA: impact-аналитик | auto-edit | `test-model/impact/<change-id>.md` | нет (роль создается при первом change с MODIFIED-дельтами, H5) |
 | QA: регресс-аналитик | auto-edit | `test-model/regression/manifest.md` | нет (роль создается при первом релизе, G5) |
 | Дизайнер UI | auto-edit | `design/**` проекта | нет (роль создается 2026-09-22 для R2/задачи 2.5, Д-5; мокапы и токены, продукт-код не пишет) |
@@ -107,7 +107,7 @@
 **Зачем:** превращает approved-кейсы в постоянный регрессионный набор — то, что гоняется перед каждым релизом и защищает от регрессий навсегда. Падение теста на корректном коде = баг-репорт, а не правка теста.
 
 - **Вход:** только approved-кейсы (контракт 6).
-- **Выход:** `tests/api/` (pytest+requests), `tests/web/` (Playwright) — селекторы дословно из кейсов, автожидания, sleep=0, TC-ID в docstring, метка `# regression: keep|candidate-archive` (G5); баг-репорты в `test-model/bugs/BUG-NNN`.
+- **Выход:** `tests/api/` (pytest+requests), `tests/web/` (Playwright), `tests/integration/` (без HTTP и браузера — проекты без API/UI; J66) — селекторы дословно из кейсов, автожидания, sleep=0, TC-ID в docstring, метка `# regression: keep|candidate-archive` (G5); баг-репорты в `test-model/bugs/BUG-NNN`.
 - **Ключевые границы:** не трогает код продукта; не подгоняет тест под сломанное поведение.
 
 ### 8. QA: impact-аналитик — [qa_impact_analyst_agent.md](qa_impact_analyst_agent.md) (создан по H5, в бою с Р4; с 2026-10-10 — J32-легкий: «Зоны воздействия», «Сквозные процессы», сверка плана прогонов)

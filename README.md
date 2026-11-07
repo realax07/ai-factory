@@ -220,7 +220,7 @@ pipeline:
   stages:
     - id: impl
       run: pi:dev
-      zones: [backend/**, tests/**]
+      zones: [backend/**, tests/unit/**]
       task: заменить print на logging в backend/, поведение не меняется, тесты зеленые
     - id: check
       run: gate:python3 scripts/flow_check.py .

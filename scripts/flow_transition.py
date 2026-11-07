@@ -111,7 +111,8 @@ EXTERNAL_UNKNOWN = "UNKNOWN"
 
 # Защищенные пути конвейера (Флоу 4, J3 pm_bounds_check).
 PROTECTED_PATHS = ("openspec/", "contracts/", "AGENTS.md", "agents/README.md",
-                   "agents/roles.json")  # J65.1: реестр ролей — политика зон
+                   "agents/roles.json",  # J65.1: реестр ролей — политика зон
+                   "test-model/test-layout.json")  # J66: строгость раскладки
 
 # Формат зависимостей в строке задачи tasks.md: «(после 1.1, 1.2)» / «depends: 1.1».
 DEPS_RE = re.compile(
@@ -1947,6 +1948,12 @@ STAGE_TABLE: dict[int, tuple[Stage, ...]] = {
     2: (
         Stage("bug_fix", ("dev",), False,
               ("pr_validate [BUG-NNN]",), check_bug_fix),
+        # J66 (решение Заказчика 2026-11-07, «Этап qa_automation»): dev пишет
+        # только tests/unit — регрессионный и адаптация приемочных тестов
+        # tests/api|web|integration — этап qa_automation; вход — тот же, что
+        # у первого этапа флоу (план + BUG-репорт).
+        Stage("qa_automation", ("qa_automation",), False,
+              ("flow_check (раскладка тестов J66)",), check_bug_fix),
         # Решение Заказчика 2026-10-07-code-review-flow2: независимое ревью
         # багфикса — до этого «написать ревью» во Флоу 2 было нечем
         # (accept_review требует уже существующий approve — замкнутый круг),
@@ -1963,6 +1970,12 @@ STAGE_TABLE: dict[int, tuple[Stage, ...]] = {
     3: (
         Stage("emergency_stabilize", ("dev", "devops"), False,
               ("pr_validate (последующий PR-цикл)",), check_emergency_stabilize),
+        # J66 (решение Заказчика 2026-11-07, «Этап qa_automation»): dev пишет
+        # только tests/unit — регрессионный и адаптация приемочных тестов
+        # tests/api|web|integration — этап qa_automation; вход — тот же, что
+        # у первого этапа флоу (incident_ref).
+        Stage("qa_automation", ("qa_automation",), False,
+              ("flow_check (раскладка тестов J66)",), check_emergency_stabilize),
         Stage("accept_review", ("code_reviewer",), False,
               ("provenance-блок (поставка 05)",), check_accept_review),
         Stage("merge_task", ("dev_lead", "integrator"), False,
@@ -1986,6 +1999,12 @@ STAGE_TABLE: dict[int, tuple[Stage, ...]] = {
     4: (
         Stage("chore_task", ("dev",), False,
               ("pr_validate check_chore", "pm_bounds_check (J3)"), check_chore_task),
+        # J66 (решение Заказчика 2026-11-07, «Этап qa_automation»): dev пишет
+        # только tests/unit — регрессионный и адаптация приемочных тестов
+        # tests/api|web|integration — этап qa_automation; вход — тот же, что
+        # у первого этапа флоу (план).
+        Stage("qa_automation", ("qa_automation",), False,
+              ("flow_check (раскладка тестов J66)",), check_chore_task),
         Stage("code_review", ("code_reviewer",), False,
               ("review-файл с вердиктом (agents/code_reviewer_agent.md)",),
               check_code_review),
@@ -1998,6 +2017,12 @@ STAGE_TABLE: dict[int, tuple[Stage, ...]] = {
     5: (
         Stage("express_task", ("dev",), False,
               ("pr_validate [change-id]",), check_express_task),
+        # J66 (решение Заказчика 2026-11-07, «Этап qa_automation»): dev пишет
+        # только tests/unit — регрессионный и адаптация приемочных тестов
+        # tests/api|web|integration — этап qa_automation; вход — тот же, что
+        # у первого этапа флоу (условия экспресса).
+        Stage("qa_automation", ("qa_automation",), False,
+              ("flow_check (раскладка тестов J66)",), check_express_task),
         Stage("express_close", ("pm",), False,
               ("flow_check", "openspec validate"), check_express_close),
     ),

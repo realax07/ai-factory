@@ -22,11 +22,11 @@ env `PI_ZONE_WRITE="зона1:зона2"` (относительные globs от
 |---|---|---|---|---|
 | [`ba/`](ba/README.md) | ba (`agents/ba_agent.md`) | **glm-5.3** | zai-glm | `requirements.md`, `docs/ba/*` |
 | [`sa/`](sa/README.md) | sa (`agents/sa_agent.md`) | **glm-5.3** | zai-glm | `openspec/changes/<id>/proposal.md`, `openspec/changes/<id>/requirements.md`, `openspec/changes/<id>/research.md`, `openspec/changes/<id>/specs/**`, `openspec/changes/<id>/design.md`, `openspec/changes/<id>/tasks.md`, `sdd.md` |
-| [`dev/`](dev/README.md) | dev (`agents/dev_agent.md`) | **glm-5.3** | zai-glm | `openspec/changes/<id>/tasks.md`, `backend/**`, `frontend/**`, `e2e/**`, `services/**`, `scripts/**`, `contracts/**`, `deploy/**`, `src/**`, `tests/**`, `test-model/bugs/*`, `feature/*`, `plugins/**` |
+| [`dev/`](dev/README.md) | dev (`agents/dev_agent.md`) | **glm-5.3** | zai-glm | `openspec/changes/<id>/tasks.md`, `backend/**`, `frontend/**`, `services/**`, `scripts/**`, `contracts/**`, `deploy/**`, `src/**`, `tests/unit/**`, `test-model/bugs/*`, `feature/*`, `plugins/**` |
 | [`code-reviewer/`](code-reviewer/README.md) | code_reviewer (`agents/code_reviewer_agent.md`) | **glm-5.3-flash** | zai-glm | `code-reviews/<id>/review-*.md` (вердикт — заголовком `## Вердикт: approve\|return` (J65.4)) |
 | [`qa-case-author/`](qa-case-author/README.md) | qa_case_author (`agents/qa_case_author_agent.md`) | **glm-5.3-flash** | zai-glm | `test-model/new/<id>/**` |
 | [`qa-case-reviewer/`](qa-case-reviewer/README.md) | qa_case_reviewer (`agents/qa_case_reviewer_agent.md`) | **glm-5.3-flash** | zai-glm | `test-model/reviews/**`, `test-model/approved/**` (append-only партии) |
-| [`qa-automation/`](qa-automation/README.md) | qa_automation (`agents/qa_automation_agent.md`) | **glm-5.3-flash** | zai-glm | `tests/**`, `test-model/bugs/*`, `pytest.ini` |
+| [`qa-automation/`](qa-automation/README.md) | qa_automation (`agents/qa_automation_agent.md`) | **glm-5.3-flash** | zai-glm | `tests/api/**`, `tests/web/**`, `tests/integration/**`, `tests/smoke_cross/**`, `tests/archive/**`, `tests/conftest.py`, `tests/README.md`, `tests/__init__.py`, `tests/fixtures/**`, `test-model/bugs/*`, `pytest.ini` |
 | [`qa-impact-analyst/`](qa-impact-analyst/README.md) | qa_impact_analyst (`agents/qa_impact_analyst_agent.md`) | **glm-5.3-flash** | zai-glm | `test-model/impact/*.md` |
 | [`ui-designer/`](ui-designer/README.md) | ui_designer (`agents/ui_designer_agent.md`) | **glm-5.3-flash** | zai-glm | `design/**` |
 | [`debug/`](debug/README.md) | debug (`agents/debug_agent.md`) | **glm-5.3-flash** | zai-glm | только чтение (диагностика без правки продукта; вердикт СРЕДА/КОД/ТЕСТ; зоны политики нет — развилка J64.11) |

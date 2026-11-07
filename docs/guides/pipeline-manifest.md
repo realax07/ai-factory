@@ -18,7 +18,7 @@ pipeline:
   stages:
     - id: impl
       run: pi:dev
-      zones: [backend/**, tests/**]
+      zones: [backend/**, tests/unit/**]
       inputs: [openspec/changes/my-package/spec.md]
       task: реализовать FR-1..FR-3 по спеке, тесты обязательны
     - id: check
@@ -279,7 +279,7 @@ pipeline:
       optional: true          # отказ вердикта → skipped, не STOP
     - id: dev
       run: pi:dev
-      zones: [backend/**, frontend/**, services/**, src/**, tests/**]
+      zones: [backend/**, frontend/**, services/**, src/**, tests/unit/**]
       task_id: "1.1"          # задача tasks.md (dev_task требует задачу)
       inputs:
         - openspec/changes/my-package/spec.md
@@ -309,7 +309,7 @@ pipeline:
                               # гашение НЕ автоматом — reaper/gc подберет
     - id: qa_auto
       run: pi:qa-automation
-      zones: [tests/**, test-model/bugs/*]
+      zones: [tests/api/**, tests/web/**, test-model/bugs/*]
       inputs: [test-model/approved/my-package/]
     - id: impact
       run: pi:qa-impact-analyst
