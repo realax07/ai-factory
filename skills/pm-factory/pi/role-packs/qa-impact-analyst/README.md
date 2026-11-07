@@ -26,7 +26,7 @@ env PI_ZONE_WRITE (префикс): test-model/impact
 ```
 <!-- roles:pack-zone:end -->
 
-Обе строки — одна зона политики (у масок внутри пути — `code-reviews/<id>/review-*.md`, `test-model/bugs/*` — префикс guard'а шире зоны: точную границу держит сверка диффа `session_check` на finish): runner нормализует glob-хвосты зон манифеста в префикс-форму guard'а (`normalize_zone`, J61 — guard матчит зоны префиксом, не glob'ом). В env `PI_ZONE_WRITE` — префикс-форма (то, что прокидывает runner); в манифесте пакета (`stage.zones`) — glob-форма, как в гайде docs/guides/pipeline-manifest.md.
+Обе строки — одна зона политики (у масок внутри пути — `code-reviews/<id>/review-*.md`, `test-model/bugs/*` — префикс guard'а шире зоны: точную границу держит сверка диффа `session_check` на finish — при запуске через раннер/flowctl; ручной `pi` по примеру охраняет только guard): runner нормализует glob-хвосты зон манифеста в префикс-форму guard'а (`normalize_zone`, J61 — guard матчит зоны префиксом, не glob'ом). В env `PI_ZONE_WRITE` — префикс-форма (то, что прокидывает runner); в манифесте пакета (`stage.zones`) — glob-форма, как в гайде docs/guides/pipeline-manifest.md.
 
 Ровно один файл отчета: `test-model/impact/<change-id>.md` (таблица
 тест → дельта → вердикт keep/revalidate/retire + новые тестовые требования +

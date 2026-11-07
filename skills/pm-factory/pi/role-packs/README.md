@@ -54,8 +54,9 @@ Kimi K3.1 (аудитор, вручную: `settings.example.json` единый,
 расходятся с политикой; у debug и auditor политики зон нет (развилка J64.11),
 их README не генерируются. Env `PI_ZONE_WRITE` задается в
 префикс-форме (без glob-хвостов `/**`) — runner нормализует зоны манифеста
-перед прокидкой (`normalize_zone`, J61); обе формы задают одну зону, в
-README каждого пака показаны обе. Структура `settings.example.json` — единая
+перед прокидкой (`normalize_zone`, J61); в README каждого пака показаны
+обе формы (у масок внутри пути префикс guard'а шире зоны — точную границу
+держит сверка диффа на finish). Структура `settings.example.json` — единая
 во всех паках (J62): `zai-glm` + `glm-5.3` (sa/architect/dev/ba) или
 `glm-5.3-flash` (остальные), thinking `off`, tools `read/bash/edit/write`
 (у debug — `read/bash`), `sessionDir` роли, zone-guard, quietStartup,

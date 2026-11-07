@@ -56,15 +56,18 @@ def test_pack_zone_blocks_match_policy():
 
 def test_pack_examples_use_policy_prefix():
     """TC-J65-PZ-002."""
-    found = 0
+    with_example = set()
     for path, role in gen.pack_targets(ROLES):
         _, prefix = gen.pack_zone_forms(role)
         want = prefix.replace("<id>", gen.EXAMPLE_ID)
         for value in re.findall(r"PI_ZONE_WRITE='([^']*)'",
                                 path.read_text(encoding="utf-8")):
             assert value == want, path
-            found += 1
-    assert found >= len(gen.pack_targets(ROLES)) - 1   # regress-runner — без примера
+            with_example.add(role["pack"])
+    # у каждого пака с политикой есть пример запуска, кроме regress-runner
+    # (у него шаблон в двойных кавычках — генератор его не трогает)
+    expected = {r["pack"] for _, r in gen.pack_targets(ROLES)} - {"regress-runner"}
+    assert with_example == expected
 
 
 def test_packs_without_policy_untouched():
