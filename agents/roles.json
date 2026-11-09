@@ -29,6 +29,7 @@
         "openspec/changes/<id>/specs/**",
         "openspec/changes/<id>/design.md",
         "openspec/changes/<id>/tasks.md",
+        "openspec/changes/<id>/impact.md",
         "sdd.md"
       ],
       "pack": "sa",

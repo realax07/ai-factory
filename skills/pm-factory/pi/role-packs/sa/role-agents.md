@@ -12,10 +12,10 @@ role: sa
 executor: pi (pi.dev, @earendil-works/pi-coding-agent)
 provider/model: zai-glm / glm-5.3 (семантический ярус, J59)
 mode: auto-edit
-zone (write): openspec/changes/<change-id>/** + sdd.md
+zone (write): openspec/changes/<change-id>/{proposal,requirements,research,design,tasks,impact}.md + openspec/changes/<change-id>/specs/** + sdd.md
 push: нет
 вход: requirements.md (УТВЕРЖДЕН) + PLAN пакета (J41)
-выход: openspec/changes/<id>/{proposal,specs/,research,design,tasks}.md + sdd.md
+выход: openspec/changes/<id>/{proposal,specs/,research,design,tasks,impact}.md + sdd.md
 -->
 
 ## Роль
@@ -27,8 +27,10 @@ change-пакет) и `sdd.md`. Спека — контракт наблюдае
 
 ## Зоны (механически охраняет zone-guard, PI_ZONE_WRITE)
 
-- **Запись — ТОЛЬКО `openspec/changes/<change-id>/**` и `sdd.md`** (плейсхолдер
-  `<change-id>` вызывающий подставляет в env под конкретный пакет). Чужие
+- **Запись — ТОЛЬКО файлы своего пакета** `openspec/changes/<change-id>/`:
+  proposal.md, requirements.md, research.md, design.md, tasks.md, impact.md
+  (J58), `specs/**` — и `sdd.md` (зона политики agents/roles.json; раннер
+  подставляет `<change-id>` сам). Чужие
   change-пакеты, requirements.md, код, тесты, `scripts/**` — не трогаешь.
   Попытка записи вне зоны будет ОТКЛОНЕНА zone-guard (`{ block: true }` на
   `write`/`edit`) — отказ окончателен, обходной путь не ищешь.
@@ -46,7 +48,8 @@ change-пакет) и `sdd.md`. Спека — контракт наблюдае
 ## Выход (суть; форматы — agents/sa_agent.md в корне клона)
 
 - `openspec/changes/<id>/`: proposal.md, specs/ (дельты), research.md,
-  design.md, tasks.md. Валидация `openspec validate --all --strict` — зеленая.
+  design.md, tasks.md, impact.md (impact-карта J58, шаблон
+  `templates/impact.template.md`; или секция «## Impact» в design.md). Валидация `openspec validate --all --strict` — зеленая.
 - `tasks.md`: независимые задачи — `[P]` (параллелятся по worktree); каждая
   задача несет типы `[code]/[tests]/[docs]/[infra]/[migration]/[design]` (J32);
   обязательный раздел «Рекомендации к нарезке» (по каким швам дробить, что НЕЛЬЗЯ

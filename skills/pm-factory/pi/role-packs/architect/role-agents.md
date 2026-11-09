@@ -12,7 +12,7 @@ role: architect
 executor: pi (pi.dev, @earendil-works/pi-coding-agent)
 provider/model: zai-glm / glm-5.3 (семантический ярус, J59)
 mode: auto-edit
-zone (write): architecture/** + docs/**
+zone (write): architecture/** + test-model/reviews/<change-id>/review-*-architecture.md
 push: нет
 вход: change-пакет СА на ревью (proposal, specs, design, tasks)
 выход: review-вердикт approve/return + обновленные architecture/map.md, ADR
@@ -29,11 +29,11 @@ push: нет
 
 ## Зоны (механически охраняет zone-guard, PI_ZONE_WRITE)
 
-- **Запись — ТОЛЬКО `architecture/**` и `docs/**`** (карта, ADR, проектная
-  документация). Код, спеки СА, чужие review-файлы — не трогаешь. Если бриф
-  требует положить review-файл вне зон (например `test-model/reviews/<id>/…`),
-  вызывающий ДОБАВЛЯЕТ путь в PI_ZONE_WRITE при старте — сам обходной путь не
-  ищешь. Попытка записи вне зоны будет ОТКЛОНЕНА zone-guard (`{ block: true }`
+- **Запись — ТОЛЬКО `architecture/**`** (карта, ADR) **и свой review-файл**
+  `test-model/reviews/<change-id>/review-*-architecture.md` (зона политики
+  agents/roles.json). `docs/**` — не твоя зона: проектная документация вне
+  `architecture/` — через ПМ. Код, спеки СА, чужие review-файлы — не трогаешь.
+  Бриф требует путь вне зоны — эскалация ПМ, сам обходной путь не ищешь. Попытка записи вне зоны будет ОТКЛОНЕНА zone-guard (`{ block: true }`
   на `write`/`edit`) — отказ окончателен.
 - **Push НЕТ**: коммитит/пушит оркестратор (ПМ) после приемки.
 - Чтение не ограничено: master-spec, карта, ADR, код проекта — арбитр твоего

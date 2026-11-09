@@ -21,6 +21,11 @@ P0.3 (пересмотр плана Заказчика): `--zone` CLI НЕ мо�
 делегации flowctl и в резервацию реестра сессий — аудит сверяет, что diff
 сверялся с зоной той же редакции, что действовала при prepare.
 
+Отпечаток зоны роли (role_zone_digest, J65.2) — sha256 списка зон ОДНОЙ
+роли. Пишется в резервацию рядом с policy_version; finish сверяет именно
+его: правка зоны чужой роли не роняет активную сессию, изменение своей —
+ZONE_POLICY_MISMATCH.
+
 Роли, отсутствующие в реестре, получают пустую политику = запись запрещена:
 неизвестная роль не может резервировать зоны через общий '**'. Роли с
 `empty_policy` (relay/customer) — то же, явно.
@@ -83,6 +88,17 @@ EMPTY_POLICY_ROLES: tuple[str, ...] = tuple(
 def policy_version() -> str:
     """Версия политики для записи делегации (аудит: какая редакция таблицы)."""
     return POLICY_VERSION
+
+
+def role_zone_digest(role: str) -> str:
+    """Отпечаток зоны ОДНОЙ роли (J65.2): sha256 канонического списка ее зон
+    в форме реестра. Пишется в резервацию; finish сверяет его, а не версию
+    реестра целиком — правка зоны чужой роли активную сессию не задевает.
+    Роль без политики — отпечаток пустого списка (стабильная строка)."""
+    rid = str(role or "").strip()
+    zones = sorted(registry_zones_for(rid))
+    raw = json.dumps(zones, ensure_ascii=False, separators=(",", ":"))
+    return f"role={rid} sha256 {hashlib.sha256(raw.encode('utf-8')).hexdigest()}"
 
 
 def allowed_zones_for(role: str) -> tuple[str, ...]:
@@ -161,7 +177,8 @@ def narrow_zones(role: str, requested: list | tuple) -> dict:
                        политикой (политика целиком НЕ подставляется);
       violations     — запрошенные пути вне политики роли (для отказа
                        с перечнем недопустимых путей);
-      policy_version — версия политики (для записи делегации/резервации).
+      policy_version — версия политики (аудит: редакция реестра целиком);
+      role_zone_digest — отпечаток зоны этой роли (J65.2: сверка на finish).
 
     Роль без политики (неизвестная/не пишущая): zones=[], violations=
     весь запрос. Сужение прозрачно: вызывающий обязан показать фактически
@@ -178,4 +195,5 @@ def narrow_zones(role: str, requested: list | tuple) -> dict:
         else:
             violations.append(zone)
     return {"zones": zones, "violations": violations,
-            "policy_version": policy_version()}
+            "policy_version": policy_version(),
+            "role_zone_digest": role_zone_digest(role)}

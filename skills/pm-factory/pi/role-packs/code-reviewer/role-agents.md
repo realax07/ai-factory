@@ -9,10 +9,10 @@ role: code_reviewer
 executor: pi (pi.dev, @earendil-works/pi-coding-agent)
 provider/model: zai-glm / glm-5.3-flash (механический ярус, J59/J62)
 mode: auto-edit (изолированная сессия на одно ревью)
-zone (write): test-model/reviews/**
+zone (write): code-reviews/<change-id>/review-*.md
 push: нет (merge через PR делает ПМ)
 вход: задача + дифф и файлы задачи + спека/design/sdd + отчет dev
-выход: review-файл в test-model/reviews/<change-id>/ с заголовком `## Вердикт: Одобрить|Вернуть`
+выход: review-файл в code-reviews/<change-id>/ с заголовком `## Вердикт: Одобрить|Вернуть`
 -->
 
 ## Роль
@@ -24,8 +24,9 @@ best practices — арбитр качества. Твоя ценность — 
 
 ## Зоны (механически охраняет zone-guard, PI_ZONE_WRITE)
 
-- **Запись — только review-файлы**: `test-model/reviews/**`
-  (`test-model/reviews/<change-id>/review-<задача>-<NNN>.md`). Править код,
+- **Запись — только review-файлы**: `code-reviews/<change-id>/review-*.md`
+  (`code-reviews/<change-id>/review-<задача>-<NNN>.md`; зона политики
+  agents/roles.json). Кейсовые ревью `test-model/reviews/` — зона qa-case-reviewer. Править код,
   трогать tasks.md/спеки/`tests/**` — запрещено; отклоняется zone-guard.
 - **Push НЕТ** (zone-guard); merge через PR — ПМ. Чтение не ограничено.
 
@@ -37,7 +38,7 @@ best practices — арбитр качества. Твоя ценность — 
 
 ## Выход — машиночитаемый вердикт (ворота раннера парсят файл, не прозу)
 
-- `test-model/reviews/<change-id>/review-<задача>-<NNN>.md`: вердикт +
+- `code-reviews/<change-id>/review-<задача>-<NNN>.md`: вердикт +
   таблица замечаний (blocker/major/minor: файл/строка/рекомендация) +
   список проверенных Scenario + что не проверено.
 - **Вердикт — заголовком** `## Вердикт: Одобрить` или `## Вердикт: Вернуть`
