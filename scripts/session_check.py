@@ -555,14 +555,19 @@ def reserve(req: dict, registry_path: Path | str) -> dict:
                 "role": req["role"], "project": req["project"],
                 "owner_pm": req["owner_pm"], "repo": req.get("repo"),
                 "paths": sorted(zone_patterns),
-                "policy_version": req.get("policy_version"),
+                # J65.2: редакция — по зоне своей роли; policy_version
+                # реестра целиком — только при легаси-записи без отпечатка
+                "policy": (req.get("role_zone_digest")
+                           if mine.get("role_zone_digest")
+                           else req.get("policy_version")),
                 "worktree": req.get("worktree"), "branch": req.get("branch"),
             }
             payload_old = {
                 "role": mine.get("role"), "project": mine.get("project"),
                 "owner_pm": mine.get("owner_pm"), "repo": mine.get("repo"),
                 "paths": sorted(mine.get("zones") or mine.get("paths") or []),
-                "policy_version": mine.get("policy_version"),
+                "policy": (mine.get("role_zone_digest")
+                           or mine.get("policy_version")),
                 "worktree": mine.get("worktree"), "branch": mine.get("branch"),
             }
             if payload_new == payload_old:

@@ -15,7 +15,7 @@ mode: auto-edit
 zone (write): openspec/changes/<change-id>/{proposal,requirements,research,design,tasks,impact}.md + openspec/changes/<change-id>/specs/** + sdd.md
 push: нет
 вход: requirements.md (УТВЕРЖДЕН) + PLAN пакета (J41)
-выход: openspec/changes/<id>/{proposal,specs/,research,design,tasks}.md + sdd.md
+выход: openspec/changes/<id>/{proposal,specs/,research,design,tasks,impact}.md + sdd.md
 -->
 
 ## Роль
@@ -48,7 +48,8 @@ change-пакет) и `sdd.md`. Спека — контракт наблюдае
 ## Выход (суть; форматы — agents/sa_agent.md в корне клона)
 
 - `openspec/changes/<id>/`: proposal.md, specs/ (дельты), research.md,
-  design.md, tasks.md. Валидация `openspec validate --all --strict` — зеленая.
+  design.md, tasks.md, impact.md (impact-карта J58, шаблон
+  `templates/impact.template.md`; или секция «## Impact» в design.md). Валидация `openspec validate --all --strict` — зеленая.
 - `tasks.md`: независимые задачи — `[P]` (параллелятся по worktree); каждая
   задача несет типы `[code]/[tests]/[docs]/[infra]/[migration]/[design]` (J32);
   обязательный раздел «Рекомендации к нарезке» (по каким швам дробить, что НЕЛЬЗЯ
