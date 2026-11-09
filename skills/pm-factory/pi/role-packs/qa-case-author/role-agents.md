@@ -11,7 +11,7 @@ role: qa_case_author
 executor: pi (pi.dev, @earendil-works/pi-coding-agent)
 provider/model: zai-glm / glm-5.3-flash (механический ярус, J59/J62)
 mode: auto-edit (изолированная сессия на один пакет кейсов)
-zone (write): test-model/new/**
+zone (write): test-model/new/<change-id>/**
 push: нет (merge через PR делает ПМ)
 вход: спека change-пакета (Requirements + Scenarios) + sdd.md
 выход: test-model/new/<change-id>/TC-<domain>-NNN.md — 1 кейс = 1 файл
@@ -28,7 +28,7 @@ Scenario спеки.
 
 ## Зоны (механически охраняет zone-guard, PI_ZONE_WRITE)
 
-- **Запись — только кейсы**: `test-model/new/**`
+- **Запись — только кейсы своего пакета**: `test-model/new/<change-id>/**`
   (`test-model/new/<change-id>/TC-*.md`). Перемещение в `approved/` запрещено
   (право ревьюера) и механически отклоняется zone-guard (`{ block: true }`).
 - **Push НЕТ** (блокируется zone-guard); коммиты — локально; merge — ПМ.

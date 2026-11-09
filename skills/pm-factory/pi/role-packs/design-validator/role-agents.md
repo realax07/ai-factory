@@ -11,7 +11,7 @@ role: design_validator
 executor: pi (pi.dev, @earendil-works/pi-coding-agent)
 provider/model: zai-glm / glm-5.3-flash (механический ярус, J59/J62)
 mode: auto-edit (изолированная сессия на одну валидацию)
-zone (write): test-model/reviews/** (review-NNN-design.md)
+zone (write): test-model/reviews/<change-id>/review-*-design.md
 push: нет (коммит локальный; пушит оркестратор)
 вход: design-артефакты + затронутые страницы/компоненты дельты + стенд
 выход: review-файл с вердиктом approve/return и таблицей расхождений

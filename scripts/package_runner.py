@@ -1107,6 +1107,7 @@ def _zone_begin(gate: dict, stage: dict, repo: Path, worktree: Path,
         "role": role, "project": repo.name, "owner_pm": FLOW_OWNER,
         "paths": narrowed["zones"],
         "policy_version": narrowed["policy_version"],
+        "role_zone_digest": narrowed["role_zone_digest"],
         "worktree": str(worktree), "branch": branch,
         "base_sha": gate["base_sha"],
     }, registry)

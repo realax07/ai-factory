@@ -40,7 +40,9 @@ prepare/run/finish/status/reconcile — исполнение разрешенн�
   СУЗИТЬ. Запрос пути вне политики роли — отказ (ZONE_OUTSIDE_POLICY) с
   перечнем недопустимых путей; сужение прозрачно (в выводе — фактические
   суженные зоны и policy_version). finish сверяет diff ИМЕННО с суженной
-  (политико-валидной) зоной; реестр хранит policy_version для аудита.
+  (политико-валидной) зоной; реестр хранит policy_version для аудита и
+  role_zone_digest (J65.2) — отпечаток зоны своей роли, который finish
+  сверяет: изменилась зона своей роли — ZONE_POLICY_MISMATCH, чужой — нет.
 - Никакого авто-push/merge/deploy и авто-старта фаз: только исполнение
   разрешенного; этапные ворота Заказчика — check_action
   (HUMAN_APPROVAL_REQUIRED, контракт §10).
@@ -806,6 +808,7 @@ def cmd_prepare(args) -> int:
         "owner_pm": args.owner_pm,
         "paths": zones,
         "policy_version": policy_version,
+        "role_zone_digest": narrowed["role_zone_digest"],
         "worktree": worktree,
         "branch": derived_branch,
         "base_sha": _git_head(base_tree),
@@ -861,6 +864,7 @@ def cmd_prepare(args) -> int:
                         "owner_pm": args.owner_pm,
                         "paths": zones,
                         "policy_version": policy_version,
+                        "role_zone_digest": narrowed["role_zone_digest"],
                         "worktree": worktree,
                         "branch": derived_branch,
                         "base_sha": _git_head(base_tree),
@@ -1288,21 +1292,29 @@ def cmd_finish(args) -> int:
                     ((session or {}).get("zones")
                      or (session or {}).get("paths") or [])]
     stored_policy_version = (session or {}).get("policy_version")
+    stored_role_digest = (session or {}).get("role_zone_digest")
     # P0.3: зона резервации должна подтверждаться политикой роли —
     # сверяется именно суженная (политико-валидная) зона, а не исходная
-    # просьба --path; расхождение редакции политики — дефект аудита.
+    # просьба --path.
+    # J65.2: редакция сверяется по отпечатку зоны СВОЕЙ роли, а не по
+    # версии реестра целиком: правка зоны чужой роли (или описаний) не
+    # роняет активную сессию; любое изменение зоны своей роли — дефект.
+    # Легаси-резервация без отпечатка — только сверка покрытия ниже.
     current_policy = rzp.narrow_zones(record.get("actor_role"), stored_zones)
-    policy_stale = bool(stored_policy_version) and \
-        stored_policy_version != rzp.policy_version()
+    current_role_digest = rzp.role_zone_digest(record.get("actor_role"))
+    policy_stale = bool(stored_role_digest) and \
+        stored_role_digest != current_role_digest
     policy_invalid = bool(stored_zones) and (
         not current_policy["zones"] or current_policy["violations"])
     if policy_stale or policy_invalid:
         defects.append({
             "source": "zone", "code": "ZONE_POLICY_MISMATCH",
             "detail": "зона резервации не подтверждается текущей политикой "
-                      f"роли «{record.get('actor_role')}» (policy_version "
-                      f"резервации: {stored_policy_version or '—'}; текущая: "
-                      f"{rzp.policy_version()}; непокрытые запросы: "
+                      f"роли «{record.get('actor_role')}» (зона роли в "
+                      f"резервации: {stored_role_digest or '— (легаси)'}; "
+                      f"текущая: {current_role_digest}; policy_version "
+                      f"резервации: {stored_policy_version or '—'}; "
+                      f"непокрытые запросы: "
                       f"{', '.join(current_policy['violations']) or '—'}); "
                       "политика: " + rzp.POLICY_SOURCE,
         })
@@ -1476,6 +1488,7 @@ def cmd_finish(args) -> int:
                      "violations": zone_res.get("violations", []),
                      "zones": stored_zones,
                      "policy_version": stored_policy_version,
+                     "role_zone_digest": stored_role_digest,
                      "policy_confirmed": not (policy_stale or policy_invalid)},
             "gates": {"overall": gate_report["overall"],
                       "report_ref": gate_report.get("report_ref"),

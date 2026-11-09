@@ -21,7 +21,7 @@ env `PI_ZONE_WRITE="зона1:зона2"` (префиксы путей от cwd)
 | Пак | Роль (фабричный промпт) | Модель | Провайдер | Зоны записи (политика ворот) |
 |---|---|---|---|---|
 | [`ba/`](ba/README.md) | ba (`agents/ba_agent.md`) | **glm-5.3** | zai-glm | `requirements.md`, `docs/ba/*` |
-| [`sa/`](sa/README.md) | sa (`agents/sa_agent.md`) | **glm-5.3** | zai-glm | `openspec/changes/<id>/proposal.md`, `openspec/changes/<id>/requirements.md`, `openspec/changes/<id>/research.md`, `openspec/changes/<id>/specs/**`, `openspec/changes/<id>/design.md`, `openspec/changes/<id>/tasks.md`, `sdd.md` |
+| [`sa/`](sa/README.md) | sa (`agents/sa_agent.md`) | **glm-5.3** | zai-glm | `openspec/changes/<id>/proposal.md`, `openspec/changes/<id>/requirements.md`, `openspec/changes/<id>/research.md`, `openspec/changes/<id>/specs/**`, `openspec/changes/<id>/design.md`, `openspec/changes/<id>/tasks.md`, `openspec/changes/<id>/impact.md`, `sdd.md` |
 | [`dev/`](dev/README.md) | dev (`agents/dev_agent.md`) | **glm-5.3** | zai-glm | `openspec/changes/<id>/tasks.md`, `backend/**`, `frontend/**`, `services/**`, `scripts/**`, `contracts/**`, `deploy/**`, `src/**`, `tests/unit/**`, `test-model/bugs/*`, `feature/*`, `plugins/**` |
 | [`code-reviewer/`](code-reviewer/README.md) | code_reviewer (`agents/code_reviewer_agent.md`) | **glm-5.3-flash** | zai-glm | `code-reviews/<id>/review-*.md` (вердикт — заголовком `## Вердикт: approve\|return` (J65.4)) |
 | [`qa-case-author/`](qa-case-author/README.md) | qa_case_author (`agents/qa_case_author_agent.md`) | **glm-5.3-flash** | zai-glm | `test-model/new/<id>/**` |

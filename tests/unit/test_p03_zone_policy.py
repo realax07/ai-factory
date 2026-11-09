@@ -368,8 +368,10 @@ class TestFinishZonePolicy:
             rzp.policy_version()
 
     def test_policy_version_mismatch_is_zone_defect(self, tmp_path):
-        """Резервация с чужой (устаревшей) редакцией политики → дефект
-        ZONE_POLICY_MISMATCH, accepted нет, даже если diff в зоне."""
+        """Резервация с устаревшим отпечатком зоны СВОЕЙ роли → дефект
+        ZONE_POLICY_MISMATCH, accepted нет, даже если diff в зоне.
+        [test-adapted] J65.2: сверяется role_zone_digest, а не policy_version
+        реестра целиком (правка чужой роли — TC-J65-RZD-002)."""
         repo, reg, state = self._run_cycle_to_running(tmp_path)
         p = repo / "src" / "widget.py"
         p.write_text("X = 42\n", encoding="utf-8")
@@ -379,8 +381,8 @@ class TestFinishZonePolicy:
         # Тампер: подменяем редакцию политики в резервации (имитация
         # «зона зарезервирована старой редакцией таблицы»).
         data = json.loads(reg.read_text(encoding="utf-8"))
-        data["sessions"][0]["policy_version"] = \
-            "agents/README.md@OLD:устаревшая редакция"
+        data["sessions"][0]["role_zone_digest"] = \
+            "role=dev sha256 OLD-устаревшая-зона"
         reg.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
         report = tmp_path / "rep.md"
         report.write_text("# Отчет\n", encoding="utf-8")
