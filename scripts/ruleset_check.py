@@ -105,6 +105,9 @@ def main(argv: list[str] | None = None) -> int:
     try:
         found = problems(ruleset)
     except Unknown as exc:
+        if args.json:
+            print(json.dumps({"ok": False, "unknown": True, "problems": [str(exc)]},
+                             ensure_ascii=False))
         print(f"ruleset_check: UNKNOWN — {exc}", file=sys.stderr)
         return 2
     if args.json:
