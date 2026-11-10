@@ -512,8 +512,9 @@ def install_factory_lock(target: Path, force: bool = False) -> bool:
     """J65.7: factory.lock — версия фабрики, чьи ворота гоняет CI проекта.
     Нет файла — пишется опубликованный HEAD фабрики; есть — не трогается
     (обновление ворот — осознанный PR: `factory_lock.py update`), с --force —
-    обновляется до опубликованного HEAD. HEAD не опубликован — WARNING,
-    lock не пишется (CI проекта не сможет получить такой коммит)."""
+    обновляется до HEAD фабрики, влитого в origin/main. HEAD не в main —
+    WARNING, lock не пишется (init при этом не проваливается). Возврат —
+    записан/актуален ли lock."""
     try:
         current = _fl.read_lock(target)
     except _fl.LockError as exc:
@@ -686,10 +687,12 @@ def main() -> int:
     install_test_layout(target)
 
     # 3d. factory.lock (J65.7): CI проекта гоняет ворота этой версии фабрики
-    lock_ok = install_factory_lock(target, force=args.force)
+    # Lock не записан — WARNING, не провал init: без lock CI проекта берет
+    # свои scripts/ (как до J65.7), проект рабочий.
+    install_factory_lock(target, force=args.force)
 
     # 4. Проверка среды
-    ok = lock_ok
+    ok = True
     for cmd in ("python3 --version", "git --version"):
         r = subprocess.run(cmd.split(), capture_output=True, text=True)
         print(f"  {cmd}: {r.stdout.strip() or r.stderr.strip()}")

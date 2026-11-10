@@ -18,6 +18,16 @@ J65.7 — «Lock по SHA сейчас»: factory.lock хранит SHA комм
 - README, реестр скриптов, бэклог; тесты TC-J65-LCK-001…005 (шаг CI
   исполняется bash'ем как в Actions).
 
+## Возврат ревью review-001 (3 major, 8 minor)
+
+Исправлено: lock не записан — WARNING, init не проваливается (тесты init не
+зависят от git-состояния фабрики); одна грамматика lock в CI и в
+factory_lock.py (ровно по одной строке repo=/sha=, без пробелов; repo по
+regex), тесты на расхождения; «опубликован» = влит в origin/main
+(`merge-base --is-ancestor`, без сети), а не любая remote-ветка;
+`persist-credentials: false` на checkout фабрики; update чинит битый lock;
+тесты AI_FACTORY_HOME и условия checkout. Остальное — в резолюции J65.7.
+
 ## Вне объема
 
 Перевод проектов (их `flow.yml` и `factory.lock`) — `factory_init --force` в

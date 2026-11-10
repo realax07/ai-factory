@@ -58,12 +58,18 @@ jobs:
         id: lock
         run: |
           if [ -f factory.lock ]; then
-            SHA=$(sed -n 's/^sha=//p' factory.lock | tr -d '[:space:]')
-            REPO=$(sed -n 's/^repo=//p' factory.lock | tr -d '[:space:]')
-            if ! echo "$SHA" | grep -qE '^[0-9a-f]{40}$' || [ -z "$REPO" ]; then
-              echo "::error::factory.lock: нужны строки repo=<owner/name> и sha=<40 hex>"
+            # грамматика одна с scripts/factory_lock.py: ровно по одной строке
+            # repo=<owner/name> и sha=<40 hex>, без пробелов; прочее (кроме
+            # комментариев # и пустых строк) — ошибка
+            BAD=$(grep -vE '^(#.*|[[:space:]]*|repo=[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+|sha=[0-9a-f]{40})$' factory.lock || true)
+            NREPO=$(grep -cE '^repo=' factory.lock || true)
+            NSHA=$(grep -cE '^sha=' factory.lock || true)
+            if [ -n "$BAD" ] || [ "$NREPO" != "1" ] || [ "$NSHA" != "1" ]; then
+              echo "::error::factory.lock: нужны ровно по одной строке repo=<owner/name> и sha=<40 hex>"
               exit 1
             fi
+            SHA=$(sed -n 's/^sha=//p' factory.lock)
+            REPO=$(sed -n 's/^repo=//p' factory.lock)
             echo "sha=$SHA" >> "$GITHUB_OUTPUT"
             echo "repo=$REPO" >> "$GITHUB_OUTPUT"
             echo "FACTORY_SCRIPTS=.factory/scripts" >> "$GITHUB_ENV"
@@ -79,6 +85,7 @@ jobs:
           repository: ${{ steps.lock.outputs.repo }}
           ref: ${{ steps.lock.outputs.sha }}
           path: .factory
+          persist-credentials: false
 
       - name: Set up Node
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4 (J64.17: по SHA)
