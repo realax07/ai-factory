@@ -56,7 +56,9 @@ def test_update_refuses_unpublished(tmp_path, monkeypatch, capsys):
     битый lock update перезаписывает."""
     monkeypatch.setattr(fl, "_git", lambda *a: SHA)
     assert fl.main(["update", "--target", str(tmp_path)]) == 1
-    assert "не влит в origin/main" in capsys.readouterr().err
+    err = capsys.readouterr().err
+    # клон с origin/main — «не влит»; чистый клон CI без ссылки — «нет ссылки»
+    assert "не влит в origin/main" in err or "нет ссылки origin/main" in err
     assert not (tmp_path / fl.LOCK_NAME).exists()
     assert fl.main(["update", "--target", str(tmp_path), "--sha", SHA]) == 0
     assert fl.read_lock(tmp_path)["sha"] == SHA
