@@ -1,6 +1,6 @@
 {
   "$schema": "https://pi.dev/schemas/settings.schema.json",
-  "//": "Пример настроек сессии debug. Ложится в ~/.pi/agent/settings.json (агент-директория) ЛИБО в .pi/settings.json корня worktree (тогда требует project trust). НЕ содержит секретов: ключ zai живет в ~/.pi/agent/models.json (chmod 600). Зоны записи задает env PI_ZONE_WRITE при вызове (см. README): у debug это только лог диагностики test-model/regress/**.",
+  "//": "Пример настроек сессии debug. Ложится в ~/.pi/agent/settings.json (агент-директория) ЛИБО в .pi/settings.json корня worktree (тогда требует project trust). НЕ содержит секретов: ключ zai живет в ~/.pi/agent/models.json (chmod 600). Зоны записи задает env PI_ZONE_WRITE при вызове (см. README): у debug это только база граблей docs/project-pitfalls.md (append через bash; tools без edit/write — границу держит сверка диффа на finish).",
   "defaultProvider": "zai-glm",
   "defaultModel": "glm-5.3-flash",
   "defaultThinkingLevel": "off",

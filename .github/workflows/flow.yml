@@ -12,15 +12,15 @@ jobs:
   test-flow-control:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4 (J64.17: по SHA)
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5 (J64.17: по SHA)
         with:
           python-version: "3.12"
 
       - name: Install pytest
-        run: python -m pip install --upgrade pip pytest
+        run: python -m pip install --upgrade pip pytest==9.2.0  # J64.17: версия закреплена
 
       # GITHUB_EVENT_PATH удаляется на уровне процесса (env -u): Actions
       # всегда указывает эту переменную, а pr_validate/gate_runner трактуют
@@ -47,10 +47,10 @@ jobs:
   flow:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4 (J64.17: по SHA)
 
       - name: Set up Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4 (J64.17: по SHA)
         with:
           node-version: 22
 
@@ -61,7 +61,7 @@ jobs:
         run: openspec validate --all --strict
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5 (J64.17: по SHA)
         with:
           python-version: "3.12"
 

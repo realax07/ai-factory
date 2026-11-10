@@ -172,7 +172,10 @@ Settings → Rules → Rulesets → ruleset на `main`: **Active**, bypass —
 `test-flow-control` и `flow` (чек появляется в списке только после первого
 прогона CI в репозитории — сначала откройте любой PR). Проверка: `gh api repos/<owner>/<repo>/rules/branches/main`
 возвращает `pull_request` и `required_status_checks`, прямой push в main
-отклоняется.
+отклоняется; то же одной командой — `python3 scripts/ruleset_check.py`.
+Если сломан сам CI и починку нельзя влить — аварийный merge по
+[docs/runbook-emergency-merge.md](docs/runbook-emergency-merge.md) (выполняет
+только админ репозитория).
 
 ### Шаг 4. Конвейер в проект
 
