@@ -215,6 +215,30 @@ create_change).
 - stand/hermes ключ игнорируют: stand без env стенда роняет следующие стадии
   (молчаливый пропуск только переносит отказ глубже), hermes — ручная точка.
 
+### Dev по задачам tasks.md (`per_task: true`, J64.13)
+
+Правило 11 и J31: одна задача tasks.md — одна dev-сессия. Ключ `per_task:
+true` у pi-стадии (без `task_id` и `verdict`) разворачивает ее в
+под-стадии `<id>-<задача>` перед запуском:
+
+```yaml
+    - id: dev
+      run: pi:dev
+      per_task: true            # → dev-1.3, dev-1.2, dev-3.1 …
+      task: реализовать задачу по спеке
+```
+
+- задачи — открытые `- [ ] N.M` из `openspec/changes/<package>/tasks.md`
+  worktree пакета (tasks.md может создать SA этим же прогоном), кроме
+  QA-раздела 6 и меток `[ops]`/`[docs]`/`[design]`;
+- порядок — по зависимостям «(после N.M)» / «depends:», при равенстве —
+  порядок файла; цикл или нет tasks.md — STOP;
+- каждая под-стадия — своя pi-сессия с `--task N.M` (ворота dev_task по
+  задаче), свой коммит; список задач фиксируется в state при первой
+  развертке — resume идет по тому же списку;
+- ревью — отдельной стадией (на пакет или по волне UI, J20); ревью по
+  каждой задаче автоматически не разворачивается (вне объема v1).
+
 ## Полный пример манифеста Флоу 1 (требования → релиз)
 
 Скелет конвейера Флоу 1 для пакета `my-package`: требования → approve →
@@ -280,7 +304,8 @@ pipeline:
     - id: dev
       run: pi:dev
       zones: [backend/**, frontend/**, services/**, src/**, tests/unit/**]
-      task_id: "1.1"          # задача tasks.md (dev_task требует задачу)
+      task_id: "1.1"          # задача tasks.md (dev_task требует задачу);
+                              # на все задачи пакета — per_task: true (J64.13)
       inputs:
         - openspec/changes/my-package/spec.md
         - openspec/changes/my-package/design.md

@@ -494,6 +494,15 @@ def parse_manifest(plan_path: Path) -> dict:
                 raise ManifestError(
                     f"{where}.{field}: ожидается непустая строка, "
                     f"получено: {val!r}")
+        per_task = raw.get("per_task")
+        if per_task is not None and not isinstance(per_task, bool):
+            raise ManifestError(f"{where}.per_task: ожидается true/false, "
+                                f"получено: {per_task!r}")
+        if per_task and (kind != "pi" or raw.get("task_id") or verdict is not None):
+            # J64.13: развертка по задачам tasks.md — только pi-стадия без
+            # своего task_id и без вердикт-ворот (ревью — отдельной стадией).
+            raise ManifestError(
+                f"{where}.per_task: только для pi-стадии без task_id и verdict")
         optional = raw.get("optional")
         if optional is not None and not isinstance(optional, bool):
             # Опциональная стадия (J62-остаток): отказ pi/gate/verdict —
@@ -519,6 +528,7 @@ def parse_manifest(plan_path: Path) -> dict:
             "action": (raw.get("action") or "").strip(),
             "task_id": (raw.get("task_id") or "").strip(),
             "approval_ref": (raw.get("approval_ref") or "").strip(),
+            "per_task": bool(per_task),
         }
         stages.append(stage)
     strip = pipe.get("gate_env_strip")
@@ -712,6 +722,62 @@ def repo_of_name(worktree: Path) -> str:
             path = (worktree / path).resolve()
         return path.parent.name
     return worktree.name
+
+
+DEV_SKIP_TAGS = {"ops", "docs", "design"}
+
+
+def per_task_ids(worktree: Path, package: str) -> list[str]:
+    """J64.13: открытые dev-задачи tasks.md пакета в порядке зависимостей.
+
+    Берутся задачи `- [ ] N.M …` из openspec/changes/<package>/tasks.md
+    (worktree пакета — tasks.md мог создать SA этим же прогоном), кроме
+    QA-раздела (flow_check.QA_SECTION) и задач с метками [ops]/[docs]/
+    [design] (не dev — свои этапы). Порядок — топологический по
+    «(после N.M)» / «depends:» (flow_transition), при равенстве — порядок
+    файла. Зависимость на закрытую или не-dev задачу не ждется; цикл или
+    отсутствие tasks.md — RunnerStop."""
+    tasks = worktree / "openspec" / "changes" / package / "tasks.md"
+    if not tasks.is_file():
+        raise RunnerStop(f"per_task: нет {tasks.relative_to(worktree)} — "
+                         "развертка dev по задачам невозможна (J64.13)")
+    if ft is None:
+        raise RunnerStop(f"per_task: движок фабрики недоступен ({ENGINE_ERROR})")
+    text = tasks.read_text(encoding="utf-8", errors="replace")
+    meta = ft._task_lines(text)
+    order = []
+    for tid, info in meta.items():
+        line = info.get("title", "")
+        tags = set(re.findall(r"\[([A-Za-z]+)\]", line))
+        if (info.get("closed") or tid.split(".")[0] == flow_check.QA_SECTION
+                or tags & DEV_SKIP_TAGS):
+            continue
+        order.append(tid)
+    pending = {t: [d for d in meta[t].get("deps", []) if d in order] for t in order}
+    out: list[str] = []
+    while pending:
+        ready = [t for t in order if t in pending
+                 and all(d in out for d in pending[t])]
+        if not ready:
+            raise RunnerStop("per_task: цикл зависимостей задач tasks.md: "
+                             + ", ".join(sorted(pending)))
+        out.append(ready[0])
+        del pending[ready[0]]
+    return out
+
+
+def expand_per_task(stage: dict, task_ids: list[str],
+                    deps: dict[str, list[str]]) -> list[dict]:
+    """Под-стадии `<id>-<задача>`: копия pi-стадии с task_id (flowctl
+    prepare --task: ворота dev_task по задаче), depends — под-стадии
+    зависимостей."""
+    subs = []
+    for tid in task_ids:
+        sub = dict(stage, id=f"{stage['id']}-{tid}", task_id=tid, per_task=False,
+                   depends=[f"{stage['id']}-{d}" for d in deps.get(tid, [])])
+        sub["task"] = (stage.get("task") or "") + f" [задача tasks.md {tid}]"
+        subs.append(sub)
+    return subs
 
 
 def sequence_warnings(stages: list[dict]) -> list[str]:
@@ -1499,6 +1565,38 @@ def cmd_run(plan_path: Path, dry_run: bool) -> int:
             return _stop(stage, str(exc), None)
         state["worktree"] = str(worktree)
         state["branch"] = branch
+
+        if stage.get("per_task"):
+            # J64.14→J64.13: одна задача tasks.md = одна pi-сессия (правило
+            # 11, J31). Список задач фиксируется в state при первой развертке:
+            # resume идет по тому же списку, закрытые потом задачи — done.
+            expanded = state.setdefault("expanded", {})
+            try:
+                ids = expanded.get(stage["id"]) or per_task_ids(
+                    worktree, manifest["package"])
+            except RunnerStop as exc:
+                return _stop(stage, str(exc), None)
+            if not ids:
+                return _stop(stage, "per_task: в tasks.md нет открытых dev-задач",
+                             None)
+            expanded[stage["id"]] = ids
+            try:
+                meta = ft._task_lines((worktree / "openspec" / "changes"
+                                       / manifest["package"] / "tasks.md").read_text(
+                    encoding="utf-8", errors="replace"))
+            except OSError as exc:
+                return _stop(stage, f"per_task: tasks.md не читается ({exc})", None)
+            deps = {t: [d for d in meta.get(t, {}).get("deps", []) if d in ids]
+                    for t in ids}
+            subs = expand_per_task(stage, ids, deps)
+            at = manifest["stages"].index(stage)
+            manifest["stages"][at + 1:at + 1] = subs
+            state_record(state, stage["id"], "expanded",
+                         "per_task: " + ", ".join(ids))
+            state_write(spath, state)
+            print(f"RUNNER: stage {stage['id']} — развернута по задачам "
+                  f"tasks.md: {', '.join(s['id'] for s in subs)}")
+            continue
 
         if stage["kind"] == "gate":
             try:
