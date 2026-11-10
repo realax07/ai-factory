@@ -236,4 +236,6 @@ def test_chain_passes_real_gate_checks(tmp_path):
     subprocess.run(["git", "-C", str(repo), "config", "user.name", "t"], check=True)
     assert pr.close_task_checkbox(repo, "add-widget", "1.3", "close 1.3")
     assert dev_dep_findings("1.2", ["1.3"]) == []          # dev-1.2 проходит
+    # ради этого и решение «чекбокс ставит раннер»: ревью закрытой — отказ
+    assert review_findings("1.3")
     assert pr.close_task_checkbox(repo, "add-widget", "1.3", "again") is None

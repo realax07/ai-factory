@@ -1772,6 +1772,19 @@ def cmd_run(plan_path: Path, dry_run: bool) -> int:
             done.add(stage["id"])
             continue
 
+        if stage.get("per_task_review") and stage.get("verdict") and task_checkbox(
+                worktree, manifest["package"], stage["per_task_review"]) == "closed":
+            # J64.13: раннер уже закрыл чекбокс после approve этой пары (сбой
+            # до отметки done) — повтор ревью по закрытой задаче ворота не
+            # примут; вердикт файла — approve → стадия done без повтора.
+            value, problem = check_verdict(worktree, stage["verdict"])
+            if value == "approve" and not problem:
+                state_record(state, stage["id"], "done",
+                             "approve и чекбокс уже зафиксированы (resume)")
+                state_write(spath, state)
+                done.add(stage["id"])
+                continue
+
         # kind == pi: роль-пак → AGENTS.md в корень worktree (а если там
         # уже есть AGENTS.md проекта — рядом как AGENTS.pi.md, проектные
         # правила не затираются; дефект пилота BUG-026), вызов pi.
@@ -1900,6 +1913,14 @@ def cmd_run(plan_path: Path, dry_run: bool) -> int:
             if _reject(f"отчет стадии не записан: {exc}", None, out, err):
                 return EXIT_STOP
             continue
+        if stage.get("per_task_dev") and task_checkbox(
+                worktree, manifest["package"], stage["per_task_dev"]) == "closed":
+            # до ворот выхода: запись цикла не становится accepted
+            if _reject(f"dev закрыл чекбокс задачи {stage['per_task_dev']} сам "
+                       "— при per_task с review его ставит раннер после approve "
+                       "(J64.13); открой чекбокс и повтори", None, out, err):
+                return EXIT_STOP
+            continue
         accepted, detail = gate_end(gate, worktree, report)
         if not accepted:
             if _reject(f"ворота выхода: {detail}", None, out, err):
@@ -1931,13 +1952,7 @@ def cmd_run(plan_path: Path, dry_run: bool) -> int:
             continue
         gate_close(gate, commit)
         gate.update(open=False, commit=commit)
-        if stage.get("per_task_dev") and task_checkbox(
-                worktree, manifest["package"], stage["per_task_dev"]) == "closed":
-            if _fail(stage, f"dev закрыл чекбокс задачи {stage['per_task_dev']} "
-                     "сам — при per_task с review его ставит раннер после approve "
-                     "(J64.13); открой чекбокс коммитом и повтори", None):
-                return EXIT_STOP
-            continue
+
         # Вердикт-ворота (J62 → J65.4) ДО отметки done: вердикт файла — по
         # единому парсеру; approve/return фиксируется аудит-записью provenance
         # (прерывание между ними не оставит done-стадию без записи);
