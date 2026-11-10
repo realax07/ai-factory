@@ -221,7 +221,7 @@ create_change).
 true` у pi-стадии (без `task_id` и `verdict`) разворачивает ее в
 под-стадии `<id>-<задача>` перед запуском:
 
-```yaml
+```
     - id: dev
       run: pi:dev
       per_task: true            # → dev-1.3, dev-1.2, dev-3.1 …
