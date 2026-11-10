@@ -601,6 +601,37 @@ def check_verdict(worktree: Path, verdict: dict,
     return value, None
 
 
+REVIEWER_DELEGATION_RE = re.compile(
+    r"Reviewer-Delegation[^A-Za-z0-9]{0,6}(deleg[-_][A-Za-z0-9]+)", re.I)
+
+
+def stamp_reviewer_delegation(review_file: Path, delegation_id: str) -> bool:
+    """J65.4b: строка `Reviewer-Delegation: <делегация стадии>` в review-файле
+    стадии Pi — доказательство независимости для pr_validate (J10). Ревьюер
+    свою делегацию не знает, поэтому штамп ставит раннер после приемки
+    стадии и до коммита. Строка уже есть с этой делегацией — без изменений
+    (False); с другой — RunnerStop (подмена). Файла нет — без изменений:
+    отсутствие вердикта ловят вердикт-ворота."""
+    if not review_file.is_file():
+        return False
+    text = review_file.read_text(encoding="utf-8")
+    m = REVIEWER_DELEGATION_RE.search(text)
+    if m:
+        if m.group(1).replace("_", "-") != delegation_id.replace("_", "-"):
+            raise RunnerStop(
+                f"{review_file.name}: Reviewer-Delegation {m.group(1)} не "
+                f"совпадает с делегацией стадии {delegation_id} — подмена "
+                "доказательства независимости (J65.4b)")
+        return False
+    stamp = (f"Reviewer-Delegation: {delegation_id}  "
+             "<!-- штамп package_runner, J65.4b -->")
+    lines = text.splitlines(keepends=True)
+    at = 1 if lines and lines[0].startswith("#") else 0
+    lines.insert(at, ("\n" if at else "") + stamp + "\n")
+    review_file.write_text("".join(lines), encoding="utf-8")
+    return True
+
+
 def record_review_provenance(plan_path: Path, worktree: Path, manifest: dict,
                              stage: dict, state: dict, gate: dict,
                              verdict: str) -> str:
@@ -612,8 +643,9 @@ def record_review_provenance(plan_path: Path, worktree: Path, manifest: dict,
     — делегации pi-стадий других ролей с коммитом после предыдущей
     review-стадии. Рядом с review-файлом sidecar НЕ кладется: его читает
     flow_transition (provenance_findings) и J10 со своей семантикой
-    (`HEAD^..HEAD`, задача tasks.md, Reviewer-Delegation из реестра Hermes);
-    интеграция ревью стадий Pi с этими воротами — отдельная задача.
+    (`HEAD^..HEAD`, задача tasks.md, Reviewer-Delegation). Независимость
+    ревью стадии для J10 доказывает штамп `Reviewer-Delegation`
+    (stamp_reviewer_delegation) + запись цикла flowctl раннера (J65.4b).
     Возвращает путь записи или бросает RunnerStop."""
     if gr is None:
         raise RunnerStop(f"provenance ревью: движок фабрики недоступен "
@@ -1662,6 +1694,16 @@ def cmd_run(plan_path: Path, dry_run: bool) -> int:
                        + ", ".join(outside), None, out, err):
                 return EXIT_STOP
             continue
+        if stage["verdict"]:
+            # J65.4b: штамп независимости ревью — делегация стадии в
+            # review-файле (pr_validate J10 сверяет ее с реестром раннера).
+            try:
+                stamp_reviewer_delegation(
+                    worktree / stage["verdict"]["file"], gate["delegation_id"])
+            except RunnerStop as exc:
+                if _reject(str(exc), None, out, err):
+                    return EXIT_STOP
+                continue
         try:
             commit = commit_stage(
                 worktree, f"[pipeline] {manifest['package']}/{stage['id']}: "

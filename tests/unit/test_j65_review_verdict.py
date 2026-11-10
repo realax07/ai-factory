@@ -207,6 +207,12 @@ def test_runner_approve_writes_provenance(tmp_path, monkeypatch):
     assert side["diff_digest"]
     # рядом с review-файлом sidecar не кладется (его читают flow_transition/J10)
     assert not (repo / (REVIEW + ".provenance.json")).exists()
+    # J65.4b (TC-J65-PRV-004): в закоммиченном review-файле — штамп раннера
+    # с делегацией стадии ревью (доказательство независимости для J10)
+    committed = subprocess.run(
+        ["git", "-C", str(repo), "show", f"HEAD:{REVIEW}"],
+        capture_output=True, text=True).stdout
+    assert f"Reviewer-Delegation: {side['reviewer_delegation']}" in committed
 
 
 def test_runner_return_records_and_stops(tmp_path, monkeypatch, capsys):
