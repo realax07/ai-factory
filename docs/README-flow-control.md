@@ -234,6 +234,7 @@ devops) получает резервацию по политике роли (`R
 | `session-watchdog` | `*/5 * * * *` | origin | чисто (no_agent, пустой stdout) = ничего не доставляется; аномалия (залипшая сессия/ключ, dropped-делегация) → в чат |
 | `stand-reaper-hourly` | `0 * * * *` | local | сироты стендов гасятся локально, ПМ проверяет на приемке; в чат только если сам скрипт упал |
 | `delegate-watchdog` | `*/5 * * * *` | origin | на паузе; включается ПМ ПОСЛЕ проверки починенной эвристики (project-less диспатчи ПМ = норма, Н18): прогон clean, exit 0 → deliver=origin |
+| `state-backup` | `15 3 * * *` | local | `state_backup.py backup` (J64.6): архив state в `AF_BACKUP_DIR`, ротация 14; чисто = молчание; копию вывозить вне VPS — RUNBOOK `docs/runbook-factory-move.md` |
 | `watchdog-daily-digest` | — | — | НЕ СОЗДАВАТЬ: упразднен решением Заказчика 2026-10-23 (тогда же удален pm-instruction-relay; артефакты — `archive/pm-instruction-channel/`) |
 
 Принцип источника: **репо-копия — единственный источник истины**;
@@ -284,6 +285,7 @@ devops) получает резервацию по политике роли (`R
 | `session_worktree.sh` | ПМ/сабагенты при старте сессии | manual | Worktree-изоляция параллельных сессий |
 | `flow_preflight.py` | ПМ в точке диспетчеризации (АУД-4, Н24) | detect (advisory) | Дешевые чеки ДО dev-цикла: static_v-freshness, regress-staleness, pr-body (IR-05/06 WARN) |
 | `flow_scope_check.py` | integrate/finish (АУД-4, Н21) | enforcing | Коммиты ветки соответствуют заявленному change-id (чужие маркеры → DENY) |
+| `state_backup.py` | крон `state-backup` + ПМ/Заказчик при переносе | manual/cron | Бэкап state движка (`backup`, ротация), `list`, `restore` (прежний state откладывается, активные сессии — отказ без `--force`, архив проверяется); RUNBOOK — `docs/runbook-factory-move.md` |
 | `check_mirrors.py` | CI/вручную (АУД-4, Н22) | detect | sha256-сверка копий фабричных скриптов в проектах с эталоном фабрики |
 | `codegraph.py` | dev/ПМ, артефакт репо (E14) | manual | Граф зависимостей кода (backend AST + frontend ES-imports, stdlib) |
 | `smoke_static.py` | post-deploy (E10) | manual | Смоук отдачи статики: ссылки шаблонов vs диск vs прод-URL (DEF-002) |
