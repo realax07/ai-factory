@@ -956,6 +956,10 @@ def cmd_prepare(args) -> int:
         "actor_role": args.role,
         "task_id": args.task,
         "scope": snapshot2["scope"],
+        # J64.14: корень основного репозитория (общий для worktree) — phase
+        # находит запись по клону и после сноса worktree пакета.
+        "repo_root": sc.git_main_root(Path(snapshot2["scope"].get("repo") or repo))
+        or str(repo),
         "prepared_digest": snapshot2["snapshot_digest"],
         "zones": zones,
         "policy_version": policy_version,
@@ -1184,6 +1188,17 @@ def cmd_finish(args) -> int:
         }, args.as_json)
         return 2
 
+    # J64.14: отчет — до --pm-resume: запись не уходит в running впустую.
+    report_path = Path(args.report) if args.report else None
+    if report_path is None or not report_path.is_file():
+        _emit({
+            "schema_version": OUTPUT_SCHEMA, "command": "finish",
+            "correlation_id": args.correlation_id, "verdict": "blocked",
+            "note": "агентский отчет (указатель на файлы) не найден — "
+                    "приемка без отчета не проводится",
+        }, args.as_json)
+        return 2
+
     if record["status"] not in ("running", "provisional"):
         # Повторная приемка blocked-сессии — только по явному решению ПМ
         # (--pm-resume): сценарий «blocked по конфигурационной ошибке
@@ -1223,17 +1238,7 @@ def cmd_finish(args) -> int:
             }, args.as_json)
             return 2
 
-    report_path = Path(args.report) if args.report else None
-    if report_path is None or not report_path.is_file():
-        _emit({
-            "schema_version": OUTPUT_SCHEMA, "command": "finish",
-            "correlation_id": args.correlation_id, "verdict": "blocked",
-            "note": "агентский отчет (указатель на файлы) не найден — "
-                    "приемка без отчета не проводится",
-        }, args.as_json)
-        return 2
 
-    registry_path = Path(record["registry"])
     worktree = Path(record["worktree"]) if record.get("worktree") else Path(
         record["scope"]["repo"])
 
@@ -1579,7 +1584,7 @@ def cmd_phase(args) -> int:
             continue
         rec_repo = scope_.get("repo")
         if rec_repo and str(Path(rec_repo)) != repo_resolved \
-                and _repo_key(str(rec_repo)) != want:
+                and (rec.get("repo_root") or _repo_key(str(rec_repo))) != want:
             continue
         ts = rec.get("finished_at") or rec.get("created_at") or ""
         if best is None or ts > best_ts:
@@ -1731,6 +1736,14 @@ def cmd_close(args) -> int:
             return _out(True, "уже closed", 0, idempotent=True)
         return _out(False, f"резервация не закрыта: {tr.get('reason')} "
                            f"({'; '.join(map(str, tr.get('details') or []))})", 1)
+
+    def _mark(st: dict) -> None:
+        r = st["runs"].get(args.correlation_id)
+        if r is not None:
+            r.setdefault("lifecycle", {}).setdefault("history", []).append(
+                {"at": gr.utcnow_iso(), "event": "close", "reason": reason,
+                 "registry": "finished → closed"})
+    state_write_locked(state_path, state_load(state_path), _mark)
     return _out(True, reason, 0, delegation_id=record.get("delegation_id"))
 
 
@@ -2620,7 +2633,9 @@ GC_TMP_SIGNS = ("deleg-", "stand", "probe")
 GC_TMP_BACKUP_MARK = "backup"
 # done/closed-статусы реестра сессий → worktree под снос; остальные —
 # только список (решение ПМ).
-GC_WORKTREE_DONE = ("completed", "finished", "released")
+# J64.14: closed — штатный итог стадии раннера и `flowctl close`; worktree
+# недокатанного пакета держит маркер раннера (gc_runner_guard).
+GC_WORKTREE_DONE = ("completed", "finished", "released", "closed")
 
 
 def gc_branch_candidates(remote_branches: list[str],

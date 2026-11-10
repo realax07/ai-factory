@@ -192,3 +192,85 @@ def test_gate_leftovers_stop(tmp_path, monkeypatch, capsys):
     assert pr.cmd_run(plan, dry_run=False) != 0
     err = capsys.readouterr().err
     assert "gate-стадия оставила изменения" in err and "lint-report.txt" in err
+
+
+# ------------------------------------------------ review-001: интеграция
+
+
+def _gc_worktrees(tmp_path, monkeypatch, sessions):
+    reg = tmp_path / "gcreg.json"
+    reg.write_text(json.dumps({"schema_version": sc.REGISTRY_SCHEMA,
+                               "sessions": sessions}), encoding="utf-8")
+    monkeypatch.setattr(fc, "gc_collect_docker", lambda: (None, "docker: тест"),
+                        raising=False)
+    plan = fc.gc_plan(argparse.Namespace(repo=None, registry=str(reg),
+                                         min_age_hours=24))
+    return plan["worktrees"]
+
+
+def test_gc_plan_closed_and_runner_marker(tmp_path, monkeypatch):
+    """TC-J64-J63-001: closed — done; пакет без finished_at держит worktree,
+    докатанный — сносится; сессия finished→closed (flowctl close) сносится."""
+    repo = make_git(tmp_path / "repo")
+    wt = tmp_path / "wt"
+    git("-C", str(repo), "worktree", "add", "-q", "-b", "pkg", str(wt))
+    spath = tmp_path / "s.json"
+    spath.write_text(json.dumps({}), encoding="utf-8")
+    pr.write_package_marker(wt, tmp_path / "PLAN.md", spath)
+    sessions = [{"delegation_id": "a", "status": "closed", "worktree": str(wt)},
+                {"delegation_id": "b", "status": "released", "worktree": str(wt)}]
+    w = _gc_worktrees(tmp_path, monkeypatch, sessions)
+    assert not w["remove"] and all("не докатан" in r["reason"] for r in w["list_only"])
+    spath.write_text(json.dumps({"finished_at": "x"}), encoding="utf-8")
+    w = _gc_worktrees(tmp_path, monkeypatch, sessions)
+    assert {r["delegation_id"] for r in w["remove"]} == {"a", "b"}
+    sessions.append({"delegation_id": "c", "status": "running", "worktree": str(wt)})
+    w = _gc_worktrees(tmp_path, monkeypatch, sessions)
+    assert not w["remove"]                               # делит активная сессия
+
+
+def test_phase_after_worktree_removed(tmp_path, capsys):
+    """TC-J64-J63-003: repo_root в записи — phase и после сноса worktree."""
+    repo = make_git(tmp_path / "clone")
+    state = tmp_path / "state.json"
+    state.write_text(json.dumps({"runs": {"c1": {
+        "status": "accepted", "action": "chore_task",
+        "finished_at": "2026-11-11T00:00:00Z",
+        "repo_root": sc.git_main_root(repo),
+        "scope": {"change": "chore-x", "flow": 4, "project": "proj",
+                  "repo": str(tmp_path / "gone-worktree")}}}}), encoding="utf-8")
+    fc.main(["phase", "--repo", str(repo), "--project", "proj", "--flow", "4",
+             "--scope", "chore-x", "--state", str(state)])
+    assert json.loads(capsys.readouterr().out)["phase"] != "none"
+
+
+def test_close_idempotent_and_lifecycle(tmp_path, capsys):
+    """TC-J64-J63-006: повтор close — idempotent; событие в lifecycle записи."""
+    reg = _registry(tmp_path, "finished")
+    state = tmp_path / "state.json"
+    state.write_text(json.dumps({"runs": {"c1": {"status": "accepted",
+                                                 "delegation_id": "deleg-abc"}}}),
+                     encoding="utf-8")
+    argv = ["close", "c1", "--registry", str(reg), "--state", str(state), "--json"]
+    assert fc.main(argv) == 0
+    capsys.readouterr()
+    assert fc.main(argv) == 0
+    assert json.loads(capsys.readouterr().out).get("idempotent") is True
+    hist = json.loads(state.read_text(encoding="utf-8"))["runs"]["c1"]["lifecycle"]["history"]
+    assert hist[0]["event"] == "close"
+
+
+def test_gate_leftovers_resume_still_stops(tmp_path, monkeypatch, capsys):
+    """TC-J64-J63-007: resume после STOP не пропускает файлы прошлой попытки."""
+    repo = tpr.make_repo(tmp_path)
+    plan = tpr.write_plan(repo, GATE_ONLY, name="PLAN-g.md")
+
+    def gate_leaves_file(cmd, cwd, timeout, stand_env=None):
+        (cwd / "lint-report.txt").write_text("x", encoding="utf-8")
+        return 0, "", ""
+    monkeypatch.setattr(pr, "run_shell", gate_leaves_file)
+    monkeypatch.setattr(pr, "ensure_worktree", lambda repo_, sid, br: repo_)
+    assert pr.cmd_run(plan, dry_run=False) != 0
+    capsys.readouterr()
+    assert pr.cmd_run(plan, dry_run=False) != 0          # resume — снова STOP
+    assert "lint-report.txt" in capsys.readouterr().err

@@ -927,18 +927,53 @@ def gate_env(stand_env: dict | None = None) -> dict:
 
 
 def worktree_dirty(worktree: Path) -> set[str]:
-    """Измененные и неотслеживаемые пути worktree (git status, .gitignore
-    учитывается; служебные COMMIT_EXCLUDE — нет)."""
+    """Измененные и неотслеживаемые пути worktree (git status -z: имена как
+    есть, без экранирования; .gitignore учитывается; COMMIT_EXCLUDE — нет)."""
     r = subprocess.run(["git", "-C", str(worktree), "status", "--porcelain",
-                        "--untracked-files=all"], capture_output=True, text=True)
+                        "-z", "--untracked-files=all"], capture_output=True,
+                       text=True)
     if r.returncode != 0:
         return set()
-    out = set()
-    for line in r.stdout.splitlines():
-        path = line[3:].split(" -> ")[-1].strip().strip('"')
+    out: set[str] = set()
+    items = r.stdout.split("\0")
+    i = 0
+    while i < len(items):
+        entry = items[i]
+        i += 1
+        if len(entry) < 4:
+            continue
+        status, path = entry[:2], entry[3:]
+        if status[0] in "RC":     # переименование: следом — исходное имя
+            i += 1
         if path and Path(path).name not in COMMIT_EXCLUDE:
             out.add(path)
     return out
+
+
+def runner_leftovers(worktree: Path, plan_path: Path,
+                     own: set[str] = frozenset(),
+                     before: set[str] = frozenset()) -> list[str]:
+    """Изменения worktree от стадии: новые относительно `before` (снимок до
+    стадии); собственные артефакты раннера (план с журналом, state, лог,
+    каталог отчетов) и `own` (файл вердикта стадии) исключаются."""
+    names = {plan_path.name, plan_path.name + ".runner-state.json",
+             plan_path.name + LOG_SUFFIX}
+    reports = plan_path.name + REPORTS_SUFFIX
+    out = []
+    for p in worktree_dirty(worktree):
+        parts = Path(p).parts
+        if p in own or p in before or Path(p).name in names or reports in parts:
+            continue
+        out.append(p)
+    return sorted(out)
+
+
+def stage_dirty_before(state: dict, stage_id: str, worktree: Path) -> set[str]:
+    """Снимок изменений до gate/stand-стадии. Файлы, которые эта же стадия
+    оставила в прошлой попытке (state.gate_leftovers), из снимка вычитаются:
+    resume после STOP не пропускает их как «бывшие до стадии»."""
+    prev = set((state.get("gate_leftovers") or {}).pop(stage_id, []) or [])
+    return worktree_dirty(worktree) - prev
 
 
 def leftovers_detail(kind: str, paths: list[str]) -> str:
@@ -1262,14 +1297,16 @@ def gate_end(gate: dict, worktree: Path, report: Path) -> tuple[bool, str]:
 REJECTED_AFTER_ACCEPT = "rejected_after_accept"
 
 
-def mark_rejected_after_accept(gate: dict, detail: str) -> None:
+def mark_rejected_after_accept(gate: dict, detail: str,
+                               registry: bool = True) -> None:
     """J64.14: стадия получила finish accepted, но коммит не состоялся
     (recheck зоны/сбой коммита): запись цикла flowctl → rejected_after_accept
     (не засчитывается ни фазой, ни J10), резервация finished →
     needs_attention (зона держится до решения ПМ)."""
-    _transition(Path(gate["registry"]), gate["delegation_id"],
-                "needs_attention", f"package_runner: {detail}",
-                "отказ после finish accepted", expect_from="finished")
+    if registry:   # optional-стадия освобождает зону сама (gate_abandon)
+        _transition(Path(gate["registry"]), gate["delegation_id"],
+                    "needs_attention", f"package_runner: {detail}",
+                    "отказ после finish accepted", expect_from="finished")
     if gate.get("kind") != "flowctl":
         return
 
@@ -1523,6 +1560,10 @@ def cmd_run(plan_path: Path, dry_run: bool) -> int:
     print(f"RUNNER: state: {spath}")
     done = {sid for sid, rec in state.get("stages", {}).items()
             if rec.get("status") in ("done", "waited", "skipped")}
+    # J64.14: прогон идет — пакет не докатан (gc не снесет worktree, пока
+    # повторный прогон не дойдет до конца).
+    if state.pop("finished_at", None):
+        state_write(spath, state)
     # Env стенда stand-стадий пакета (J62): живет в state — resume докатывает
     # пакет с тем же env (stand-стадия не переисполняется, она done).
     stand_env: dict[str, str] = dict(state.get("stand_env") or {})
@@ -1573,7 +1614,7 @@ def cmd_run(plan_path: Path, dry_run: bool) -> int:
         write_package_marker(worktree, plan_path, spath)
 
         if stage["kind"] == "gate":
-            dirty_before = worktree_dirty(worktree)
+            dirty_before = stage_dirty_before(state, stage["id"], worktree)
             try:
                 rc, out, err = run_shell(stage["payload"], worktree, timeout,
                                          stand_env=stand_env)
@@ -1589,8 +1630,9 @@ def cmd_run(plan_path: Path, dry_run: bool) -> int:
                     return EXIT_STOP
                 continue
             own = {stage["verdict"]["file"]} if stage["verdict"] else set()
-            left = sorted(worktree_dirty(worktree) - dirty_before - own)
+            left = runner_leftovers(worktree, plan_path, own, dirty_before)
             if left:
+                state.setdefault("gate_leftovers", {})[stage["id"]] = left
                 # J64.14: файлы gate-стадии (кроме ее файла вердикта) (без ворот зоны) иначе попадут в
                 # дифф следующей pi-стадии и уронят ее чужим OUT_OF_ZONE.
                 if _fail(stage, leftovers_detail("gate", left), 0, out, err):
@@ -1618,7 +1660,7 @@ def cmd_run(plan_path: Path, dry_run: bool) -> int:
             # (формат scripts/qa_stand_up.sh) — иначе STOP: без env стенда
             # последующие стадии гарантированно красные, молчаливый проход
             # только переносил бы отказ глубже.
-            dirty_before = worktree_dirty(worktree)
+            dirty_before = stage_dirty_before(state, stage["id"], worktree)
             try:
                 rc, out, err = run_shell(stage["payload"], worktree, timeout)
             except subprocess.TimeoutExpired as exc:
@@ -1632,8 +1674,9 @@ def cmd_run(plan_path: Path, dry_run: bool) -> int:
                 return _stop(stage, "stand: в stdout нет export VAR=value "
                              "(стенд не отчитался env — формат "
                              "scripts/qa_stand_up.sh)", rc, out, err)
-            left = sorted(worktree_dirty(worktree) - dirty_before)
+            left = runner_leftovers(worktree, plan_path, before=dirty_before)
             if left:
+                state.setdefault("gate_leftovers", {})[stage["id"]] = left
                 return _stop(stage, leftovers_detail("stand", left), rc, out, err)
             stand_env.update(parsed)
             state["stand_env"] = dict(stand_env)
@@ -1709,6 +1752,8 @@ def cmd_run(plan_path: Path, dry_run: bool) -> int:
                     return _stop(stage, f"{detail}; {exc}", exit_code,
                                  stdout, stderr)
                 gate["shelved"] = shelf
+                if gate.get("accepted"):
+                    mark_rejected_after_accept(gate, detail, registry=False)
                 gate_abandon(gate, f"optional skipped: {detail}")
                 gate["open"] = False
                 detail = f"{detail}; изменения попытки: {shelf}"
