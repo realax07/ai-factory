@@ -13,7 +13,13 @@
   TC-J64-SB-004  restore отклоняет архив с путями вне state (.., абсолютные,
                  ссылки) — state не тронут
   TC-J64-SB-005  обертка крона и строка в таблице рекомендуемых кронов
+  TC-J64-SB-006  restore: архив без каталога state/ (пустой; state — файл) —
+                 отказ, прежний state на месте, staging убран (review-001 #1)
+  TC-J64-SB-007  backup симлинка на state — полный архив; права 0600/0700;
+                 ручной архив не ротируется (review-001 #2, #5, #7)
+  TC-J64-SB-008  отказ restore и для finished-сессии; реестр-список не роняет
 """
+
 from __future__ import annotations
 
 import io
@@ -121,3 +127,58 @@ def test_cron_wrapper_and_table(tmp_path, capsys):
     assert "state_backup.py" in report["installed"]
     fi.print_recommended_crons()
     assert "state-backup" in capsys.readouterr().out
+
+
+def _tar_with(tmp_path, entries):
+    bad = tmp_path / "x.tar.gz"
+    with tarfile.open(bad, "w:gz") as tar:
+        for name in entries:
+            info = tarfile.TarInfo(name)
+            info.size = 1
+            tar.addfile(info, io.BytesIO(b"x"))
+    return bad
+
+
+@pytest.mark.parametrize("entries", [[], ["state"]])
+def test_restore_without_state_dir_keeps_old(paths, tmp_path, entries, capsys):
+    """TC-J64-SB-006."""
+    state, _ = paths
+    arc = _tar_with(tmp_path, entries)
+    assert sb.main(["restore", str(arc), "--force"]) == 1
+    assert "ОТКАЗ" in capsys.readouterr().err
+    assert (state / "flow_mode.json").is_file()
+    assert not list(state.parent.glob("state.restore-*"))
+    assert not list(state.parent.glob("state.before-restore-*"))
+
+
+def test_backup_symlinked_state_and_modes(paths, tmp_path):
+    """TC-J64-SB-007."""
+    import os
+    import stat
+    state, dest = paths
+    link = tmp_path / "state-link"
+    link.symlink_to(state, target_is_directory=True)
+    arc = sb.backup(link, dest)
+    with tarfile.open(arc) as tar:
+        assert "state/flow_mode.json" in tar.getnames()
+    assert stat.S_IMODE(os.stat(arc).st_mode) == 0o600
+    assert stat.S_IMODE(os.stat(dest).st_mode) == 0o700
+    manual = dest / "state-before-migration.tar.gz"
+    manual.write_bytes(b"keep")
+    for _ in range(3):
+        sb.backup(state, dest, keep=1)
+    assert manual.is_file() and len(sb.archives(dest)) == 1
+    assert not list(dest.glob("*.part"))
+
+
+def test_restore_refuses_holding_sessions(paths):
+    """TC-J64-SB-008."""
+    state, dest = paths
+    arc = sb.backup(state, dest)
+    (state / "active_sessions.json").write_text(
+        json.dumps({"sessions": [{"delegation_id": "fin", "status": "finished"}]}),
+        encoding="utf-8")
+    with pytest.raises(RuntimeError, match="fin"):
+        sb.restore(arc, state)
+    (state / "active_sessions.json").write_text("[]", encoding="utf-8")
+    assert sb.restore(arc, state) is not None

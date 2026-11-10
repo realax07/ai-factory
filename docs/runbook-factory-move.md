@@ -33,9 +33,13 @@ python3 ~/ai-factory/scripts/state_backup.py restore ~/ai-factory-backups/state-
 
 - текущий state не удаляется: переименовывается в
   `<state>.before-restore-<UTC>` рядом;
-- если в текущем реестре есть активные сессии (reserved/running) — отказ:
-  восстановление перепишет их резервации. Сначала закрыть/разобрать
-  сессии (`session_check reconcile`), осознанно — `--force`;
+- если в текущем реестре есть сессии, держащие зоны (reserved, running,
+  finished, needs_attention), — отказ: восстановление перепишет их
+  резервации. Сначала разобрать сессии
+  (`python3 scripts/session_check.py reconcile --registry <state>/active_sessions.json`),
+  осознанно — `--force`;
+- любой сбой (битый архив, нет каталога `state/`) оставляет прежний state на
+  месте;
 - архив проверяется: только файлы и каталоги внутри `state/`, без ссылок
   и путей наружу.
 
@@ -63,6 +67,11 @@ python3 ~/ai-factory/scripts/state_backup.py restore ~/ai-factory-backups/state-
    ```
 5. Проекты: склонировать в `AF_PROJECTS_ROOT`; активные сессии из
    восстановленного реестра, чьих worktree на новой машине нет, —
-   `session_check reconcile` (ничего не удаляет молча).
-6. Hermes: переустановить плагин flow-enforcer (`factory_init.py --target
-   <проект>`), включить кроны по таблице `docs/README-flow-control.md`.
+   `python3 scripts/session_check.py reconcile --registry <state>/active_sessions.json`
+   (ничего не удаляет молча).
+6. Hermes: переустановить плагин flow-enforcer
+   (`python3 scripts/factory_init.py --target <проект> --name "<Имя>"`),
+   включить кроны по таблице `docs/README-flow-control.md`.
+
+Если `FLOW_MODE_FILE` или `FLOW_ENFORCER_STATE_DIR` вынесены из state, их
+файлы переносить отдельно: бэкап берет только `AF_STATE_DIR`.

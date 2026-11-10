@@ -18,10 +18,16 @@ backup  — архив state-<UTC>.tar.gz в --dest (по умолчанию
           успехе (крон: чисто = пустой stdout), путь архива — с --verbose.
 list    — архивы в --dest, новые первыми.
 restore — распаковка архива в state_dir. Текущий state не удаляется:
-          переименовывается в <state>.before-restore-<UTC>. Если в реестре
-          есть активные сессии (reserved/running) — отказ без --force.
-          Архив проверяется: только относительные пути внутри state, без
-          ссылок и устройств.
+          переименовывается в <state>.before-restore-<UTC>; любой сбой
+          возвращает прежний state на место. Если в реестре есть сессии,
+          держащие зоны (reserved/running/finished/needs_attention), — отказ
+          без --force. Архив проверяется: каталог state/, только относительные
+          пути внутри него, без ссылок и устройств.
+
+Архив — права 0600, каталог бэкапов — 0700 (в state реестр и инциденты, с
+--include-archive — транскрипты). Ротация трогает только автоматические
+архивы state-<UTC>[-N].tar.gz. Файлы вне state_dir (FLOW_MODE_FILE,
+FLOW_ENFORCER_STATE_DIR, вынесенные env) в бэкап не попадают.
 
 Exit: 0 — ок; 1 — отказ (активные сессии, битый архив, нет state); 2 —
 ошибка использования.
@@ -30,6 +36,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import re
 import shutil
 import sys
 import tarfile
@@ -42,33 +50,57 @@ PREFIX = "state-"
 SUFFIX = ".tar.gz"
 DEFAULT_KEEP = 14
 ARCHIVE_SUBDIR = "session-archive"
-ACTIVE_STATUSES = ("reserved", "running")
+# Статусы реестра, при которых сессия держит зону (session_check ZONE_HOLDING
+# + finished/needs_attention): restore перепишет их резервации.
+HOLDING_STATUSES = ("reserved", "running", "finished", "needs_attention")
+# Имя автоматического архива: state-YYYYmmddTHHMMSSZ[-N].tar.gz — ротация
+# трогает только такие (сохраненные вручную под другим именем не удаляются).
+AUTO_RE = re.compile(r"^state-(\d{8}T\d{6}Z)(?:-(\d+))?\.tar\.gz$")
 
 
 def _utc() -> str:
     return time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
 
 
+def _unique(base: Path) -> Path:
+    """Свободное имя рядом: base, base-1, base-2, …"""
+    cand, n = base, 1
+    while cand.exists():
+        cand = base.with_name(f"{base.name}-{n}")
+        n += 1
+    return cand
+
+
+def _auto_key(p: Path):
+    m = AUTO_RE.match(p.name)
+    return (m.group(1), int(m.group(2) or 0)) if m else None
+
+
 def archives(dest: Path) -> list[Path]:
+    """Автоматические архивы, новые первыми (время, затем номер в секунде)."""
     if not dest.is_dir():
         return []
-    return sorted((p for p in dest.iterdir()
-                   if p.name.startswith(PREFIX) and p.name.endswith(SUFFIX)),
-                  key=lambda p: p.name, reverse=True)
+    return sorted((p for p in dest.iterdir() if _auto_key(p)),
+                  key=_auto_key, reverse=True)
 
 
 def backup(state: Path, dest: Path, keep: int = DEFAULT_KEEP,
            include_archive: bool = False) -> Path:
-    if not state.is_dir():
+    real = state.resolve()           # state может быть симлинком на каталог
+    if not real.is_dir():
         raise RuntimeError(f"state не найден: {state}")
     dest = dest.resolve()
-    if dest == state.resolve() or state.resolve() in dest.parents:
+    if dest == real or real in dest.parents:
         raise RuntimeError(f"--dest внутри state ({dest}) — бэкап уйдет вместе с ним")
-    dest.mkdir(parents=True, exist_ok=True)
-    out = dest / f"{PREFIX}{_utc()}{SUFFIX}"
-    n = 1
-    while out.exists():          # два бэкапа в одну секунду
-        out = dest / f"{PREFIX}{_utc()}-{n}{SUFFIX}"
+    try:
+        dest.mkdir(parents=True, exist_ok=True, mode=0o700)
+        os.chmod(dest, 0o700)        # state — реестр, инциденты, транскрипты
+    except OSError as exc:
+        raise RuntimeError(f"каталог бэкапов не создан: {exc}") from exc
+    stamp = _utc()
+    out, n = dest / f"{PREFIX}{stamp}{SUFFIX}", 1
+    while out.exists():              # два бэкапа в одну секунду
+        out = dest / f"{PREFIX}{stamp}-{n}{SUFFIX}"
         n += 1
     tmp = out.with_name(out.name + ".part")
 
@@ -80,9 +112,17 @@ def backup(state: Path, dest: Path, keep: int = DEFAULT_KEEP,
             return None
         return info
 
-    with tarfile.open(tmp, "w:gz") as tar:
-        tar.add(state, arcname="state", filter=_filter)
-    tmp.rename(out)
+    try:
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "wb") as fh, tarfile.open(fileobj=fh, mode="w:gz") as tar:
+            tar.add(real, arcname="state", filter=_filter)
+        with tarfile.open(tmp, "r:gz") as tar:
+            if not any(m.name == "state" and m.isdir() for m in tar.getmembers()):
+                raise RuntimeError("в архиве нет каталога state/ — бэкап пуст")
+        tmp.rename(out)
+    except (OSError, tarfile.TarError, RuntimeError) as exc:
+        tmp.unlink(missing_ok=True)
+        raise RuntimeError(f"бэкап не записан: {exc}") from exc
     for old in archives(dest)[max(keep, 1):]:
         old.unlink()
     return out
@@ -94,8 +134,9 @@ def active_sessions(state: Path) -> list[str]:
         data = json.loads(reg.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return []
-    return [s.get("delegation_id", "?") for s in data.get("sessions", [])
-            if isinstance(s, dict) and s.get("status") in ACTIVE_STATUSES]
+    sessions = data.get("sessions", []) if isinstance(data, dict) else data
+    return [s.get("delegation_id", "?") for s in (sessions or [])
+            if isinstance(s, dict) and s.get("status") in HOLDING_STATUSES]
 
 
 def _safe_members(tar: tarfile.TarFile) -> list[tarfile.TarInfo]:
@@ -106,21 +147,24 @@ def _safe_members(tar: tarfile.TarFile) -> list[tarfile.TarInfo]:
             raise RuntimeError(f"недопустимый путь в архиве: {m.name}")
         if not (m.isfile() or m.isdir()):
             raise RuntimeError(f"недопустимый тип записи в архиве: {m.name}")
+    if not any(m.name == "state" and m.isdir() for m in members):
+        raise RuntimeError("в архиве нет каталога state/")
     return members
 
 
 def restore(archive: Path, state: Path, force: bool = False) -> Path | None:
-    """Распаковывает архив в state; возвращает путь отложенного прежнего state."""
+    """Распаковывает архив в state; возвращает путь отложенного прежнего state.
+    Любой сбой оставляет прежний state на месте."""
     if not archive.is_file():
         raise RuntimeError(f"архив не найден: {archive}")
     if state.is_dir() and not force:
         active = active_sessions(state)
         if active:
             raise RuntimeError(
-                "в текущем state активные сессии: " + ", ".join(active)
-                + " — восстановление перезапишет их резервации (--force, если "
-                  "это осознанно)")
-    staging = state.with_name(state.name + f".restore-{_utc()}")
+                "в текущем state сессии, держащие зоны: " + ", ".join(active)
+                + " — восстановление перепишет их резервации (сначала разбор/"
+                  "reconcile; --force, если это осознанно)")
+    staging = _unique(state.with_name(state.name + f".restore-{_utc()}"))
     try:
         with tarfile.open(archive, "r:gz") as tar:
             members = _safe_members(tar)
@@ -128,6 +172,8 @@ def restore(archive: Path, state: Path, force: bool = False) -> Path | None:
             # filter="data" (3.12+): та же защита на уровне tarfile
             extra = {"filter": "data"} if hasattr(tarfile, "data_filter") else {}
             tar.extractall(staging, members=members, **extra)
+        if not (staging / "state").is_dir():
+            raise RuntimeError("после распаковки нет каталога state/")
     except (tarfile.TarError, OSError, EOFError) as exc:
         shutil.rmtree(staging, ignore_errors=True)
         raise RuntimeError(f"архив не читается: {exc}") from exc
@@ -135,10 +181,16 @@ def restore(archive: Path, state: Path, force: bool = False) -> Path | None:
         shutil.rmtree(staging, ignore_errors=True)
         raise
     previous = None
-    if state.exists():
-        previous = state.with_name(state.name + f".before-restore-{_utc()}")
+    if state.exists() or state.is_symlink():
+        previous = _unique(state.with_name(state.name + f".before-restore-{_utc()}"))
         state.rename(previous)
-    (staging / "state").rename(state)
+    try:
+        (staging / "state").rename(state)
+    except OSError as exc:
+        if previous is not None:
+            previous.rename(state)   # откат: прежний state на место
+        shutil.rmtree(staging, ignore_errors=True)
+        raise RuntimeError(f"state не установлен ({exc}) — прежний возвращен") from exc
     staging.rmdir()
     return previous
 
