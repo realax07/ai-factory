@@ -601,6 +601,7 @@ def check_verdict(worktree: Path, verdict: dict,
     return value, None
 
 
+STAMP_MARK = "<!-- штамп package_runner, J65.4b -->"
 REVIEWER_DELEGATION_RE = re.compile(
     r"Reviewer-Delegation[^A-Za-z0-9]{0,6}(deleg[-_][A-Za-z0-9]+)", re.I)
 
@@ -609,26 +610,41 @@ def stamp_reviewer_delegation(review_file: Path, delegation_id: str) -> bool:
     """J65.4b: строка `Reviewer-Delegation: <делегация стадии>` в review-файле
     стадии Pi — доказательство независимости для pr_validate (J10). Ревьюер
     свою делегацию не знает, поэтому штамп ставит раннер после приемки
-    стадии и до коммита. Строка уже есть с этой делегацией — без изменений
-    (False); с другой — RunnerStop (подмена). Файла нет — без изменений:
-    отсутствие вердикта ловят вердикт-ворота."""
+    стадии и до коммита.
+
+    Строки со штампом раннера (метка STAMP_MARK) принадлежат раннеру:
+    каждая попытка стадии получает новую делегацию, поэтому штамп прошлой
+    попытки (return → resume) заменяется текущим — иначе pr_validate взял бы
+    первое совпадение, устаревшую делегацию. Строка Reviewer-Delegation БЕЗ
+    метки (вписал ревьюер или кто-то еще) с другой делегацией — RunnerStop
+    (подмена). Итог: ровно один штамп текущей делегации. Возврат — изменился
+    ли файл. Файла нет — без изменений: отсутствие вердикта ловят
+    вердикт-ворота."""
     if not review_file.is_file():
         return False
     text = review_file.read_text(encoding="utf-8")
-    m = REVIEWER_DELEGATION_RE.search(text)
-    if m:
-        if m.group(1).replace("_", "-") != delegation_id.replace("_", "-"):
+    stamp = f"Reviewer-Delegation: {delegation_id}  {STAMP_MARK}"
+    kept = [ln for ln in text.splitlines(keepends=True) if STAMP_MARK not in ln]
+    for ln in kept:
+        m = REVIEWER_DELEGATION_RE.search(ln)
+        if m and m.group(1).replace("_", "-") != delegation_id.replace("_", "-"):
             raise RunnerStop(
                 f"{review_file.name}: Reviewer-Delegation {m.group(1)} не "
                 f"совпадает с делегацией стадии {delegation_id} — подмена "
-                "доказательства независимости (J65.4b)")
-        return False
-    stamp = (f"Reviewer-Delegation: {delegation_id}  "
-             "<!-- штамп package_runner, J65.4b -->")
-    lines = text.splitlines(keepends=True)
+                "доказательства независимости (J65.4b); строку пишет только "
+                "раннер")
+    if any(REVIEWER_DELEGATION_RE.search(ln) for ln in kept):
+        new = "".join(kept)           # ревьюер вписал верную делегацию сам
+        if new != text:
+            review_file.write_text(new, encoding="utf-8")
+        return new != text
+    lines = kept
     at = 1 if lines and lines[0].startswith("#") else 0
-    lines.insert(at, ("\n" if at else "") + stamp + "\n")
-    review_file.write_text("".join(lines), encoding="utf-8")
+    lines.insert(at, stamp + "\n")
+    new = "".join(lines)
+    if new == text:
+        return False
+    review_file.write_text(new, encoding="utf-8")
     return True
 
 

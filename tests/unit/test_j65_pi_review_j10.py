@@ -50,7 +50,7 @@ class TestStamp:
         assert pr.stamp_reviewer_delegation(f, DELEG) is True
         lines = f.read_text(encoding="utf-8").splitlines()
         assert lines[0] == "# Ревью"
-        assert pr.REVIEWER_DELEGATION_RE.search(lines[2]).group(1) == DELEG
+        assert pr.REVIEWER_DELEGATION_RE.search(lines[1]).group(1) == DELEG
         assert pr.stamp_reviewer_delegation(f, DELEG) is False   # идемпотентно
         assert f.read_text(encoding="utf-8").count("Reviewer-Delegation") == 1
 
@@ -59,6 +59,24 @@ class TestStamp:
         f = _review(tmp_path, "# Ревью\nReviewer-Delegation: deleg-ffff\n")
         with pytest.raises(pr.RunnerStop, match="подмена"):
             pr.stamp_reviewer_delegation(f, DELEG)
+
+    def test_resume_replaces_own_stamp(self, tmp_path):
+        """TC-J65-PRV-001: return → resume — новая делегация попытки заменяет
+        штамп прошлой (без ложного STOP), штамп в файле ровно один."""
+        f = _review(tmp_path, "# Ревью\n\n## Вердикт: Вернуть\n")
+        pr.stamp_reviewer_delegation(f, "deleg-attempt1aaaaaaaa")
+        f.write_text(f.read_text(encoding="utf-8")
+                     + "\n## Итерация 2\n\n## Вердикт: approve\n", encoding="utf-8")
+        assert pr.stamp_reviewer_delegation(f, DELEG) is True
+        text = f.read_text(encoding="utf-8")
+        assert text.count("Reviewer-Delegation") == 1
+        assert pr.REVIEWER_DELEGATION_RE.search(text).group(1) == DELEG
+
+    def test_reviewer_line_same_id_kept(self, tmp_path):
+        """Ревьюер вписал верную делегацию сам — штамп не дублируется."""
+        f = _review(tmp_path, f"# Ревью\nReviewer-Delegation: {DELEG}\n")
+        assert pr.stamp_reviewer_delegation(f, DELEG) is False
+        assert f.read_text(encoding="utf-8").count("Reviewer-Delegation") == 1
 
     def test_missing_file_noop(self, tmp_path):
         assert pr.stamp_reviewer_delegation(tmp_path / "none.md", DELEG) is False

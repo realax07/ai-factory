@@ -327,8 +327,9 @@ def runner_review_ok(delegation: str, change_id: str, fstate: dict,
     Засчитывается, если в flowctl_state есть запись с этой делегацией:
     роль code_reviewer, scope.change = change PR, статус accepted или
     provisional (pr_validate стадии отложен до PR), пометка package_runner
-    (стадия принята и закоммичена раннером) — и делегация не совпадает с
-    делегацией задачи разработчика (SELF_REVIEW)."""
+    (стадия прошла ворота выхода и закоммичена раннером; вердикт-ворота идут
+    после — STALE/return-вердикт J10 отсеивает своим парсером вердикта) — и
+    делегация не совпадает с делегацией задачи разработчика (SELF_REVIEW)."""
     norm = delegation.replace("-", "_")
     if norm in dev_delegs:
         return False
