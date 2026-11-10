@@ -157,6 +157,10 @@ def restore(archive: Path, state: Path, force: bool = False) -> Path | None:
     Любой сбой оставляет прежний state на месте."""
     if not archive.is_file():
         raise RuntimeError(f"архив не найден: {archive}")
+    if state.is_symlink():
+        # state вынесен ссылкой (другой диск) — восстанавливаем по месту
+        # назначения, ссылка остается
+        state = state.resolve()
     if state.is_dir() and not force:
         active = active_sessions(state)
         if active:
@@ -181,9 +185,14 @@ def restore(archive: Path, state: Path, force: bool = False) -> Path | None:
         shutil.rmtree(staging, ignore_errors=True)
         raise
     previous = None
-    if state.exists() or state.is_symlink():
+    if state.exists():
         previous = _unique(state.with_name(state.name + f".before-restore-{_utc()}"))
-        state.rename(previous)
+        try:
+            state.rename(previous)
+        except OSError as exc:
+            shutil.rmtree(staging, ignore_errors=True)
+            raise RuntimeError(f"прежний state не отложен ({exc}) — восстановление "
+                               "не выполнено, state на месте") from exc
     try:
         (staging / "state").rename(state)
     except OSError as exc:

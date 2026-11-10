@@ -182,3 +182,13 @@ def test_restore_refuses_holding_sessions(paths):
         sb.restore(arc, state)
     (state / "active_sessions.json").write_text("[]", encoding="utf-8")
     assert sb.restore(arc, state) is not None
+
+
+def test_restore_through_symlink_keeps_link(paths, tmp_path):
+    """TC-J64-SB-007: state-ссылка — восстановление по месту назначения."""
+    state, dest = paths
+    arc = sb.backup(state, dest)
+    link = tmp_path / "state-link"
+    link.symlink_to(state, target_is_directory=True)
+    sb.restore(arc, link, force=True)
+    assert link.is_symlink() and (link / "flow_mode.json").is_file()
