@@ -13,7 +13,7 @@
 - `pack-zone` в README каждого пака с политикой зон — блок «Зона записи»
   (glob-форма для манифеста и префикс-форма для env PI_ZONE_WRITE,
   нормализация раннера) и примеры `PI_ZONE_WRITE='…'` в тексте README
-  (`<id>` → C123). У debug и auditor политики нет — их README не трогаются.
+  (`<id>` → C123). У auditor политики нет (только чтение) — его README не трогается.
 
 Правка зон и описаний ролей — только в agents/roles.json; таблицы руками не
 правятся. Тест сверяет закоммиченное с сгенерированным (`--check`).
@@ -147,8 +147,8 @@ def apply_pack_example(text: str, role: dict) -> str:
 
 
 def pack_targets(roles: list[dict]) -> list[tuple[Path, dict]]:
-    """README паков с политикой зон (у debug/auditor политики нет — их
-    README не генерируется, развилка J64.11). README пака с политикой
+    """README паков с политикой зон (у auditor политики нет — его README
+    не генерируется). README пака с политикой
     обязан существовать — его отсутствие поднимается в main как ошибка."""
     return [(PACKS / r["pack"] / "README.md", r) for r in roles
             if r.get("pack") and r.get("zones")]

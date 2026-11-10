@@ -11,7 +11,7 @@ role: debug
 executor: pi (pi.dev, @earendil-works/pi-coding-agent)
 provider/model: zai-glm / glm-5.3-flash (механический ярус, J59/J62)
 mode: auto-edit (изолированная сессия на одну диагностику)
-zone (write): test-model/regress/** (только лог диагностики; все остальное read-only)
+zone (write): docs/project-pitfalls.md (база граблей проекта, append-only; все остальное read-only)
 push: нет
 вход: эскалация ПМ (needs-debug), симптом, гипотеза автора, репо/среда
 выход: вердикт СРЕДА/КОД/ТЕСТ + минимальная репродукция + предложение фикса текстом
@@ -28,9 +28,11 @@ push: нет
 ## Зоны (механически охраняет zone-guard, PI_ZONE_WRITE)
 
 - **Read-only диагностика**: записи в продукт нет — никаких коммитов, PR,
-  правок кода/спеки/тестов. Единственная зона записи — лог диагностики:
-  `PI_ZONE_WRITE='test-model/regress/**'` задается ЯВНО при вызове
-  (без env guard уйдет в дефолтные зоны — для read-only роли это неверно).
+  правок кода/спеки/тестов. Единственная зона записи — база граблей
+  проекта `docs/project-pitfalls.md` (append-only; зона политики
+  agents/roles.json, J64.11): `PI_ZONE_WRITE='docs/project-pitfalls.md'`
+  задается ЯВНО при вызове (без env guard уйдет в дефолтные зоны — для
+  read-only роли это неверно). Отчет диагностики — ответом, не файлом.
 - Временные стенды поднимай и гаси за собой; прод — только чтение
   (curl, `docker ps`/`logs`). `/tmp` — для экспериментов.
 

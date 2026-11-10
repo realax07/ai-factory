@@ -18,17 +18,21 @@ zone-guard НЕ входит в пак: используется установ�
 
 ## Зона записи (PI_ZONE_WRITE)
 
+<!-- roles:pack-zone:start -->
+<!-- генерируется scripts/gen_role_docs.py из agents/roles.json — руками не править -->
 ```
-манифест (glob-форма):       test-model/regress/**
-env PI_ZONE_WRITE (префикс): test-model/regress
+манифест (glob-форма):       docs/project-pitfalls.md
+env PI_ZONE_WRITE (префикс): docs/project-pitfalls.md
 ```
+<!-- roles:pack-zone:end -->
 
-Обе строки — одна зона (у debug политики зон нет, развилка J64.11: зона задается явно при вызове, сверки с политикой нет): runner нормализует glob-хвосты в префикс-форму guard'а (`normalize_zone`, J61).
+Зона политики ворот (agents/roles.json; решение Заказчика J64.11,
+2026-11-10 — «Зона только pitfalls»).
 
 **Read-only диагностика**: записи в продукт нет (никаких коммитов/PR/правок
 кода, спек, тестов — фикс текстом в отчете, применяет исходный dev).
-Единственная зона записи — лог диагностики `test-model/regress/**`, и она
-задается ЯВНО: без `PI_ZONE_WRITE` guard уйдет в дефолтные зоны, что для
+Единственная зона записи — база граблей проекта `docs/project-pitfalls.md`
+(append-only), и она задается ЯВНО: без `PI_ZONE_WRITE` guard уйдет в дефолтные зоны, что для
 read-only роли неверно. Прод — только чтение; временные стенды гасятся.
 
 **Вердикт — один из трех классов: СРЕДА / КОД / ТЕСТ** (с доказательством:
@@ -48,7 +52,7 @@ cp skills/pm-factory/pi/role-packs/debug/settings.example.json ~/.pi/agent/setti
 
 ```bash
 cd /tmp/wt-<change> && \
-PI_ZONE_WRITE='test-model/regress' \
+PI_ZONE_WRITE='docs/project-pitfalls.md' \
 pi --provider zai-glm --model glm-5.3-flash --no-session \
    -e ~/.pi/agent/extensions/zone-guard.ts \
    -p "<бриф: эскалация needs-debug от <роль>, симптом: <цитата отказа>, гипотеза автора: <...>. Изолированная репродукция → вердикт СРЕДА/КОД/ТЕСТ с доказательством + предложение фикса текстом. Лог диагностики: test-model/regress/>"

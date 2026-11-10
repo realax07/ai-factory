@@ -284,6 +284,7 @@ devops) получает резервацию по политике роли (`R
 | `session_worktree.sh` | ПМ/сабагенты при старте сессии | manual | Worktree-изоляция параллельных сессий |
 | `flow_preflight.py` | ПМ в точке диспетчеризации (АУД-4, Н24) | detect (advisory) | Дешевые чеки ДО dev-цикла: static_v-freshness, regress-staleness, pr-body (IR-05/06 WARN) |
 | `flow_scope_check.py` | integrate/finish (АУД-4, Н21) | enforcing | Коммиты ветки соответствуют заявленному change-id (чужие маркеры → DENY) |
+| `ruleset_check.py` | Заказчик/ПМ, RUNBOOK аварийного merge (J64.9) | manual (read-only) | Ruleset main в боевом состоянии: active, bypass никому, PR-only, без force-push, обязательные `test-flow-control` и `flow`; процедура — `docs/runbook-emergency-merge.md` |
 | `check_mirrors.py` | CI/вручную (АУД-4, Н22) | detect | sha256-сверка копий фабричных скриптов в проектах с эталоном фабрики |
 | `codegraph.py` | dev/ПМ, артефакт репо (E14) | manual | Граф зависимостей кода (backend AST + frontend ES-imports, stdlib) |
 | `smoke_static.py` | post-deploy (E10) | manual | Смоук отдачи статики: ссылки шаблонов vs диск vs прод-URL (DEF-002) |

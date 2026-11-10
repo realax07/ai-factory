@@ -215,11 +215,13 @@
       "mode": "auto-edit",
       "zone_text": "только `docs/project-pitfalls.md` проекта (база граблей, append-only)",
       "push": "нет",
-      "zones": [],
+      "zones": [
+        "docs/project-pitfalls.md"
+      ],
       "pack": "debug",
       "prompt": "agents/debug_agent.md",
       "in_table": true,
-      "pack_note": "диагностика без правки продукта; вердикт СРЕДА/КОД/ТЕСТ; зоны политики нет — развилка J64.11"
+      "pack_note": "диагностика без правки продукта; вердикт СРЕДА/КОД/ТЕСТ; запись — только база граблей (J64.11, решение Заказчика 2026-11-10)"
     },
     {
       "id": "regress_runner",

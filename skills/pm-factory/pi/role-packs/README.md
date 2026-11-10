@@ -29,7 +29,7 @@ env `PI_ZONE_WRITE="зона1:зона2"` (префиксы путей от cwd)
 | [`qa-automation/`](qa-automation/README.md) | qa_automation (`agents/qa_automation_agent.md`) | **glm-5.3-flash** | zai-glm | `tests/api/**`, `tests/web/**`, `tests/integration/**`, `tests/smoke_cross/**`, `tests/archive/**`, `tests/conftest.py`, `tests/README.md`, `tests/__init__.py`, `tests/fixtures/**`, `test-model/bugs/*`, `pytest.ini` |
 | [`qa-impact-analyst/`](qa-impact-analyst/README.md) | qa_impact_analyst (`agents/qa_impact_analyst_agent.md`) | **glm-5.3-flash** | zai-glm | `test-model/impact/*.md` |
 | [`ui-designer/`](ui-designer/README.md) | ui_designer (`agents/ui_designer_agent.md`) | **glm-5.3-flash** | zai-glm | `design/**` |
-| [`debug/`](debug/README.md) | debug (`agents/debug_agent.md`) | **glm-5.3-flash** | zai-glm | только чтение (диагностика без правки продукта; вердикт СРЕДА/КОД/ТЕСТ; зоны политики нет — развилка J64.11) |
+| [`debug/`](debug/README.md) | debug (`agents/debug_agent.md`) | **glm-5.3-flash** | zai-glm | `docs/project-pitfalls.md` (диагностика без правки продукта; вердикт СРЕДА/КОД/ТЕСТ; запись — только база граблей (J64.11, решение Заказчика 2026-11-10)) |
 | [`regress-runner/`](regress-runner/README.md) | regress_runner (`agents/regress_runner_agent.md`) | **glm-5.3-flash** | zai-glm | `test-model/regress/<id>/**` (артефакты прогонов пишет flowctl regress) |
 | [`architect/`](architect/README.md) | architect (`agents/architect_agent.md`) | **glm-5.3** | zai-glm | `architecture/**`, `test-model/reviews/<id>/review-*-architecture.md` |
 | [`devops/`](devops/README.md) | devops (`agents/devops_agent.md`) | **glm-5.3-flash** | zai-glm | `deploy/**`, `ops/**`, `.github/workflows/**` (боевой деплой — только по утверждению ПМ, hermes-стоп) |
@@ -49,10 +49,9 @@ Kimi K3.1 (аудитор, вручную: `settings.example.json` единый,
 `PI_ZONE_WRITE='…'` в README каждого пака тоже генерируются из реестра
 (`gen_role_docs.py`, `--check` в тестах): README паков синхронны с политикой;
 пример с суженной зоной в README генератор перезапишет политикой — сужение
-задается в манифесте (`zones:`) или env при вызове, не в README. Остаток J64.11:
-промпты паков `role-agents.md` (code-reviewer, architect, devops) еще
-расходятся с политикой; у debug и auditor политики зон нет (развилка J64.11),
-их README не генерируются. Env `PI_ZONE_WRITE` задается в
+задается в манифесте (`zones:`) или env при вызове, не в README. Промпты паков
+`role-agents.md` сверяются с политикой тестом (J64.11); у auditor политики зон
+нет (только чтение) — его README не генерируется. Env `PI_ZONE_WRITE` задается в
 префикс-форме (без glob-хвостов `/**`) — runner нормализует зоны манифеста
 перед прокидкой (`normalize_zone`, J61); в README каждого пака показаны
 обе формы (у масок внутри пути префикс guard'а шире зоны — точную границу

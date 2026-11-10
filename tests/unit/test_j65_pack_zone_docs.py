@@ -12,7 +12,8 @@ gen_role_docs.py теперь рендерит блок между маркер�
                  совпадает с политикой (glob) и normalize_zone (префикс)
   TC-J65-PZ-002  пример PI_ZONE_WRITE в README пака — префикс-форма
                  политики с <id> → C123
-  TC-J65-PZ-003  паки без политики (debug, auditor) не генерируются;
+  TC-J65-PZ-003  пак без политики (auditor) не генерируется; debug — с зоной
+                 docs/project-pitfalls.md (J64.11, 2026-11-10) [test-adapted];
                  плейсхолдер генератора = role_zone_policy.CHANGE_ID
   TC-J65-PZ-004  пример в двойных кавычках не трогается; пак с политикой без
                  маркеров — ошибка с именем файла (rc 2)
@@ -73,8 +74,8 @@ def test_pack_examples_use_policy_prefix():
 def test_packs_without_policy_untouched():
     """TC-J65-PZ-003."""
     packs = {r["pack"] for _, r in gen.pack_targets(ROLES)}
-    assert "debug" not in packs and "auditor" not in packs
-    for pack in ("debug", "auditor"):
+    assert "auditor" not in packs and "debug" in packs
+    for pack in ("auditor",):
         text = (gen.PACKS / pack / "README.md").read_text(encoding="utf-8")
         assert "roles:pack-zone" not in text
     assert gen.CHANGE_ID_PLACEHOLDER == rzp.CHANGE_ID
