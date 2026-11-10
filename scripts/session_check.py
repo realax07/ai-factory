@@ -416,6 +416,11 @@ def git_main_root(repo: Path) -> str | None:
         common = Path(out.strip())
         if common.name == ".git":
             return str(common.parent)
+        # J64.14: bare-репозиторий (или --separate-git-dir) — common-dir не
+        # `.git`; общий для всех worktree ключ — сам common-dir (откат к
+        # toplevel давал каждому worktree свой «репозиторий» и ломал ZONE_CONFLICT).
+        if common.is_dir() and (common / "HEAD").is_file():
+            return str(common)
     return git_toplevel(repo)
 
 

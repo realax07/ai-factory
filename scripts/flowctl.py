@@ -1161,6 +1161,29 @@ def cmd_finish(args) -> int:
             "note": "вердикт уже вынесен; повтор не выполняется",
         }, args.as_json)
         return {"accepted": 0, "returned": 1}[record["status"]]
+    # J64.14: проверка реестра ДО --pm-resume: закрытая резервация не
+    # переоткрывается и запись цикла не уходит в running впустую.
+    registry_path = Path(record["registry"])
+    # Резервация уже вне ZONE_HOLDING (closed/released — например,
+    # provisional-стадия, закрытая package_runner после коммита): повторный
+    # finish зону не переоткрывает — реестр — источник факта (контракт §13).
+    reg_data, reg_err = sc.registry_load(registry_path)
+    reg_session = None if reg_err else next(
+        (s for s in reg_data.get("sessions", [])
+         if isinstance(s, dict)
+         and s.get("delegation_id") == record.get("delegation_id")), None)
+    if reg_session is not None and reg_session.get("status") in (
+            "closed", "released"):
+        _emit({
+            "schema_version": OUTPUT_SCHEMA, "command": "finish",
+            "correlation_id": args.correlation_id, "verdict": "blocked",
+            "registry_status": reg_session.get("status"),
+            "note": f"резервация {record.get('delegation_id')} уже "
+                    f"{reg_session.get('status')!r} — finish не переоткрывает "
+                    "зону; новая работа — новый prepare",
+        }, args.as_json)
+        return 2
+
     if record["status"] not in ("running", "provisional"):
         # Повторная приемка blocked-сессии — только по явному решению ПМ
         # (--pm-resume): сценарий «blocked по конфигурационной ошибке
@@ -1214,25 +1237,6 @@ def cmd_finish(args) -> int:
     worktree = Path(record["worktree"]) if record.get("worktree") else Path(
         record["scope"]["repo"])
 
-    # Резервация уже вне ZONE_HOLDING (closed/released — например,
-    # provisional-стадия, закрытая package_runner после коммита): повторный
-    # finish зону не переоткрывает — реестр — источник факта (контракт §13).
-    reg_data, reg_err = sc.registry_load(registry_path)
-    reg_session = None if reg_err else next(
-        (s for s in reg_data.get("sessions", [])
-         if isinstance(s, dict)
-         and s.get("delegation_id") == record.get("delegation_id")), None)
-    if reg_session is not None and reg_session.get("status") in (
-            "closed", "released"):
-        _emit({
-            "schema_version": OUTPUT_SCHEMA, "command": "finish",
-            "correlation_id": args.correlation_id, "verdict": "blocked",
-            "registry_status": reg_session.get("status"),
-            "note": f"резервация {record.get('delegation_id')} уже "
-                    f"{reg_session.get('status')!r} — finish не переоткрывает "
-                    "зону; новая работа — новый prepare",
-        }, args.as_json)
-        return 2
 
     # 0) P0.2: обязательные gates — из политики (DEFAULT_GATES точки запуска
     #    + машинные ворота этапа из STAGE_TABLE), НЕ из флагов. --gates может
@@ -1546,19 +1550,36 @@ def cmd_phase(args) -> int:
         repo_resolved = str(Path(args.repo).resolve(strict=True))
     except OSError:
         repo_resolved = str(args.repo)
+    # J64.14: записи раннера несут scope.repo = worktree пакета, а phase
+    # спрашивают по клону — сравнение по корню основного репозитория
+    # (session_check.git_main_root: общий для всех worktree).
+    keys: dict[str, str] = {}
+
+    def _repo_key(raw: str) -> str:
+        if raw not in keys:
+            p = Path(raw)
+            root = sc.git_main_root(p) if p.is_dir() else None
+            try:
+                keys[raw] = root or str(p.resolve())
+            except OSError:
+                keys[raw] = raw
+        return keys[raw]
+
+    want = _repo_key(repo_resolved)
     best = None
     best_ts = ""
     completed: list[str] = []
     for rec in state.get("runs", {}).values():
         if not isinstance(rec, dict):
             continue
-        sc = rec.get("scope") or {}
-        if sc.get("change") != args.scope or sc.get("flow") != args.flow:
+        scope_ = rec.get("scope") or {}
+        if scope_.get("change") != args.scope or scope_.get("flow") != args.flow:
             continue
-        if args.project and sc.get("project") != args.project:
+        if args.project and scope_.get("project") != args.project:
             continue
-        rec_repo = sc.get("repo")
-        if rec_repo and str(Path(rec_repo)) != repo_resolved:
+        rec_repo = scope_.get("repo")
+        if rec_repo and str(Path(rec_repo)) != repo_resolved \
+                and _repo_key(str(rec_repo)) != want:
             continue
         ts = rec.get("finished_at") or rec.get("created_at") or ""
         if best is None or ts > best_ts:
@@ -1675,6 +1696,42 @@ def cmd_reconcile(args) -> int:
 RELEASE_SCHEMA = "flowctl-release/1"
 RELEASE_ELIGIBLE = ("reserved", "needs_attention")
 RELEASE_DEFAULT_REASON = "явное решение ПМ: сброс сессии без штатного выхода"
+
+
+CLOSE_RECORD_STATUSES = ("accepted",)
+
+
+def cmd_close(args) -> int:
+    """J64.14: закрыть принятую сессию: запись цикла accepted, резервация
+    finished → closed. Иное (running, needs_attention, provisional,
+    returned) — отказ: зона держится до разбора, закрывать нечего."""
+    registry_path = Path(args.registry) if args.registry else fp.registry_path()
+    state_path = Path(args.state) if args.state else default_state_path(
+        args.registry)
+    record = state_load(state_path)["runs"].get(args.correlation_id)
+
+    def _out(closed: bool, note: str, rc: int, **extra) -> int:
+        _emit({"schema_version": OUTPUT_SCHEMA, "command": "close",
+               "correlation_id": args.correlation_id, "closed": closed,
+               "note": note, **extra}, args.as_json)
+        return rc
+
+    if record is None:
+        return _out(False, "нет записи цикла для этого correlation ID", 2)
+    if record.get("status") not in CLOSE_RECORD_STATUSES:
+        return _out(False, f"запись цикла {record.get('status')!r} — закрывается "
+                           "только accepted (приемка ПМ)", 1,
+                    record_status=record.get("status"))
+    reason = (args.reason or "").strip() or "ПМ: сессия принята, зона освобождена"
+    tr = registry_transition(registry_path, record.get("delegation_id", ""),
+                             "closed", reason, f"flowctl close {args.correlation_id}",
+                             expect_from="finished")
+    if not tr.get("ok"):
+        if tr.get("current_status") == "closed":
+            return _out(True, "уже closed", 0, idempotent=True)
+        return _out(False, f"резервация не закрыта: {tr.get('reason')} "
+                           f"({'; '.join(map(str, tr.get('details') or []))})", 1)
+    return _out(True, reason, 0, delegation_id=record.get("delegation_id"))
 
 
 def cmd_release(args) -> int:
@@ -2587,6 +2644,31 @@ def gc_branch_candidates(remote_branches: list[str],
     return sorted(out)
 
 
+GC_RUNNER_MARKER = "package-runner.json"
+
+
+def gc_runner_guard(worktree: Path) -> str | None:
+    """J64.14: worktree пакета раннера не сносится, пока пакет не докатан:
+    маркер package-runner.json в git-dir worktree указывает на state пакета;
+    нет finished_at (или state нечитаем) — причина отказа, иначе None."""
+    r = subprocess.run(["git", "-C", str(worktree), "rev-parse",
+                        "--path-format=absolute", "--git-dir"],
+                       capture_output=True, text=True)
+    if r.returncode != 0 or not r.stdout.strip():
+        return None
+    marker = Path(r.stdout.strip()) / GC_RUNNER_MARKER
+    if not marker.is_file():
+        return None
+    try:
+        spath = Path(json.loads(marker.read_text(encoding="utf-8"))["state"])
+        state = json.loads(spath.read_text(encoding="utf-8"))
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        return f"пакет раннера: state не прочитан ({exc}) — решает ПМ"
+    if not state.get("finished_at"):
+        return f"пакет раннера не докатан (state {spath}) — решает ПМ"
+    return None
+
+
 def gc_classify_worktree(session: dict, wt_exists: bool) -> tuple[str, str]:
     """Юнит (J55, категория 2): (категория, причина) для worktree-записи
     реестра. done/closed → remove (если путь еще существует); остальные
@@ -2836,13 +2918,23 @@ def gc_plan(args) -> dict:
     if err:
         wt_note = f"реестр нечитаем ({err}) — категория пропущена (не молча)"
     else:
-        for s in data.get("sessions", []):
-            if not isinstance(s, dict):
-                continue
+        sessions = [s for s in data.get("sessions", []) if isinstance(s, dict)]
+        # J64.14: worktree, который делит хоть одна не-done сессия (стадии
+        # пакета раннера в общем дереве), не сносится.
+        held = {str(Path(s["worktree"])) for s in sessions
+                if s.get("worktree")
+                and str(s.get("status") or "") not in GC_WORKTREE_DONE}
+        for s in sessions:
             if repo is not None and not _session_in_repo(s, repo):
                 continue
             cat, reason = gc_classify_worktree(
                 s, bool(s.get("worktree")) and Path(s["worktree"]).exists())
+            if cat == "remove":
+                wt_path = str(Path(s["worktree"]))
+                guard = (f"worktree делит активная сессия" if wt_path in held
+                         else gc_runner_guard(Path(wt_path)))
+                if guard:
+                    cat, reason = "list_only", guard
             row = {"delegation_id": s.get("delegation_id"),
                    "status": s.get("status"), "worktree": s.get("worktree"),
                    "reason": reason}
@@ -3126,6 +3218,18 @@ def main(argv: list[str] | None = None) -> int:
     p_fin.add_argument("--audit", default=None)
     p_fin.add_argument("--json", action="store_true", dest="as_json")
     p_fin.set_defaults(func=cmd_finish)
+
+    # J64.14: делегация Hermes после приемки и вливания — освобождение зоны
+    # (finished → closed); у стадий раннера это делает сам раннер.
+    p_cl = sub.add_parser(
+        "close", help="закрыть принятую сессию: finished → closed (зона свободна)")
+    p_cl.add_argument("correlation_id")
+    p_cl.add_argument("--reason", default=None,
+                      help="основание (например, «влито PR #N»)")
+    p_cl.add_argument("--registry", default=None)
+    p_cl.add_argument("--state", default=None)
+    p_cl.add_argument("--json", action="store_true", dest="as_json")
+    p_cl.set_defaults(func=cmd_close)
 
     p_st = sub.add_parser("status", help="состояние циклов и сессий")
     p_st.add_argument("--correlation-id", default=None)

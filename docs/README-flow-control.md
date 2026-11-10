@@ -262,7 +262,7 @@ devops) получает резервацию по политике роли (`R
 
 | Скрипт | Кто вызывает | Режим | Что делает |
 |---|---|---|---|
-| `flowctl.py` | ПМ/диспетчеризация, enforcer, delegate_gate | enforcing | Оркестратор: prepare/run/finish/status/reconcile/integrate/regress/phase |
+| `flowctl.py` | ПМ/диспетчеризация, enforcer, delegate_gate | enforcing | Оркестратор: prepare/run/finish/status/reconcile/integrate/regress/phase; `close` — принятая делегация: finished → closed (J64.14) |
 | `flow_state.py` | flowctl, flow_transition | read-only | Снимок фактов по scope (чистый) |
 | `flow_transition.py` | flowctl, enforcer | enforcing | ALLOW/DENY/UNKNOWN этапов + коды причин, графы флоу |
 | `session_check.py` | flowctl (prepare/finish) | enforcing | Резервация зон, post-check (OUT_OF_ZONE), reconcile |
