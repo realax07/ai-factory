@@ -45,7 +45,7 @@ def test_roundtrip_and_errors(tmp_path):
     for body in ("repo=a/b\n", f"repo=a/b\nsha={SHA[:-1]}\n", f"sha={SHA}\n",
                  f"repo=a/b\nsha={SHA}\noops\n", f"repo=a/b\nrepo=c/d\nsha={SHA}\n",
                  f"repo = a/b\nsha={SHA}\n", f"  repo=a/b\nsha={SHA}\n",
-                 f"repo=evil;rm\nsha={SHA}\n"):
+                 f"repo=evil;rm\nsha={SHA}\n", f"repo=a/b\r\nsha={SHA}\r\n"):
         (tmp_path / fl.LOCK_NAME).write_text(body, encoding="utf-8")
         with pytest.raises(fl.LockError):
             fl.read_lock(tmp_path)

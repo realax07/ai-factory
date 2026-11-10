@@ -17,7 +17,7 @@ Usage:
   python3 scripts/factory_lock.py update --target <проект> [--sha SHA] [--repo owner/name]
 
 update без --sha берет HEAD фабрики — только если он влит в origin/main
-(закрепляется проверенный код main фабрики); битый lock update перезаписывает. Exit: 0 — ок; 1 — отказ (битый lock, неопубликованный SHA); 2 —
+(закрепляется проверенный код main фабрики); битый lock update перезаписывает. Exit: 0 — ок; 1 — отказ (show: битый lock; update: HEAD не в origin/main); 2 —
 ошибка использования.
 """
 from __future__ import annotations
@@ -50,8 +50,11 @@ def read_lock(target: Path) -> dict | None:
     # Грамматика одна с шагом CI (flow.yml): строки ровно `repo=<owner/name>`
     # и `sha=<40 hex>` без пробелов, каждая ровно один раз; комментарии `#` и
     # пустые строки допустимы; прочее — ошибка.
+    raw = path.read_bytes().decode("utf-8")   # без перевода \r\n → \n
+    if "\r" in raw:      # шаг CI (grep/sed) CRLF не принимает — та же грамматика
+        raise LockError(f"{LOCK_NAME}: переводы строк CRLF — нужен LF")
     data: dict[str, str] = {}
-    for line in path.read_text(encoding="utf-8").splitlines():
+    for line in raw.split("\n"):
         if not line.strip() or line.startswith("#"):
             continue
         m = LINE_RE.match(line)
@@ -92,6 +95,10 @@ def published_head() -> str:
     только код, прошедший ревью и CI фабрики, — не ветка pipeline/** или
     chore/** до мержа. Иначе LockError."""
     sha = _git("rev-parse", "HEAD")
+    if subprocess.run(["git", "-C", str(FACTORY), "rev-parse", "--verify", "-q",
+                       MAIN_REF], capture_output=True).returncode != 0:
+        raise LockError(f"в клоне фабрики нет ссылки {MAIN_REF} — `git fetch "
+                        "origin main` или передай --sha")
     r = subprocess.run(["git", "-C", str(FACTORY), "merge-base", "--is-ancestor",
                         sha, MAIN_REF], capture_output=True, text=True)
     if r.returncode != 0:

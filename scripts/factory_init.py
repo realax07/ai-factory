@@ -510,7 +510,7 @@ def install_test_layout(target: Path) -> None:
 
 def install_factory_lock(target: Path, force: bool = False) -> bool:
     """J65.7: factory.lock — версия фабрики, чьи ворота гоняет CI проекта.
-    Нет файла — пишется опубликованный HEAD фабрики; есть — не трогается
+    Нет файла — пишется HEAD фабрики, влитый в origin/main; есть — не трогается
     (обновление ворот — осознанный PR: `factory_lock.py update`), с --force —
     обновляется до HEAD фабрики, влитого в origin/main. HEAD не в main —
     WARNING, lock не пишется (init при этом не проваливается). Возврат —

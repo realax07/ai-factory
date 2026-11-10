@@ -285,7 +285,7 @@ devops) получает резервацию по политике роли (`R
 | `session_worktree.sh` | ПМ/сабагенты при старте сессии | manual | Worktree-изоляция параллельных сессий |
 | `flow_preflight.py` | ПМ в точке диспетчеризации (АУД-4, Н24) | detect (advisory) | Дешевые чеки ДО dev-цикла: static_v-freshness, regress-staleness, pr-body (IR-05/06 WARN) |
 | `flow_scope_check.py` | integrate/finish (АУД-4, Н21) | enforcing | Коммиты ветки соответствуют заявленному change-id (чужие маркеры → DENY) |
-| `factory_lock.py` | ПМ при обновлении ворот проекта, factory_init | manual | `factory.lock` проекта (J65.7): `show`, `update [--sha]` — версия фабрики, чьи ворота гоняет CI проекта (`flow.yml`: checkout фабрики по SHA в `.factory/`); без `--sha` — только опубликованный HEAD |
+| `factory_lock.py` | ПМ при обновлении ворот проекта, factory_init | manual | `factory.lock` проекта (J65.7): `show`, `update [--sha]` — версия фабрики, чьи ворота гоняет CI проекта (`flow.yml`: checkout фабрики по SHA в `.factory/`); без `--sha` — только HEAD, влитый в `origin/main` |
 | `ruleset_check.py` | Заказчик/ПМ, RUNBOOK аварийного merge (J64.9) | manual (read-only) | Ruleset main в боевом состоянии: active, bypass никому, PR-only, без force-push, обязательные `test-flow-control` и `flow`; процедура — `docs/runbook-emergency-merge.md` |
 | `state_backup.py` | крон `state-backup` + ПМ/Заказчик при переносе | manual/cron | Бэкап state движка (`backup`, ротация), `list`, `restore` (прежний state откладывается, активные сессии — отказ без `--force`, архив проверяется); RUNBOOK — `docs/runbook-factory-move.md` |
 | `check_mirrors.py` | CI/вручную (АУД-4, Н22) | detect | sha256-сверка копий фабричных скриптов в проектах с эталоном фабрики |

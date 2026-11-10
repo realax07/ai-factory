@@ -192,7 +192,7 @@ smoke-тест `tests/unit/test_smoke.py` и режим раскладки
 `~/.hermes/plugins/` (`--skip-plugin`) и обертки кронов в `~/.hermes/scripts/`
 (`--skip-crons`); без Hermes оба шага пропускаются сами.
 
-Заодно пишет `factory.lock` — опубликованный HEAD фабрики, чьи ворота
+Заодно пишет `factory.lock` — HEAD фабрики, влитый в `origin/main`, чьи ворота
 будет гонять CI проекта (J65.7); существующий lock без `--force` не трогается.
 
 Повторный запуск без `--force` докопирует только недостающее. `--force`
