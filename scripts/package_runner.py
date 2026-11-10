@@ -791,6 +791,39 @@ def per_task_ids(worktree: Path, package: str) -> list[str]:
     return out
 
 
+def task_checkbox(worktree: Path, package: str, task_id: str) -> str:
+    """Статус чекбокса задачи tasks.md: open | closed | missing."""
+    tasks = worktree / "openspec" / "changes" / package / "tasks.md"
+    try:
+        text = tasks.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return "missing"
+    m = re.search(rf"^[-*]\s*\[( |x)\]\s*{re.escape(task_id)}(?![\d.])", text, re.M)
+    return "missing" if not m else ("closed" if m.group(1) == "x" else "open")
+
+
+def close_task_checkbox(worktree: Path, package: str, task_id: str,
+                        message: str) -> str | None:
+    """`- [ ] N` → `- [x] N` в tasks.md пакета и коммит; уже закрыта — None."""
+    tasks = worktree / "openspec" / "changes" / package / "tasks.md"
+    rel = tasks.relative_to(worktree).as_posix()
+    text = tasks.read_text(encoding="utf-8")
+    new, n = re.subn(rf"^([-*]\s*)\[ \](\s*{re.escape(task_id)}(?![\d.]))",
+                     r"\1[x]\2", text, count=1, flags=re.M)
+    if n == 0:
+        if task_checkbox(worktree, package, task_id) == "closed":
+            return None
+        raise RunnerStop(f"чекбокс задачи {task_id} не найден в {rel}")
+    tasks.write_text(new, encoding="utf-8")
+    for cmd in (["add", "--", rel], ["commit", "-q", "-m", message, "--", rel]):
+        r = subprocess.run(["git", "-C", str(worktree), *cmd],
+                           capture_output=True, text=True)
+        if r.returncode != 0:
+            raise RunnerStop(f"чекбокс задачи {task_id} не закоммичен: "
+                             f"{(r.stderr or r.stdout).strip()}")
+    return _git_head(worktree)
+
+
 def expand_per_task(stage: dict, task_ids: list[str],
                     deps: dict[str, list[str]], package: str) -> list[dict]:
     """Под-стадии `<id>-<задача>`: копия pi:dev с task_id (flowctl prepare
@@ -806,6 +839,13 @@ def expand_per_task(stage: dict, task_ids: list[str],
         dev = dict(stage, id=f"{stage['id']}-{tid}", task_id=tid, per_task=False,
                    review="", depends=[last[d] for d in deps.get(tid, []) if d in last])
         dev["task"] = (stage.get("task") or "") + f" [задача tasks.md {tid}]"
+        if review:
+            # Решение Заказчика 2026-11-11 (J64.13): чекбокс задачи ставит
+            # раннер после approve ревью — ревью по открытой задаче (code_review
+            # Флоу 1), следующая задача видит закрытую одобренную зависимость.
+            dev["per_task_dev"] = tid
+            dev["task"] += (f". НЕ закрывай чекбокс задачи {tid} в tasks.md — "
+                            "его ставит раннер после approve ревью (J64.13)")
         subs.append(dev)
         last[tid] = dev["id"]
         if review:
@@ -813,7 +853,10 @@ def expand_per_task(stage: dict, task_ids: list[str],
                 "id": f"{stage['id']}-{tid}-review", "kind": "pi",
                 "payload": review, "zones": policy_zones(review, package),
                 "inputs": [], "description": "",
-                "task": f"ревью задачи tasks.md {tid} (дифф под-стадии {dev['id']})",
+                "task": (f"ревью задачи tasks.md {tid} (дифф под-стадии {dev['id']}); "
+                         "повторная итерация — дописать в конец того же файла "
+                         "(история append-only, решает последний заголовок вердикта)"),
+                "per_task_review": tid,
                 "gate": "", "depends": [dev["id"]],
                 "verdict": {"file": f"code-reviews/{package}/review-{tid}-001.md"},
                 "optional": False, "action": "code_review", "task_id": tid,
@@ -1641,6 +1684,10 @@ def cmd_run(plan_path: Path, dry_run: bool) -> int:
                              "approve-ревью зависимостей (J10); добавь `review: "
                              "code-reviewer` стадии", None)
             subs = expand_per_task(stage, ids, deps, manifest["package"])
+            empty = [s["id"] for s in subs if s["kind"] == "pi" and not s["zones"]]
+            if empty:
+                return _stop(stage, "per_task: у роли ревьюера нет зоны в реестре "
+                             "agents/roles.json: " + ", ".join(empty), None)
             clash = {s["id"] for s in subs} & {s["id"] for s in manifest["stages"]}
             if clash:
                 return _stop(stage, "per_task: id под-стадий совпадают со "
@@ -1884,6 +1931,13 @@ def cmd_run(plan_path: Path, dry_run: bool) -> int:
             continue
         gate_close(gate, commit)
         gate.update(open=False, commit=commit)
+        if stage.get("per_task_dev") and task_checkbox(
+                worktree, manifest["package"], stage["per_task_dev"]) == "closed":
+            if _fail(stage, f"dev закрыл чекбокс задачи {stage['per_task_dev']} "
+                     "сам — при per_task с review его ставит раннер после approve "
+                     "(J64.13); открой чекбокс коммитом и повтори", None):
+                return EXIT_STOP
+            continue
         # Вердикт-ворота (J62 → J65.4) ДО отметки done: вердикт файла — по
         # единому парсеру; approve/return фиксируется аудит-записью provenance
         # (прерывание между ними не оставит done-стадию без записи);
@@ -1908,6 +1962,18 @@ def cmd_run(plan_path: Path, dry_run: bool) -> int:
                          None):
                     return EXIT_STOP
                 continue
+        if stage.get("per_task_review"):
+            # approve пары (verdict_problem пуст) → чекбокс задачи закрывает
+            # раннер своим коммитом (решение Заказчика 2026-11-11, J64.13)
+            try:
+                closed_commit = close_task_checkbox(
+                    worktree, manifest["package"], stage["per_task_review"],
+                    f"[pipeline] {manifest['package']}/{stage['id']}: задача "
+                    f"{stage['per_task_review']} закрыта после approve ревью")
+            except RunnerStop as exc:
+                return _stop(stage, str(exc), None)
+            print(f"RUNNER: задача {stage['per_task_review']} закрыта в tasks.md "
+                  f"({closed_commit or 'уже закрыта'})")
         state_record(state, stage["id"], "done", "pi ok", 0, out, err)
         state_write(spath, state)
         try:

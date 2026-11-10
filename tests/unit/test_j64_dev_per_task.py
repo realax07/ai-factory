@@ -15,6 +15,10 @@
                   порядку зависимостей; без review: при зависимостях — STOP на
                   развертке; список фиксируется в state, resume по нему
   TC-J64-DPT-004  файл вердикта пары засчитывается J10 (approved_review_tasks)
+  TC-J64-DPT-005  dev закрыл чекбокс сам (per_task с review) — STOP
+  TC-J64-DPT-006  цепочка на настоящих проверках ворот: ревью по открытой
+                  задаче разрешено; dev следующей — после approve и закрытия
+                  чекбокса раннером
 """
 from __future__ import annotations
 
@@ -108,9 +112,6 @@ def _runner(tmp_path, monkeypatch, manifest):
 
     def fake_pi(args, cwd, env, timeout):
         calls.append(env.get("PI_ZONE_WRITE", ""))
-        # ревьюер под-стадии пишет вердикт по задаче (файл из манифеста)
-        for f in Path(cwd).glob("AGENTS*.md"):
-            pass
         return 0, "ok", ""
     monkeypatch.setattr(pr, "run_pi", fake_pi)
     monkeypatch.setattr(pr, "ensure_worktree", lambda repo_, sid, br: repo_)
@@ -146,6 +147,10 @@ def test_runner_expands_dev_review_pairs(tmp_path, monkeypatch):
                     ("dev-1.2", "1.2", ""), ("dev-1.2-review", "1.2", "code_review"),
                     ("dev-3.1", "3.1", ""), ("dev-3.1-review", "3.1", "code_review")]
     assert len(calls) == 6
+    # чекбоксы закрыл раннер после approve каждой пары (решение 2026-11-11)
+    for tid in ("1.3", "1.2", "3.1"):
+        assert pr.task_checkbox(repo, "add-widget", tid) == "closed"
+    assert pr.task_checkbox(repo, "add-widget", "2.1") == "open"   # [ops] не тронута
     state = json.loads(pr.state_path_for(plan).read_text(encoding="utf-8"))
     assert state["expanded"]["dev"] == ["1.3", "1.2", "3.1"]
     assert state["stages"]["dev"]["status"] == "expanded"
@@ -168,3 +173,67 @@ def test_review_file_name_counts_for_j10(tmp_path):
     vf.write_text("# Ревью\nReviewer-Delegation: deleg-0123456789abcdef\n\n"
                   "## Вердикт: approve\n", encoding="utf-8")
     assert "1.3" in flow_check.approved_review_tasks(tmp_path, "add-widget")
+
+
+def test_dev_closing_checkbox_itself_stops(tmp_path, monkeypatch, capsys):
+    """TC-J64-DPT-005: при per_task с review dev не закрывает чекбокс сам."""
+    manifest = MANIFEST.replace("      per_task: true\n",
+                                "      per_task: true\n      review: code-reviewer\n")
+    repo, plan, calls, seen = _runner(tmp_path, monkeypatch, manifest)
+
+    def dev_closes(args, cwd, env, timeout):
+        t = Path(cwd) / "openspec/changes/add-widget/tasks.md"
+        t.write_text(t.read_text(encoding="utf-8").replace("- [ ] 1.3", "- [x] 1.3"),
+                     encoding="utf-8")
+        return 0, "ok", ""
+    monkeypatch.setattr(pr, "run_pi", dev_closes)
+    assert pr.cmd_run(plan, dry_run=False) != 0
+    assert "закрыл чекбокс задачи 1.3 сам" in capsys.readouterr().err
+
+
+def test_chain_passes_real_gate_checks(tmp_path):
+    """TC-J64-DPT-006: цепочка dev-1.3 → review-1.3 → dev-1.2 на настоящих
+    проверках ворот (flow_state.inspect + check_code_review + _deps_findings,
+    J10-evidence) — без заглушек gate_begin."""
+    import subprocess
+    import flow_state
+    import flow_transition as ft
+    repo = tmp_path / "proj-chain"
+    repo.mkdir()
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    _tasks(repo, "- [ ] 1.3 сервис\n- [ ] 1.2 API (после 1.3)\n")
+
+    def snap(task):
+        return flow_state.inspect(repo, "proj", 1, "add-widget", task_id=task)
+
+    def review_findings(task):
+        ctx = {"checked": set(), "evidence": set()}
+        act = ft.ActionRequest(actor_role="code_reviewer",
+                               requested_action="code_review", task_id=task)
+        return [f for f in ft.check_code_review(snap(task), act, ctx, 1)]
+
+    def dev_dep_findings(task, deps):
+        ctx = {"checked": set(), "evidence": set()}
+        act = ft.ActionRequest(actor_role="dev", requested_action="dev_task",
+                               task_id=task, task_dependencies=tuple(deps),
+                               dependency_evidence=ft._dep_evidence(repo, "add-widget",
+                                                                    tuple(deps)))
+        return ft._deps_findings(act, ctx)
+
+    # dev-1.3 отработал, чекбокс открыт (бриф раннера) → ревью 1.3 разрешено
+    assert review_findings("1.3") == []
+    # до approve и закрытия — dev-1.2 ждет зависимость
+    assert dev_dep_findings("1.2", ["1.3"])
+    # ревью 1.3 approve (штамп раннера) + раннер закрыл чекбокс
+    vf = repo / "code-reviews/add-widget/review-1.3-001.md"
+    vf.parent.mkdir(parents=True)
+    vf.write_text("# Ревью\nReviewer-Delegation: deleg-0123456789abcdef\n\n"
+                  "## Вердикт: approve\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(repo), "add", "-A"], check=True)
+    subprocess.run(["git", "-C", str(repo), "-c", "user.email=t@t", "-c", "user.name=t",
+                    "commit", "-qm", "init"], check=True)
+    subprocess.run(["git", "-C", str(repo), "config", "user.email", "t@t"], check=True)
+    subprocess.run(["git", "-C", str(repo), "config", "user.name", "t"], check=True)
+    assert pr.close_task_checkbox(repo, "add-widget", "1.3", "close 1.3")
+    assert dev_dep_findings("1.2", ["1.3"]) == []          # dev-1.2 проходит
+    assert pr.close_task_checkbox(repo, "add-widget", "1.3", "again") is None
