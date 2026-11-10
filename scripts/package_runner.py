@@ -971,8 +971,9 @@ def runner_leftovers(worktree: Path, plan_path: Path,
 def stage_dirty_before(state: dict, stage_id: str, worktree: Path) -> set[str]:
     """Снимок изменений до gate/stand-стадии. Файлы, которые эта же стадия
     оставила в прошлой попытке (state.gate_leftovers), из снимка вычитаются:
-    resume после STOP не пропускает их как «бывшие до стадии»."""
-    prev = set((state.get("gate_leftovers") or {}).pop(stage_id, []) or [])
+    resume после STOP не пропускает их как «бывшие до стадии». Запись
+    очищается только при успехе стадии (отказ по другой причине ее хранит)."""
+    prev = set((state.get("gate_leftovers") or {}).get(stage_id, []) or [])
     return worktree_dirty(worktree) - prev
 
 
@@ -1638,6 +1639,7 @@ def cmd_run(plan_path: Path, dry_run: bool) -> int:
                 if _fail(stage, leftovers_detail("gate", left), 0, out, err):
                     return EXIT_STOP
                 continue
+            (state.get("gate_leftovers") or {}).pop(stage["id"], None)
             state_record(state, stage["id"], "done", "gate ok", 0, out, err)
             state_write(spath, state)
             try:
@@ -1678,6 +1680,7 @@ def cmd_run(plan_path: Path, dry_run: bool) -> int:
             if left:
                 state.setdefault("gate_leftovers", {})[stage["id"]] = left
                 return _stop(stage, leftovers_detail("stand", left), rc, out, err)
+            (state.get("gate_leftovers") or {}).pop(stage["id"], None)
             stand_env.update(parsed)
             state["stand_env"] = dict(stand_env)
             exported = ", ".join(sorted(parsed))

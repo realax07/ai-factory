@@ -274,3 +274,24 @@ def test_gate_leftovers_resume_still_stops(tmp_path, monkeypatch, capsys):
     capsys.readouterr()
     assert pr.cmd_run(plan, dry_run=False) != 0          # resume — снова STOP
     assert "lint-report.txt" in capsys.readouterr().err
+
+
+def test_gate_leftovers_survive_other_failure(tmp_path, monkeypatch, capsys):
+    """TC-J64-J63-007 (review-002 N1): отказ по другой причине между
+    попытками не стирает память об оставленных файлах."""
+    repo = tpr.make_repo(tmp_path)
+    plan = tpr.write_plan(repo, GATE_ONLY, name="PLAN-g.md")
+    attempts = iter([("leave", 0), ("noop", 1), ("noop", 0)])
+
+    def gate(cmd, cwd, timeout, stand_env=None):
+        kind, rc = next(attempts)
+        if kind == "leave":
+            (cwd / "lint-report.txt").write_text("x", encoding="utf-8")
+        return rc, "", ""
+    monkeypatch.setattr(pr, "run_shell", gate)
+    monkeypatch.setattr(pr, "ensure_worktree", lambda repo_, sid, br: repo_)
+    assert pr.cmd_run(plan, dry_run=False) != 0      # оставила файл
+    assert pr.cmd_run(plan, dry_run=False) != 0      # exit 1
+    capsys.readouterr()
+    assert pr.cmd_run(plan, dry_run=False) != 0      # ok, но файл на месте
+    assert "lint-report.txt" in capsys.readouterr().err
