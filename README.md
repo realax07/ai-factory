@@ -142,9 +142,13 @@ crontab bootstrap не правит. Режим ворот нового файл
 `~/.pi/agent/models.json`). Флаги: `--skip-pi`, `--skip-cron`, `--skip-tests`,
 `--flow-mode`.
 
+State движка резервируется кроном `state-backup` (`scripts/state_backup.py`,
+архивы в `AF_BACKUP_DIR`); восстановление и перенос на новую машину —
+[docs/runbook-factory-move.md](docs/runbook-factory-move.md).
+
 Пути машины не прошиты в коде: каждый задается переменной окружения
 (`AF_STATE_DIR`, `HERMES_HOME`, `AI_FACTORY_HOME`, `AF_PROJECTS_ROOT`,
-`PI_AGENT_DIR`). Текущие значения: `python3 scripts/factory_paths.py`.
+`PI_AGENT_DIR`, `AF_BACKUP_DIR`). Текущие значения: `python3 scripts/factory_paths.py`.
 
 ### Шаг 2. Исполнитель Pi
 

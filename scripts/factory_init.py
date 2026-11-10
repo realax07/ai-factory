@@ -165,6 +165,7 @@ WATCHDOG_SCRIPTS = [
     "session_watchdog.py",
     "delegate_watchdog.py",
     "stand_reaper.py",
+    "state_backup.py",  # J64.6: крон `state_backup.py backup` раз в сутки
 ]
 
 # Упраздненные крон-джобы (решение Заказчика 2026-10-23): обертки НЕ создаются,
@@ -285,6 +286,9 @@ def print_recommended_crons() -> None:
         ("delegate-watchdog", "*/5 * * * *", "origin",
          "включается ПМ ПОСЛЕ проверки: прогнать починенную эвристику "
          "(project-less диспатчи ПМ = норма) — clean, exit 0"),
+        ("state-backup", "15 3 * * *", "local",
+         "state_backup.py backup (J64.6): архив state, ротация 14; чисто = "
+         "молчание, отказ — exit 1 в лог; копию архива вывозить вне VPS"),
         ("watchdog-daily-digest", "—", "—",
          "НЕ СОЗДАВАТЬ: упразднен решением Заказчика 2026-10-23"),
     ]
