@@ -10,7 +10,7 @@ Hermes/ПМ. Роль вне flow-графа: вызывается ПМ по э�
 | Файл | Назначение |
 |---|---|
 | `role-agents.md` | Ролевая инструкция (выжимка фабричного промпта). При сборке — в корень worktree как `AGENTS.md` (или `AGENTS.pi.md`, если проектный уже есть). |
-| `settings.example.json` | Дефолты сессии: `zai-glm`/`glm-5.3-flash`, tools `read/bash` (read-only диагностика — без edit/write), zone-guard. |
+| `settings.example.json` | Дефолты сессии: `zai-glm`/`glm-5.3-flash`, tools `read/bash` (read-only диагностика — без edit/write: append в базу граблей — через bash, границу держит сверка диффа на finish), zone-guard. |
 
 zone-guard НЕ входит в пак: используется установленный
 `~/.pi/agent/extensions/zone-guard.ts` (общий для всех паков). Зоны — env
@@ -55,7 +55,7 @@ cd /tmp/wt-<change> && \
 PI_ZONE_WRITE='docs/project-pitfalls.md' \
 pi --provider zai-glm --model glm-5.3-flash --no-session \
    -e ~/.pi/agent/extensions/zone-guard.ts \
-   -p "<бриф: эскалация needs-debug от <роль>, симптом: <цитата отказа>, гипотеза автора: <...>. Изолированная репродукция → вердикт СРЕДА/КОД/ТЕСТ с доказательством + предложение фикса текстом. Лог диагностики: test-model/regress/>"
+   -p "<бриф: эскалация needs-debug от <роль>, симптом: <цитата отказа>, гипотеза автора: <...>. Изолированная репродукция → вердикт СРЕДА/КОД/ТЕСТ с доказательством + предложение фикса текстом.. Отчет — ответом; запись в репо — только append в docs/project-pitfalls.md>"
 ```
 
 - Одна диагностика = одна сессия; итерационный бюджет отдельный (30).

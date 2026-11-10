@@ -19,10 +19,15 @@ GitHub-раннер, внешняя зависимость), починка CI �
 1. **Снимок до.** Проверить и сохранить текущий ruleset:
 
    ```bash
-   python3 scripts/ruleset_check.py --repo $R
+   python3 scripts/ruleset_check.py --repo $R     # exit 0 до начала
    ID=$(gh api repos/$R/rulesets --jq '.[] | select(.name=="main") | .id')
-   gh api repos/$R/rulesets/$ID > /tmp/ruleset-main-before.json
+   SNAP=~/ruleset-main-$(date +%Y%m%d-%H%M%S).json
+   gh api repos/$R/rulesets/$ID \
+     --jq '{name, target, enforcement, bypass_actors, conditions, rules}' > $SNAP
    ```
+
+   Снимок — в домашнем каталоге (не `/tmp`), только поля, которые принимает
+   PUT: им же ruleset восстанавливается целиком (шаг 5).
 
 2. **PR починки** открыт, ревью есть (независимое, как обычно), красный
    только аварийный шаг CI. В описании PR — маркер `[emergency]` и ссылка
@@ -47,16 +52,37 @@ GitHub-раннер, внешняя зависимость), починка CI �
    python3 scripts/ruleset_check.py --repo $R    # exit 0 = боевое состояние
    ```
 
-   `ruleset_check` сверяет enforcement, пустой bypass, правила PR-only и
-   non-fast-forward и обязательные проверки. Exit 1 — вернуть настройки по
-   снимку из шага 1 (`/tmp/ruleset-main-before.json`) через Settings →
-   Rules → Rulesets.
+   `ruleset_check` сверяет цель (ветка main), enforcement, пустой bypass,
+   правила PR-only и non-fast-forward и обязательные проверки. Exit 1 —
+   восстановить ruleset целиком из снимка шага 1 и проверить снова:
 
-6. **Запись в incident-лог** — `test-model/incidents/<YYYY-MM-DD>-S2-emergency-merge.md`
-   (тот же формат, что post-mortem Флоу 3, J48): таймлайн (время выключения
-   и включения ruleset), причина поломки CI с доказательством, номер PR и
-   SHA merge, кто выполнил, вывод `ruleset_check` после включения. Запись —
-   обычным PR, CI уже зеленый.
+   ```bash
+   gh api -X PUT repos/$R/rulesets/$ID --input $SNAP
+   python3 scripts/ruleset_check.py --repo $R
+   ```
+
+   Exit 2 (UNKNOWN) — у токена нет права видеть bypass ruleset: проверь
+   под учеткой админа.
+
+6. **Запись в incident-лог** —
+   `test-model/incidents/<YYYY-MM-DD>-S2-emergency-merge-<slug>.md` (`<slug>` —
+   что сломалось, например `openspec-cli`; формат post-mortem Флоу 3, J48)
+   с обязательными разделами:
+
+   ```markdown
+   # S2-emergency-merge-<slug> — <дата>
+
+   ## Таймлайн
+   - <время> ruleset выключен (кто); <время> merge PR #<N> (SHA); <время> ruleset включен
+
+   ## Root cause
+   <почему CI красный вне кода PR + ссылка на лог шага>
+
+   ## Action items
+   - <что сделать, чтобы не повторилось>; вывод ruleset_check после включения: OK
+   ```
+
+   Запись — обычным PR, CI уже зеленый.
 
 7. **Проверка CI на main** — следующий PR (или перезапуск на `main`)
    должен пройти обе проверки.
