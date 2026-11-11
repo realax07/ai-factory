@@ -153,13 +153,14 @@ State движка резервируется кроном `state-backup` (`scri
 ### Шаг 2. Исполнитель Pi
 
 Сам Pi ставится через npm (таблица требований). Zone-guard —
-`~/.pi/agent/extensions/zone-guard.ts` — ставит bootstrap (шаг 1); если там
+копия эталона `skills/pm-factory/pi/zone-guard.ts` в `~/.pi/agent/extensions/zone-guard.ts` для ручных
+запусков pi (пакетный раннер берет эталон из репо) — ставит bootstrap (шаг 1); если там
 уже лежит отличающаяся копия, bootstrap ее не перезаписывает и предупреждает.
 Вручную:
 
 ```bash
 mkdir -p ~/.pi/agent/extensions
-cp skills/pm-factory/pi/role-packs/regress-runner/extensions/zone-guard.ts ~/.pi/agent/extensions/
+cp skills/pm-factory/pi/zone-guard.ts ~/.pi/agent/extensions/
 ```
 
 Ключ провайдера — в `~/.pi/agent/models.json` (chmod 600, не в git). Состав

@@ -7,12 +7,18 @@
 (дефолты сессии; ключ — отдельно в `~/.pi/agent/models.json`, chmod 600),
 `README.md` (сборка и вызов). Оркестратор — всегда Hermes/ПМ.
 
-**Zone-guard — общий для всех паков**: `regress-runner/extensions/zone-guard.ts`,
-устанавливается один раз в `~/.pi/agent/extensions/`, зоны записи на вызове —
-env `PI_ZONE_WRITE="зона1:зона2"` (префиксы путей от cwd) + флаг
-`-e ~/.pi/agent/extensions/zone-guard.ts`. Механическая гарантия — только для
-`write`/`edit` (fail-closed); bash-канал эвристический, `git push` блокируется
-всем ролям. Общие подводные камни Pi — в `regress-runner/README.md`.
+**Zone-guard — общий для всех паков**: эталон `skills/pm-factory/pi/zone-guard.ts` (J64.10).
+Пакетный раннер подключает его прямо из репо фабрики (`-e <фабрика>/skills/pm-factory/pi/zone-guard.ts`;
+нет файла — STOP стадии `ZONE_GUARD_MISSING`, sha256 — в отчете стадии). Для
+ручных запусков копия ставится в `~/.pi/agent/extensions/` (factory_bootstrap;
+отличающуюся не перезаписывает — WARN). Env на вызове:
+`PI_ZONE_WRITE="зона1:зона2"` (префиксы путей от cwd, сегмент с `*` — glob;
+без env запись запрещена целиком), `PI_ZONE_ROLE=<роль>` (bash-правила),
+`PI_ZONE_GUARD_LOG=<файл вне worktree>` (лог отказов; дефолт
+`~/.pi/agent/zone-guard.log`). Механическая гарантия — только для
+`write`/`edit` (fail-closed); bash-канал эвристический: `git push` блокируется
+всем ролям, docker-мутации — всем, кроме `devops` (решение Заказчика
+2026-11-11). Граница записи стадии — сверка git diff на finish у раннера. Общие подводные камни Pi — в `regress-runner/README.md`.
 
 ## Оглавление паков
 

@@ -160,8 +160,13 @@ except (ImportError, RuntimeError) as _exc:  # нет движка/реестр�
 REPO_ROOT = SCRIPTS.parent
 ROLE_PACKS = REPO_ROOT / "skills" / "pm-factory" / "pi" / "role-packs"
 WORKTREE_SCRIPT = SCRIPTS / "session_worktree.sh"
-ZONE_GUARD = fp.pi_agent_dir() / "extensions" / "zone-guard.ts"
 FLOWCTL = Path(fc.__file__).resolve() if fc else SCRIPTS / "flowctl.py"
+# zone-guard исполнителя Pi (J64.10, решение Заказчика 2026-11-11 «Прямо из
+# репо»): эталон в репо движка (рядом с flowctl — у зеркала раннера в проекте
+# skills/ нет), не копия в ~/.pi; нет файла — STOP стадии до ворот входа.
+ZONE_GUARD_REL = Path("skills") / "pm-factory" / "pi" / "zone-guard.ts"
+ZONE_GUARD = FLOWCTL.parent.parent / ZONE_GUARD_REL
+ZONE_GUARD_MISSING = "ZONE_GUARD_MISSING"
 # Ворота pi-стадии: владелец резервации в реестре сессий и область finish.
 FLOW_OWNER = "package_runner"
 FLOW_GATE_SCOPE = "post_agent"
@@ -1593,15 +1598,28 @@ def shelve_attempt(worktree: Path, base_sha: str, label: str) -> str:
     return "изменений нет" if "No local changes" in out else f"stash «{label}»"
 
 
+def zone_guard_log(package: str) -> Path:
+    """Лог отказов zone-guard — вне worktree (J64.10): в дифф стадии не
+    попадает и не путается с работой агента."""
+    return fp.state_dir() / "zone-guard" / f"{package}.log"
+
+
+def file_sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
 def write_report(plan_path: Path, stage: dict, attempt: int,
-                 stdout: str, stderr: str) -> Path:
+                 stdout: str, stderr: str, guard_sha: str = "") -> Path:
     """Отчет агента для finish (указатель на файлы — хвост вывода pi)."""
     rdir = plan_path.with_name(plan_path.name + REPORTS_SUFFIX)
     rdir.mkdir(parents=True, exist_ok=True)
     path = rdir / f"{stage['id']}-{attempt}.md"
     path.write_text(
         f"# Отчет pi:{stage['payload']} — stage {stage['id']} "
-        f"(попытка {attempt})\n\n## stdout\n\n```\n"
+        f"(попытка {attempt})\n\n"
+        + (f"zone-guard: {ZONE_GUARD_REL.as_posix()} sha256 {guard_sha}\n\n"
+           if guard_sha else "")
+        + "## stdout\n\n```\n"
         f"{tail(stdout, STAGE_TAIL_LINES)}\n```\n\n## stderr\n\n```\n"
         f"{tail(stderr, STAGE_TAIL_LINES)}\n```\n", encoding="utf-8")
     return path
@@ -1924,6 +1942,13 @@ def cmd_run(plan_path: Path, dry_run: bool) -> int:
         if not role_agents.is_file():
             return _stop(stage, f"роль-пак не найден: {role_agents}", None)
         role_text = role_agents.read_text(encoding="utf-8")
+        guard_sha = ""
+        if fc is not None:   # без движка STOP даст gate_new (FACTORY_ENGINE_MISSING)
+            if not ZONE_GUARD.is_file():
+                return _stop(stage, f"{ZONE_GUARD_MISSING}: zone-guard не найден "
+                                    f"({ZONE_GUARD}) — pi без guard'а роли не "
+                                    "запускается (J64.10)", None)
+            guard_sha = file_sha256(ZONE_GUARD)
 
         # Ворота входа (flowctl prepare/run или резервация зоны роли без
         # этапа). Повтор стадии после STOP сначала освобождает зону своей
@@ -1937,6 +1962,8 @@ def cmd_run(plan_path: Path, dry_run: bool) -> int:
         try:
             gate = gate_new(stage, repo, worktree)
             gate.update(open=True, attempt=attempt)
+            if guard_sha:   # аудит: какой guard стоял на попытке (J64.10)
+                gate["zone_guard_sha256"] = guard_sha
             gates[stage["id"]] = gate
             state_write(spath, state)  # до prepare: резервация не осиротеет
             gate_begin(manifest, stage, repo, worktree, branch, gate)
@@ -2008,6 +2035,10 @@ def cmd_run(plan_path: Path, dry_run: bool) -> int:
         # дефект пилота BUG-026 — guard матчит префиксом, не glob'ом).
         env["PI_ZONE_WRITE"] = ":".join(
             normalize_zone(z) for z in stage["zones"])
+        # Роль — bash-правила guard'а (docker-мутации — только devops);
+        # лог отказов — вне worktree (J64.10).
+        env["PI_ZONE_ROLE"] = flow_role(stage["payload"])
+        env["PI_ZONE_GUARD_LOG"] = str(zone_guard_log(manifest["package"]))
         # Env стенда stand-стадий пакета (J62) — всем последующим pi-стадиям.
         env.update(stand_env)
         args = ["pi", "--provider", provider, "--model", model,
@@ -2046,7 +2077,8 @@ def cmd_run(plan_path: Path, dry_run: bool) -> int:
         # Ворота выхода: дифф ⊆ зона + гейты этапа, затем коммит стадии в
         # ветку пакета и закрытие резервации.
         try:
-            report = write_report(plan_path, stage, attempt, out, err)
+            report = write_report(plan_path, stage, attempt, out, err,
+                                  gate.get("zone_guard_sha256", ""))
         except OSError as exc:
             if _reject(f"отчет стадии не записан: {exc}", None, out, err):
                 return EXIT_STOP
