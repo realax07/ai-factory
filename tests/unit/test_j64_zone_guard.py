@@ -174,16 +174,26 @@ def test_guard_policy_under_node(guard_call):
     assert guard_call(_b("docker compose up -d"), role="devops") is None
     assert guard_call(_b("git push"), role="devops")["block"] is True
     assert guard_call(_b("docker rm api"), role="regress_runner")["block"] is True
-    # bash-эвристика по токенам (ревью J64.10): обход флагами и группами
-    # docker, ложный push в тексте коммита
+    # bash-эвристика (ревью J64.10 r1, r2): каждое вхождение git/docker —
+    # обертки, шелл-конструкции, подстановки, вложенный шелл не прячут вызов
     for cmd in ("docker compose -f x.yml up -d", "docker container rm api",
                 "docker image rm img", "sudo docker run x", "/usr/bin/docker exec a sh",
                 "env DOCKER_HOST=x docker rm a", "cd x && docker compose down",
-                "docker system prune -f", "git -c a=b push", "x; git push --force"):
+                "docker system prune -f", "git -c a=b push", "x; git push --force",
+                "if true; then git push; fi", "for i in 1; do git push; done",
+                "{ git push; }", "! git push", "timeout 60 git push", "xargs git push",
+                "timeout 30 docker compose up -d", "sudo -u ci git push",
+                "sudo -u root docker rm -f api", "nice -n 10 docker rm x",
+                "echo $(git push)", "echo `git push`", 'sh -c "docker rm api"',
+                "bash -c 'git push origin HEAD'",
+                # безопасные ложные блокировки (fail-closed): слово в тексте
+                "echo docker rm", "grep -r 'git push' docs"):
         assert guard_call(_b(cmd))["block"] is True, cmd
-    for cmd in ('git commit -m "push-fix"', "git log --grep push", "docker compose ps",
-                "docker system df", "docker --version", "echo docker rm",
-                "grep -r 'git push' docs"):
+    for cmd in ('git commit -m "push-fix"', "git log --grep push", "git stash push",
+                "docker compose ps", "docker compose logs api", "docker compose config",
+                "docker system df", "docker --version", "docker inspect -f '{{.Id}}' a",
+                "pytest -q tests/unit", "npm test", "cat services/docker/compose.yml",
+                "git status && git diff"):
         assert guard_call(_b(cmd)) is None, cmd
     # лог — в PI_ZONE_GUARD_LOG, в worktree ничего
     assert "BLOCK" in guard_call.log.read_text(encoding="utf-8")
@@ -193,7 +203,8 @@ def test_guard_policy_under_node(guard_call):
 
 def test_guard_paths_edge_cases(guard_call, tmp_path):
     """TC-J64-ZG-003: экранирование regex, литерал `[`, абсолютный путь,
-    голая зона `*`/`**` не открывает .git/, symlink наружу — отказ."""
+    голая зона `*`/`**` не открывает .git/, symlink наружу (в т.ч. висячий)
+    и `..` в пути — отказ."""
     wt = guard_call.wt
     assert guard_call(_w("a.b/x"), zones="a.b") is None
     assert guard_call(_w("aXb/x"), zones="a.b")["block"] is True
@@ -210,6 +221,11 @@ def test_guard_paths_edge_cases(guard_call, tmp_path):
     (wt / "src" / "out").symlink_to(outside)
     assert guard_call(_w("src/out/x.py"))["block"] is True
     assert guard_call(_w("src/new/x.py")) is None   # несуществующий подкаталог зоны
+    # висячий symlink наружу и `..` через symlink (ядро раскрывает .. после него)
+    (wt / "src" / "dangling").symlink_to(outside / "nope" / "x.py")
+    assert guard_call(_w("src/dangling"))["block"] is True
+    assert guard_call(_w("src/out/../x.py"))["block"] is True
+    assert guard_call(_w("src/a/../b.py"))["block"] is True     # `..` — всегда отказ
     assert not any(outside.iterdir())
 
 

@@ -34,8 +34,8 @@
  * Отказ: { block: true, reason } модели + строка в лог + ui.notify, если UI
  * есть. Ошибка обработчика тоже блокирует tool call (fail-safe самого pi).
  *
- * Ограничение (честно): bash-канал — эвристика по токенам команды
- * (редиректы/tee/mv мимо зон, подстановки $(…) и eval НЕ разбираются). Механическая граница записи —
+ * Ограничение (честно): bash-канал — эвристика по вхождениям слов git/docker
+ * (редиректы/tee/mv мимо зон, eval, переменные-команды `$CMD` НЕ разбираются). Механическая граница записи —
  * сверка git diff с зоной на finish стадии у раннера (J63); guard — ранняя
  * подсказка агенту, его обход стоит итераций, а не дыры в зоне.
  *
@@ -89,14 +89,25 @@ export default function (pi: ExtensionAPI) {
 		return zs.every((z, i) => segMatch(z, ps[i]));
 	}
 
-	/** Ближайший существующий предок пути — с раскрытыми symlink (realpath). */
-	async function realNearest(abs: string): Promise<string> {
+	/** Путь с раскрытыми symlink, включая висячие (readlink) и несуществующий
+	 * хвост: ближайший существующий предок через realpath, затем остаток. */
+	async function realResolve(abs: string, depth = 0): Promise<string> {
+		if (depth > 40) return abs;   // петля symlink — дальше не раскрываем
 		let cur = abs;
 		const tail: string[] = [];
 		for (;;) {
 			try {
 				return path.join(await fs.realpath(cur), ...tail.reverse());
 			} catch {
+				try {
+					const st = await fs.lstat(cur);
+					if (st.isSymbolicLink()) {   // висячий symlink: цель — по readlink
+						const to = path.resolve(path.dirname(cur), await fs.readlink(cur));
+						return realResolve(path.join(to, ...tail.reverse()), depth + 1);
+					}
+				} catch {
+					// компонента нет — поднимаемся к предку
+				}
 				const parent = path.dirname(cur);
 				if (parent === cur) return abs;
 				tail.push(path.basename(cur));
@@ -105,22 +116,32 @@ export default function (pi: ExtensionAPI) {
 		}
 	}
 
-	/** Путь записи в зоне: относительно worktree (symlink раскрыты), не в
-	 * .git/ (никакой зоной не открывается), сегменты зоны — префикс пути. */
+	/** Путь записи в зоне: без `..` (ядро раскрывает его ПОСЛЕ symlink —
+	 * лексическая нормализация тут врет), относительно worktree (symlink
+	 * раскрыты), не в .git/ (никакой зоной не открывается), сегменты зоны —
+	 * префикс пути. */
 	async function inWriteZone(target: string, cwd: string): Promise<boolean> {
-		const root = await realNearest(path.resolve(cwd));
-		const real = await realNearest(path.resolve(cwd, target));
+		if (target.split(/[\\/]+/).includes("..")) return false;
+		const root = await realResolve(path.resolve(cwd));
+		const real = await realResolve(path.resolve(cwd, target));
 		const rel = path.relative(root, real);
 		if (rel === "" || rel.startsWith("..") || path.isAbsolute(rel)) return false;
 		const norm = rel.split(path.sep).join("/");
-		if (norm === ".git" || norm.startsWith(".git/")) return false;
+		if (norm.toLowerCase() === ".git" || norm.toLowerCase().startsWith(".git/")) return false;
 		return writeZones.some((z) => inZone(norm, z));
 	}
 
-	// bash — эвристика по токенам (best-effort): команда режется на звенья по
-	// ; & | и переводу строки; git/docker — слово команды звена (после sudo/
-	// env/VAR=val), затем его подкоманда (флаги и их значения пропускаются).
-	// `echo docker rm`, `git commit -m push` — не вызов.
+	// bash — эвристика (best-effort, fail-closed): проверяется КАЖДОЕ вхождение
+	// слова git/docker в строке — после начала, пробела, разделителя ; & | ( {
+	// или кавычки/backtick (обертки sudo -u x, timeout, xargs, if/then, $(…),
+	// sh -c "…" не прячут вызов). Токены после вхождения (до конца звена)
+	// дают подкоманду: флаги и значения флагов пропускаются. Так `git commit
+	// -m push-fix` — не push, а `echo git push` — отказ (безопасная ложная
+	// блокировка).
+	const WORD = (name: string) =>
+		new RegExp(`(?:^|[\\s;&|({}\`"'!])(?:\\S*/)?${name}(?=$|[\\s;&|)}\`"'])`, "g");
+	const GIT_WORD = WORD("git");
+	const DOCKER_WORD = WORD("docker");
 	const GIT_VALUE_FLAGS = new Set(["-C", "-c", "--git-dir", "--work-tree", "--namespace"]);
 	const DOCKER_GROUPS = new Set(["compose", "container", "image", "volume", "network",
 		"buildx", "builder", "context", "plugin", "system", "swarm", "node", "stack",
@@ -133,11 +154,14 @@ export default function (pi: ExtensionAPI) {
 	// звене мутацию НЕ снимает (`docker ps && docker rm x` — отказ).
 	const DOCKER_READONLY = new Set(["ps", "inspect", "logs", "images", "version", "info",
 		"stats", "top", "events", "ls", "df", "history", "port", "diff", "search", "help"]);
+	const COMPOSE_READONLY = new Set([...DOCKER_READONLY, "config"]);
 
-	function links(cmd: string): string[][] {
-		return cmd.split(/[;&|\n]+/).map((part) =>
-			part.trim().split(/\s+/).filter(Boolean)
-				.map((t) => t.replace(/^["'`(]+|["'`)]+$/g, "")));
+	/** Токены от позиции до конца звена (; & | перевод строки, закрывающие
+	 * скобка/кавычка/backtick). */
+	function tokensAfter(cmd: string, from: number): string[] {
+		const rest = cmd.slice(from);
+		const end = rest.search(/[;&|\n)}`"']/);
+		return (end < 0 ? rest : rest.slice(0, end)).trim().split(/\s+/).filter(Boolean);
 	}
 
 	function subcommand(tokens: string[], from: number, valueFlags: Set<string>): [string, number] {
@@ -152,39 +176,32 @@ export default function (pi: ExtensionAPI) {
 		return ["", tokens.length];
 	}
 
-	function isTool(token: string, name: string): boolean {
-		return token === name || token.endsWith(`/${name}`);
-	}
-
-	// Префиксы перед словом команды: `sudo -E docker …`, `env A=1 git …`.
-	const PREFIX_WORDS = new Set(["sudo", "env", "time", "nohup", "command", "exec", "nice"]);
-
-	/** Индекс слова команды звена (после префиксов, их флагов и VAR=val). */
-	function commandAt(tk: string[]): number {
-		let i = 0;
-		while (i < tk.length && (PREFIX_WORDS.has(tk[i]) || tk[i].startsWith("-") ||
-			/^[A-Za-z_][A-Za-z0-9_]*=/.test(tk[i]))) i++;
-		return i;
+	function* occurrences(re: RegExp, cmd: string): Generator<string[]> {
+		re.lastIndex = 0;
+		for (let m = re.exec(cmd); m; m = re.exec(cmd)) {
+			yield tokensAfter(cmd, m.index + m[0].length);
+			if (m[0].length === 0) re.lastIndex++;
+		}
 	}
 
 	function gitPush(cmd: string): boolean {
-		return links(cmd).some((tk) => {
-			const i = commandAt(tk);
-			return i < tk.length && isTool(tk[i], "git") &&
-				subcommand(tk, i + 1, GIT_VALUE_FLAGS)[0] === "push";
-		});
+		for (const tk of occurrences(GIT_WORD, cmd)) {
+			if (subcommand(tk, 0, GIT_VALUE_FLAGS)[0] === "push") return true;
+		}
+		return false;
 	}
 
 	function dockerMutation(cmd: string): boolean {
-		return links(cmd).some((tk) => {
-			const i = commandAt(tk);
-			if (i >= tk.length || !isTool(tk[i], "docker")) return false;
-			let [verb, at] = subcommand(tk, i + 1, DOCKER_VALUE_FLAGS);
+		for (const tk of occurrences(DOCKER_WORD, cmd)) {
+			let [verb, at] = subcommand(tk, 0, DOCKER_VALUE_FLAGS);
+			let readonly = DOCKER_READONLY;
 			if (DOCKER_GROUPS.has(verb)) {
+				if (verb === "compose") readonly = COMPOSE_READONLY;
 				[verb] = subcommand(tk, at + 1, DOCKER_VALUE_FLAGS);
 			}
-			return verb !== "" && !DOCKER_READONLY.has(verb);
-		});
+			if (verb !== "" && !readonly.has(verb)) return true;
+		}
+		return false;
 	}
 
 	async function block(kind: string, detail: string, reason: string, ctx: any) {
