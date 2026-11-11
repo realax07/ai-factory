@@ -1,0 +1,59 @@
+#!/usr/bin/env python3
+"""Заглушка исполнителя pi для эталонного прогона (J65.10).
+
+Командная строка как у pi: ... -p <бриф>. Первая строка брифа раннера —
+`# Пакет <pkg> (Флоу N), stage <id>`; заглушка копирует
+outputs/<id>/ в текущий каталог (worktree стадии). Нет выходов стадии —
+exit 3 (сценарий не знает стадию)."""
+import os
+import re
+import shutil
+import sys
+from pathlib import Path
+
+OUTPUTS = Path(__file__).resolve().parent.parent / "outputs"
+
+
+def main(argv: list[str]) -> int:
+    if "-p" not in argv:
+        print("pi-stub: нет -p <бриф>", file=sys.stderr)
+        return 2
+    brief = argv[argv.index("-p") + 1]
+    m = re.search(r"stage (\S+)", brief.splitlines()[0])
+    if not m:
+        print("pi-stub: в брифе нет `stage <id>`", file=sys.stderr)
+        return 2
+    stage = m.group(1)
+    src = OUTPUTS / stage
+    if not src.is_dir():
+        print(f"pi-stub: нет выходов стадии {stage}", file=sys.stderr)
+        return 3
+    cwd = Path.cwd()
+    for f in sorted(src.rglob("*")):
+        if f.is_file():
+            dst = cwd / f.relative_to(src)
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            if dst.exists() and f.name.startswith("review-") and stage.endswith("-review"):
+                # повторная итерация ревью — дописать (история append-only)
+                dst.write_text(dst.read_text(encoding="utf-8") + "\n"
+                               + f.read_text(encoding="utf-8"), encoding="utf-8")
+            else:
+                shutil.copyfile(f, dst)
+    extra = os.environ.get("REFERENCE_STUB_EXTRA", "").strip()
+    if extra:
+        p = cwd / extra
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text("вне зоны\n", encoding="utf-8")
+    over = os.environ.get("REFERENCE_STUB_VERDICT", "")
+    if over.startswith(stage + ":"):
+        for f in cwd.glob("code-reviews/*/review-*.md"):
+            t = f.read_text(encoding="utf-8")
+            f.write_text(t.replace("## Вердикт: approve",
+                                   "## Вердикт: " + over.split(":", 1)[1]),
+                         encoding="utf-8")
+    print(f"pi-stub: stage {stage} — выходы записаны")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

@@ -141,6 +141,12 @@ def check_commit(repo: Path, commit: str) -> list[str]:
     return problems
 
 
+# Живые статусы записи реестра — те же, что session_check.ZONE_HOLDING (зона
+# занята); копия, а не импорт: pm_bounds_check копируется в проекты отдельно.
+# Совпадение держит тест TC-J65-REF-005.
+LIVE_STATUSES = ("reserved", "running", "finished", "needs_attention")
+
+
 def check_sessions(path: Path) -> list[str]:
     problems: list[str] = []
     if not path.exists():
@@ -152,12 +158,18 @@ def check_sessions(path: Path) -> list[str]:
 
     seen: dict[tuple[str, str], str] = {}
     for i, s in enumerate(data.get("sessions", [])):
+        live = s.get("status", "reserved") in LIVE_STATUSES
         label = f"sessions[{i}] ({s.get('delegation_id', '?')})"
         for field in REQUIRED_SESSION_FIELDS:
             if not s.get(field):
                 problems.append(f"{label}: отсутствует обязательное поле '{field}' (J2)")
         project, owner = s.get("project", ""), s.get("owner_pm", "")
-        if project and owner:
+        # Повтор пары — только среди живых записей (J65.10): закрытая или
+        # освобожденная сессия — история, не второй ПМ проекта. Раньше
+        # пакетный раннер (owner_pm=package_runner на все стадии) получал
+        # FAIL на finish dev-стадии, если до нее в проекте закрылась любая
+        # другая стадия. Запись без status (формат J2) — живая.
+        if project and owner and live:
             key = (project, owner)
             if key in seen and seen[key] != s.get("delegation_id"):
                 problems.append(

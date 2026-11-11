@@ -145,9 +145,10 @@ def _pattern_lang_subset(sub: str, sup: str) -> bool:
             return True  # '**' поглощает весь остаток sub
         if rsub == "dstar":
             return False  # '**' в sub при не-'**' сегменте sup — расширение
-        if rsub == "lit" and rsup == "lit":
-            if ssub != ssup:
-                return False
+        if ssub == ssup:
+            pass  # одинаковый сегмент (литерал или glob) покрывает сам себя (J65.10)
+        elif rsub == "lit" and rsup == "lit":
+            return False
         elif rsub == "lit" and rsup == "star":
             pass  # '*' покрывает один литеральный сегмент
         else:  # glob в sub против glob/lit в sup — консервативный отказ
