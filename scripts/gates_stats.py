@@ -120,6 +120,8 @@ def collect(state_path: Path, since: str | None = None,
     seen_files: set[Path] = set()
     files = []
     for rdir in dirs:
+        if rdir in (report_dirs or []) and not rdir.is_dir():
+            broken.append(f"{rdir}: каталог отчетов (--reports) не найден")
         for rp in sorted(rdir.glob("gate-report-*.json")) if rdir.is_dir() else []:
             if rp.resolve() not in seen_files:
                 seen_files.add(rp.resolve())
@@ -135,8 +137,12 @@ def collect(state_path: Path, since: str | None = None,
             continue
         if not _in_window(rep.get("started_at"), since, until):
             continue
+        items = rep.get("gates") or []
+        if not isinstance(items, list) or not all(isinstance(g, dict) for g in items):
+            broken.append(f"{rp}: gates — не список объектов")
+            continue
         reports += 1
-        for g in rep.get("gates") or []:
+        for g in items:
             gates.setdefault(str(g.get("gate_id", "?")), Counter())[
                 str(g.get("status", "?"))] += 1
 

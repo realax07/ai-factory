@@ -161,6 +161,14 @@ def test_broken_inputs_and_flowctl_entry(tmp_path, monkeypatch):
     bad.parent.mkdir()
     bad.write_text("[]", encoding="utf-8")
     assert gs.main(["--state", str(bad)]) == 2
+    # gates отчета не список объектов — WARN, не traceback; --reports без каталога — WARN
+    _report(state.parent / "gate-reports", "weird", "2026-11-05T10:00:00+00:00", [])
+    weird = state.parent / "gate-reports" / "gate-report-weird.json"
+    weird.write_text(json.dumps({"started_at": "2026-11-05T10:00:00+00:00",
+                                 "gates": ["x"]}), encoding="utf-8")
+    s3 = gs.collect(state, report_dirs=[tmp_path / "нет"])
+    assert any("gates — не список" in b for b in s3["unreadable"])
+    assert any("--reports" in b for b in s3["unreadable"])
     r = subprocess.run([sys.executable, str(FACTORY / "scripts" / "flowctl.py"),
                         "gates-stats", "--state", str(state), "--json"],
                        capture_output=True, text=True)
@@ -176,7 +184,8 @@ def test_broken_inputs_and_flowctl_entry(tmp_path, monkeypatch):
     shutil.copytree(FACTORY / "scripts", scripts,
                     ignore=shutil.ignore_patterns("gates_stats.py", "__pycache__"))
     shutil.copytree(FACTORY / "agents", tmp_path / "agents")
-    miss = subprocess.run([sys.executable, str(scripts / "flowctl.py"), "gates-stats"],
+    miss = subprocess.run([sys.executable, str(scripts / "flowctl.py"), "gates-stats",
+                           "--json", "--state", str(state), "--since", "2026-11-01"],
                           capture_output=True, text=True)
     assert miss.returncode == 2 and "gates_stats.py" in miss.stderr
     ok = subprocess.run([sys.executable, str(scripts / "flowctl.py"), "status", "--help"],

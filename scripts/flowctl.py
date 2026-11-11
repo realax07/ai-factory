@@ -3257,7 +3257,11 @@ def main(argv: list[str] | None = None) -> int:
         import gates_stats  # noqa: E402
     except ImportError as exc:
         gs_error = str(exc)
-        p_gs.add_argument("rest", nargs=argparse.REMAINDER)
+        # те же флаги, что у gates_stats.add_arguments — понятная ошибка, а не
+        # «unrecognized arguments» argparse
+        for flag in ("--state", "--since", "--until", "--reports", "--enforcer-log"):
+            p_gs.add_argument(flag, default=None)
+        p_gs.add_argument("--json", action="store_true", dest="as_json")
 
         def _gates_stats_missing(_args) -> int:
             print(f"FLOWCTL-ERROR: gates-stats недоступен — нет gates_stats.py "
