@@ -39,7 +39,7 @@ MKDIRS ниже; они и есть источник правды):
     кронов (политика 2026-10-23); --skip-crons — пропуск.
   Оркестратор не Hermes (каталога нет) — оба шага пропускаются с пометкой.
 
-check_mirrors.py, package_runner.py, gen_role_docs.py — FACTORY-ONLY, в
+check_mirrors.py, package_runner.py, gen_role_docs.py, factory_lock.py — FACTORY-ONLY, в
 проект не копируются.
 
 Без --force существующие файлы не трогаются (докопируется недостающее); с
@@ -59,6 +59,7 @@ from pathlib import Path
 
 import factory_paths as fp  # noqa: E402  (J64.5: пути машины — только оттуда)
 import flow_check as _fc  # noqa: E402  (J66: раскладка тестов — одна реализация)
+import factory_lock as _fl  # noqa: E402  (J65.7: ворота CI по версии фабрики)
 
 FACTORY = Path(__file__).resolve().parent.parent
 PLUGIN_NAME = "flow-enforcer"
@@ -507,6 +508,32 @@ def install_test_layout(target: Path) -> None:
     print(f"  {TEST_LAYOUT_REL} создан: mode={mode}{note}")
 
 
+def install_factory_lock(target: Path, force: bool = False) -> bool:
+    """J65.7: factory.lock — версия фабрики, чьи ворота гоняет CI проекта.
+    Нет файла — пишется HEAD фабрики, влитый в origin/main; есть — не трогается
+    (обновление ворот — осознанный PR: `factory_lock.py update`), с --force —
+    обновляется до HEAD фабрики, влитого в origin/main. HEAD не в main —
+    WARNING, lock не пишется (init при этом не проваливается). Возврат —
+    записан/актуален ли lock."""
+    try:
+        current = _fl.read_lock(target)
+    except _fl.LockError as exc:
+        print(f"  FACTORY-INIT WARNING: {exc} — исправь или удали файл")
+        return False
+    if current is not None and not force:
+        print(f"  {_fl.LOCK_NAME} уже есть ({current['sha'][:12]}) — не тронут; "
+              "обновление: scripts/factory_lock.py update --target <проект>")
+        return True
+    try:
+        sha = _fl.published_head()
+    except _fl.LockError as exc:
+        print(f"  FACTORY-INIT WARNING: {_fl.LOCK_NAME} не записан: {exc}")
+        return False
+    _fl.write_lock(target, sha, (current or {}).get("repo") or _fl.DEFAULT_REPO)
+    print(f"  {_fl.LOCK_NAME}: {sha[:12]} — CI проекта гоняет ворота этой версии фабрики")
+    return True
+
+
 def install_regress_skeleton(target: Path, force: bool = False) -> None:
     """J54: скелеты эшелонированного регресса (идемпотентно, без force
     существующий контент проекта НЕ перезаписывается)."""
@@ -658,6 +685,11 @@ def main() -> int:
     # 3c. Режим раскладки тестов (J66) — после smoke: решение strict|warn
     # учитывает фактические тесты проекта.
     install_test_layout(target)
+
+    # 3d. factory.lock (J65.7): CI проекта гоняет ворота этой версии фабрики
+    # Lock не записан — WARNING, не провал init: без lock CI проекта берет
+    # свои scripts/ (как до J65.7), проект рабочий.
+    install_factory_lock(target, force=args.force)
 
     # 4. Проверка среды
     ok = True
