@@ -186,14 +186,21 @@ def test_guard_policy_under_node(guard_call):
                 "sudo -u root docker rm -f api", "nice -n 10 docker rm x",
                 "echo $(git push)", "echo `git push`", 'sh -c "docker rm api"',
                 "bash -c 'git push origin HEAD'",
-                # безопасные ложные блокировки (fail-closed): слово в тексте
-                "echo docker rm", "grep -r 'git push' docs"):
+                # r3: кавычки в значениях флагов, перенос строки
+                'git -C "$WT" push', "git -C '/a b' push", 'git -c "user.name=x" push',
+                'git -C"x" push', "git \\\n push", 'docker compose -f "x.yml" up -d',
+                "docker compose --env-file '.env' down",
+                # подстановка внутри текстовой команды — все равно вызов
+                "echo $(git push)", 'echo "$(docker rm a)"', "grep x | docker rm a",
+                # безопасная ложная блокировка (fail-closed): ; внутри кавычек
+                'echo "x; git push"'):
         assert guard_call(_b(cmd))["block"] is True, cmd
     for cmd in ('git commit -m "push-fix"', "git log --grep push", "git stash push",
                 "docker compose ps", "docker compose logs api", "docker compose config",
                 "docker system df", "docker --version", "docker inspect -f '{{.Id}}' a",
                 "pytest -q tests/unit", "npm test", "cat services/docker/compose.yml",
-                "git status && git diff"):
+                "git status && git diff", "echo docker rm", "grep -r 'git push' docs",
+                "grep docker README.md", "rg -n docker deploy", "make docker-up"):
         assert guard_call(_b(cmd)) is None, cmd
     # лог — в PI_ZONE_GUARD_LOG, в worktree ничего
     assert "BLOCK" in guard_call.log.read_text(encoding="utf-8")
@@ -226,6 +233,8 @@ def test_guard_paths_edge_cases(guard_call, tmp_path):
     assert guard_call(_w("src/dangling"))["block"] is True
     assert guard_call(_w("src/out/../x.py"))["block"] is True
     assert guard_call(_w("src/a/../b.py"))["block"] is True     # `..` — всегда отказ
+    (wt / "src" / "loop").symlink_to("loop")                    # петля symlink
+    assert guard_call(_w("src/loop/x.py"))["block"] is True
     assert not any(outside.iterdir())
 
 

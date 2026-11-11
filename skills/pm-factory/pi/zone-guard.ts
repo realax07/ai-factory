@@ -91,8 +91,8 @@ export default function (pi: ExtensionAPI) {
 
 	/** Путь с раскрытыми symlink, включая висячие (readlink) и несуществующий
 	 * хвост: ближайший существующий предок через realpath, затем остаток. */
-	async function realResolve(abs: string, depth = 0): Promise<string> {
-		if (depth > 40) return abs;   // петля symlink — дальше не раскрываем
+	async function realResolve(abs: string, depth = 0): Promise<string | null> {
+		if (depth > 40) return null;   // петля symlink — отказ (fail-closed)
 		let cur = abs;
 		const tail: string[] = [];
 		for (;;) {
@@ -109,7 +109,7 @@ export default function (pi: ExtensionAPI) {
 					// компонента нет — поднимаемся к предку
 				}
 				const parent = path.dirname(cur);
-				if (parent === cur) return abs;
+				if (parent === cur) return abs;   // корень ФС: остаток не существует
 				tail.push(path.basename(cur));
 				cur = parent;
 			}
@@ -124,6 +124,7 @@ export default function (pi: ExtensionAPI) {
 		if (target.split(/[\\/]+/).includes("..")) return false;
 		const root = await realResolve(path.resolve(cwd));
 		const real = await realResolve(path.resolve(cwd, target));
+		if (root === null || real === null) return false;
 		const rel = path.relative(root, real);
 		if (rel === "" || rel.startsWith("..") || path.isAbsolute(rel)) return false;
 		const norm = rel.split(path.sep).join("/");
@@ -157,11 +158,50 @@ export default function (pi: ExtensionAPI) {
 	const COMPOSE_READONLY = new Set([...DOCKER_READONLY, "config"]);
 
 	/** Токены от позиции до конца звена (; & | перевод строки, закрывающие
-	 * скобка/кавычка/backtick). */
+	 * скобка/backtick); кавычки с токенов снимаются, звено на них НЕ рвется:
+	 * `git -C "$WT" push`, `git -C'/a b' push` — push (ревью J64.10 r3). */
 	function tokensAfter(cmd: string, from: number): string[] {
 		const rest = cmd.slice(from);
-		const end = rest.search(/[;&|\n)}`"']/);
-		return (end < 0 ? rest : rest.slice(0, end)).trim().split(/\s+/).filter(Boolean);
+		const end = rest.search(/[;&|\n)}`]/);
+		return shellWords(end < 0 ? rest : rest.slice(0, end));
+	}
+
+	/** Слова строки с учетом кавычек: `-C '/a b' push` → [-C, /a b, push]. */
+	function shellWords(text: string): string[] {
+		const out: string[] = [];
+		let cur = "";
+		let quote = "";
+		let has = false;
+		for (const ch of text) {
+			if (quote) {
+				if (ch === quote) quote = "";
+				else cur += ch;
+			} else if (ch === '"' || ch === "'") {
+				quote = ch;
+				has = true;
+			} else if (/\s/.test(ch)) {
+				if (cur || has) out.push(cur);
+				cur = "";
+				has = false;
+			} else {
+				cur += ch;
+			}
+		}
+		if (cur || has) out.push(cur);
+		return out;
+	}
+
+	// Звено, где слово — аргумент поиска/вывода (`grep docker README.md`,
+	// `rg -n 'git push'`), вызовом не считается. Начало звена — после ; & | (
+	// { перевода строки или backtick, поэтому `echo $(git push)` — отказ.
+	const TEXT_COMMANDS = new Set(["grep", "egrep", "fgrep", "rg", "ag", "ack", "echo",
+		"printf", "git-grep"]);
+
+	function inTextCommand(cmd: string, at: number): boolean {
+		const head = cmd.slice(0, at);
+		const start = Math.max(...[";", "&", "|", "(", "{", "\n", "`"].map((c) => head.lastIndexOf(c))) + 1;
+		const first = head.slice(start).trim().split(/\s+/)[0] ?? "";
+		return TEXT_COMMANDS.has(first.replace(/^.*\//, ""));
 	}
 
 	function subcommand(tokens: string[], from: number, valueFlags: Set<string>): [string, number] {
@@ -176,10 +216,11 @@ export default function (pi: ExtensionAPI) {
 		return ["", tokens.length];
 	}
 
-	function* occurrences(re: RegExp, cmd: string): Generator<string[]> {
+	function* occurrences(re: RegExp, raw: string): Generator<string[]> {
+		const cmd = raw.replace(/\\\r?\n/g, " ");   // `\` + перевод строки — продолжение
 		re.lastIndex = 0;
 		for (let m = re.exec(cmd); m; m = re.exec(cmd)) {
-			yield tokensAfter(cmd, m.index + m[0].length);
+			if (!inTextCommand(cmd, m.index + 1)) yield tokensAfter(cmd, m.index + m[0].length);
 			if (m[0].length === 0) re.lastIndex++;
 		}
 	}
