@@ -64,6 +64,12 @@ docker-мутации в git diff не видны — guard для них еди
 проходит, а `echo $(git push)` — отказ (`$(`/backtick начинают новое
 звено); петля symlink — отказ.
 
+## Ревью review-004 — approve
+
+Minor закрыты до PR: текст в интерпретатор (`echo git push | sh`) снимает
+исключение текстовых команд; `rg --pre`, `ack --pager` — оговорены в шапке
+guard'а как вне охвата.
+
 ## После мержа (Заказчик, VPS)
 
 Копия `~/.pi/agent/extensions/zone-guard.ts` разойдется с эталоном —

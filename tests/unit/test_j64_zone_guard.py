@@ -192,6 +192,8 @@ def test_guard_policy_under_node(guard_call):
                 "docker compose --env-file '.env' down",
                 # подстановка внутри текстовой команды — все равно вызов
                 "echo $(git push)", 'echo "$(docker rm a)"', "grep x | docker rm a",
+                # текст в интерпретатор (r4)
+                "echo git push | sh", "echo 'docker rm a' | sh -s",
                 # безопасная ложная блокировка (fail-closed): ; внутри кавычек
                 'echo "x; git push"'):
         assert guard_call(_b(cmd))["block"] is True, cmd

@@ -35,7 +35,9 @@
  * есть. Ошибка обработчика тоже блокирует tool call (fail-safe самого pi).
  *
  * Ограничение (честно): bash-канал — эвристика по вхождениям слов git/docker
- * (редиректы/tee/mv мимо зон, eval, переменные-команды `$CMD` НЕ разбираются). Механическая граница записи —
+ * (редиректы/tee/mv мимо зон, переменные-команды `$CMD`, команды, которые
+ * исполняют другие: `rg --pre`, `ack --pager`, `find -exec` с текстом из
+ * переменной, — НЕ разбираются). Механическая граница записи —
  * сверка git diff с зоной на finish стадии у раннера (J63); guard — ранняя
  * подсказка агенту, его обход стоит итераций, а не дыры в зоне.
  *
@@ -218,9 +220,14 @@ export default function (pi: ExtensionAPI) {
 
 	function* occurrences(re: RegExp, raw: string): Generator<string[]> {
 		const cmd = raw.replace(/\\\r?\n/g, " ");   // `\` + перевод строки — продолжение
+		// текст в интерпретатор (`echo git push | sh`) — исключение текстовых
+		// команд не действует (ревью J64.10 r4)
+		const piped = /\|\s*(?:\S*\/)?(?:sh|bash|zsh|dash|ksh|fish)\b/.test(cmd);
 		re.lastIndex = 0;
 		for (let m = re.exec(cmd); m; m = re.exec(cmd)) {
-			if (!inTextCommand(cmd, m.index + 1)) yield tokensAfter(cmd, m.index + m[0].length);
+			if (piped || !inTextCommand(cmd, m.index + 1)) {
+				yield tokensAfter(cmd, m.index + m[0].length);
+			}
 			if (m[0].length === 0) re.lastIndex++;
 		}
 	}
