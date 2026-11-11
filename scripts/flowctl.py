@@ -70,6 +70,7 @@ Usage:
         [--pm-require-review] [--pr-id ID] [--log-dir D] [--report-dir D]
         [--registry PATH] [--state PATH] [--audit PATH] [--json]
     flowctl.py status [--correlation-id ID] [--registry PATH] [--state PATH]
+    flowctl.py gates-stats [--state PATH] [--since D] [--until D] [--json]  (J65.9)
     flowctl.py phase --repo PATH --project ID --flow N --scope S
         [--registry PATH] [--state PATH]
     flowctl.py reconcile [--repo PATH] [--delegation-id ID]
@@ -3245,6 +3246,31 @@ def main(argv: list[str] | None = None) -> int:
     p_cl.add_argument("--state", default=None)
     p_cl.add_argument("--json", action="store_true", dest="as_json")
     p_cl.set_defaults(func=cmd_close)
+
+    # J65.9: статистика срабатываний гейтов и кодов отказа (дисциплина роста
+    # ворот) — по уже существующим отчетам gate_runner, state и логу энфорсера.
+    # Нет модуля (старая копия в проекте) — отказывает только эта подкоманда,
+    # не весь flowctl (dry-run энфорсера).
+    p_gs = sub.add_parser(
+        "gates-stats", help="сколько раз срабатывал каждый гейт и код отказа (J65.9)")
+    try:
+        import gates_stats  # noqa: E402
+    except ImportError as exc:
+        gs_error = str(exc)
+        # те же флаги, что у gates_stats.add_arguments — понятная ошибка, а не
+        # «unrecognized arguments» argparse
+        for flag in ("--state", "--since", "--until", "--reports", "--enforcer-log"):
+            p_gs.add_argument(flag, default=None)
+        p_gs.add_argument("--json", action="store_true", dest="as_json")
+
+        def _gates_stats_missing(_args) -> int:
+            print(f"FLOWCTL-ERROR: gates-stats недоступен — нет gates_stats.py "
+                  f"рядом с flowctl ({gs_error})", file=sys.stderr)
+            return 2
+        p_gs.set_defaults(func=_gates_stats_missing)
+    else:
+        gates_stats.add_arguments(p_gs)
+        p_gs.set_defaults(func=gates_stats.run)
 
     p_st = sub.add_parser("status", help="состояние циклов и сессий")
     p_st.add_argument("--correlation-id", default=None)
