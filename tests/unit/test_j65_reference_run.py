@@ -24,7 +24,9 @@ test-flow-control): поломка любого звена — красный э
   TC-J65-REF-003  агент записал файл вне зоны стадии — STOP OUT_OF_ZONE,
                   коммита стадии нет
   TC-J65-REF-004  заглушка: бриф без `stage <id>` и неизвестная стадия —
-                  ненулевой exit (сценарий не проходит молча)
+                  ненулевой exit (сценарий не проходит молча); повторная
+                  итерация ревью дописывает файл (append-only), подмена
+                  вердикта — только в файлах этой стадии
 
 Найдено эталоном (без прогона на настоящих воротах не видно):
   TC-J65-REF-005  pm_bounds_check --sessions: повтор пары project/owner_pm —
@@ -57,16 +59,20 @@ QA_CONTOUR = {f"test-model/approved/{PKG}/",
               f"test-model/regress/{PKG}/regress-final.md", "tests/"}
 
 
+GIT_ENV = dict(os.environ, GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM="1")
+
+
 def _git(repo: Path, *args: str) -> str:
     return subprocess.run(["git", "-C", str(repo), *args], check=True,
-                          capture_output=True, text=True).stdout.strip()
+                          capture_output=True, text=True, env=GIT_ENV).stdout.strip()
 
 
 def make_project(tmp_path: Path) -> Path:
     """Копия project/ в git-репо + decision-record старта пакета (SHA плана)."""
     repo = tmp_path / "greeter"
     shutil.copytree(FIXTURE / "project", repo)
-    subprocess.run(["git", "init", "-q", "-b", "main", str(repo)], check=True)
+    subprocess.run(["git", "init", "-q", "-b", "main", str(repo)], check=True,
+                   env=GIT_ENV)
     _git(repo, "config", "user.email", "ref@test")
     _git(repo, "config", "user.name", "ref")
     _git(repo, "add", "-A")
@@ -101,6 +107,8 @@ def runner_env(tmp_path: Path, **extra: str) -> dict:
         # create_change заглушен (как в test_package_runner m13)
         "PIPELINE_OPENSPEC_CMD": "true",
         "REFERENCE_FACTORY": str(FACTORY),
+        # глобальный/системный git config машины (gpgsign, hooks) — мимо
+        "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1",
     })
     env.update(extra)
     return env
@@ -193,9 +201,9 @@ def test_reference_run_review_return_stops(tmp_path):
 
 
 def test_reference_run_out_of_zone_stops(tmp_path):
-    """TC-J65-REF-003: dev-стадии пишут docs/ — вне зоны [src/**, tests/unit/**].
-    Заглушка дописывает файл в каждой стадии; первая стадия, где он вне зоны
-    — create_change (sa): STOP OUT_OF_ZONE, коммита стадии нет."""
+    """TC-J65-REF-003: агент пишет docs/notes.md — вне зоны любой стадии
+    пакета. Падает первая же стадия, create_change (sa): STOP OUT_OF_ZONE,
+    коммита стадии нет."""
     repo = make_project(tmp_path)
     env = runner_env(tmp_path, REFERENCE_STUB_EXTRA="docs/notes.md")
     head = _git(repo, "rev-parse", "HEAD")
@@ -222,7 +230,7 @@ def test_pm_bounds_duplicate_pair_only_live(tmp_path):
     sys.path.insert(0, str(FACTORY / "scripts"))
     import pm_bounds_check as pb
     import session_check as sc
-    assert set(pb.LIVE_STATUSES) == set(sc.ZONE_HOLDING)
+    assert not set(pb.FINISHED_STATUSES) & set(sc.ZONE_HOLDING)
 
     def problems(*statuses):
         reg = tmp_path / "reg.json"
@@ -236,6 +244,7 @@ def test_pm_bounds_duplicate_pair_only_live(tmp_path):
     assert problems("closed", "released", "running") == []
     assert problems("closed", "running", "finished")          # две живые — повтор
     assert problems(None, "running")                           # формат J2 без status — живая
+    assert problems("", "running") and problems("weird", "running")   # fail-closed
 
 
 def test_same_glob_segment_covers_itself():
@@ -244,6 +253,76 @@ def test_same_glob_segment_covers_itself():
     import role_zone_policy as rzp
     ok = rzp.narrow_zones("code_reviewer", [f"code-reviews/{PKG}/review-*.md"])
     assert ok["violations"] == [] and ok["zones"] == [f"code-reviews/{PKG}/review-*.md"]
-    for wider in (f"code-reviews/{PKG}/**", f"code-reviews/{PKG}/*.md",
-                  "code-reviews/**/review-*.md"):
-        assert rzp.narrow_zones("code_reviewer", [wider])["violations"] == [wider]
+    assert rzp.narrow_zones("sa", [f"openspec/changes/{PKG}/specs/**"])["violations"] == []
+    # шире политики — отказ, включая короткие префиксы (ревью J65.10 review-001)
+    for role, wider in (("code_reviewer", f"code-reviews/{PKG}/**"),
+                        ("code_reviewer", f"code-reviews/{PKG}/*.md"),
+                        ("code_reviewer", "code-reviews/**/review-*.md"),
+                        ("code_reviewer", "code-reviews/*"),
+                        ("code_reviewer", f"code-reviews/{PKG}/*"),
+                        ("sa", "openspec/changes/*")):
+        assert rzp.narrow_zones(role, [wider])["violations"] == [wider], (role, wider)
+
+
+def test_pattern_subset_never_widens():
+    """TC-J65-REF-006: свойство «сужение не расширяет» перебором — для всех
+    пар паттернов из алфавита сегментов: _pattern_lang_subset(sub, sup) ⇒
+    каждый путь, который матчит sub, матчит и sup. Оракул — семантика зон
+    (`*` — один сегмент, `**` — любое число, включая ноль; паттерн без
+    glob — каталог со вложенными), а не session_check.glob_matches: у той
+    glob перед `**` сравнивается как литерал префикса (`*/**` — ровно два
+    сегмента; кандидат в бэклог J65.10)."""
+    import fnmatch
+    import itertools
+    sys.path.insert(0, str(FACTORY / "scripts"))
+    import role_zone_policy as rzp
+
+    def zone_match(pat: str, path: str) -> bool:
+        ps, us = pat.split("/"), path.split("/")
+        if rzp._concrete(pat):
+            return path == pat or path.startswith(pat + "/")
+
+        def m(i: int, j: int) -> bool:
+            if i == len(ps):
+                return j == len(us)
+            if ps[i] == "**":
+                return any(m(i + 1, k) for k in range(j, len(us) + 1))
+            return j < len(us) and fnmatch.fnmatchcase(us[j], ps[i]) and m(i + 1, j + 1)
+        return m(0, 0)
+
+    pat_segs = ["a", "x1", "*", "x*", "?1", "[ab]", "**"]
+    path_segs = ["a", "b", "x1", "x2", "y1"]
+    pats = ["/".join(p) for n in (1, 2, 3)
+            for p in itertools.product(pat_segs, repeat=n)]
+    paths = ["/".join(p) for n in (1, 2, 3, 4)
+             for p in itertools.product(path_segs, repeat=n)]
+    lang = {p: frozenset(x for x in paths if zone_match(p, x)) for p in pats}
+    # sub — только glob-паттерны: так зовет _allowed_superset (конкретный
+    # путь сверяется через glob_matches, не здесь)
+    globs = [p for p in pats if not rzp._concrete(p)]
+    widened = [(a, b) for a in globs for b in pats
+               if rzp._pattern_lang_subset(a, b) and not lang[a] <= lang[b]]
+    assert widened == [], widened[:10]
+    # и не вырождено в «всегда отказ»: типичные сужения проходят
+    for sub, sup in (("a/x*", "a/x*"), ("a/**", "**"), ("a/b/**", "a/**"),
+                     ("x1/*", "x*/*"), ("a/*", "*/*")):
+        assert rzp._pattern_lang_subset(sub, sup), (sub, sup)
+
+
+def test_stub_review_iteration_appends_and_override_scoped(tmp_path):
+    """TC-J65-REF-004: повтор ревью-стадии дописывает файл вердикта (решает
+    последний заголовок); REFERENCE_STUB_VERDICT не трогает ревью других задач."""
+    sys.path.insert(0, str(FACTORY / "scripts"))
+    import flow_check
+    cwd = tmp_path / "wt"
+    cwd.mkdir()
+    stub = str(FIXTURE / "bin" / "pi")
+    brief = "# Пакет add-greeting (Флоу 1), stage dev-{t}-review"
+    env = dict(os.environ, REFERENCE_STUB_VERDICT="dev-1.2-review:return")
+    for t in ("1.1", "1.2", "1.2"):
+        assert subprocess.run([stub, "-p", brief.format(t=t)], cwd=cwd, env=env,
+                              capture_output=True).returncode == 0
+    r11 = (cwd / f"code-reviews/{PKG}/review-1.1-001.md").read_text(encoding="utf-8")
+    r12 = (cwd / f"code-reviews/{PKG}/review-1.2-001.md").read_text(encoding="utf-8")
+    assert flow_check.parse_verdict(r11) == "approve"
+    assert r12.count("## Вердикт:") == 2 and flow_check.parse_verdict(r12) == "return"

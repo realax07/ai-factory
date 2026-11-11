@@ -141,10 +141,12 @@ def check_commit(repo: Path, commit: str) -> list[str]:
     return problems
 
 
-# Живые статусы записи реестра — те же, что session_check.ZONE_HOLDING (зона
-# занята); копия, а не импорт: pm_bounds_check копируется в проекты отдельно.
-# Совпадение держит тест TC-J65-REF-005.
-LIVE_STATUSES = ("reserved", "running", "finished", "needs_attention")
+# Завершенные записи реестра (зона снята: принята и закрыта / освобождена) —
+# история, в проверку повтора пары не идут. Перечисляются именно они, а не
+# живые: запись с неизвестным или пустым статусом остается в проверке
+# (fail-closed; ревью J65.10 review-001). Ни один из них не держит зону
+# (session_check.ZONE_HOLDING) — тест TC-J65-REF-005.
+FINISHED_STATUSES = ("closed", "released")
 
 
 def check_sessions(path: Path) -> list[str]:
@@ -158,7 +160,7 @@ def check_sessions(path: Path) -> list[str]:
 
     seen: dict[tuple[str, str], str] = {}
     for i, s in enumerate(data.get("sessions", [])):
-        live = s.get("status", "reserved") in LIVE_STATUSES
+        live = s.get("status") not in FINISHED_STATUSES
         label = f"sessions[{i}] ({s.get('delegation_id', '?')})"
         for field in REQUIRED_SESSION_FIELDS:
             if not s.get(field):

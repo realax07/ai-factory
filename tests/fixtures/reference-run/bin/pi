@@ -29,6 +29,7 @@ def main(argv: list[str]) -> int:
         print(f"pi-stub: нет выходов стадии {stage}", file=sys.stderr)
         return 3
     cwd = Path.cwd()
+    written = []
     for f in sorted(src.rglob("*")):
         if f.is_file():
             rel = f.relative_to(src)
@@ -42,6 +43,7 @@ def main(argv: list[str]) -> int:
                                + f.read_text(encoding="utf-8"), encoding="utf-8")
             else:
                 shutil.copyfile(f, dst)
+            written.append(dst)
     extra = os.environ.get("REFERENCE_STUB_EXTRA", "").strip()
     if extra:
         p = cwd / extra
@@ -49,7 +51,8 @@ def main(argv: list[str]) -> int:
         p.write_text("вне зоны\n", encoding="utf-8")
     over = os.environ.get("REFERENCE_STUB_VERDICT", "")
     if over.startswith(stage + ":"):
-        for f in cwd.glob("code-reviews/*/review-*.md"):
+        # только файлы этой стадии — ревью прошлых задач не трогаются
+        for f in (w for w in written if w.name.startswith("review-")):
             t = f.read_text(encoding="utf-8")
             f.write_text(t.replace("## Вердикт: approve",
                                    "## Вердикт: " + over.split(":", 1)[1]),
