@@ -11,7 +11,9 @@
 |---|---|
 | `role-agents.md` | Ролевая инструкция (системный промпт). При сборке копируется в **корень worktree как `AGENTS.md`** — Pi подхватывает его безусловно как контекст. |
 | `settings.example.json` | Дефолты сессии: провайдер/модель `zai-glm`/`glm-5.3-flash`, tools `read/bash/edit/write`, `sessionDir`, подключение zone-guard. |
-| `extensions/zone-guard.ts` | Расширение — механическое исполнение зон (см. ниже). |
+
+zone-guard — общий для всех паков: эталон `skills/pm-factory/pi/zone-guard.ts` (раньше лежал здесь,
+`extensions/zone-guard.ts`; перенесен в J64.10).
 
 ## Зона записи (PI_ZONE_WRITE)
 
@@ -24,22 +26,26 @@ env PI_ZONE_WRITE (префикс): test-model/regress/<id>
 <!-- roles:pack-zone:end -->
 
 Зона политики ворот (agents/roles.json); раннер прокидывает ее в
-`PI_ZONE_WRITE` префикс-формой. Дефолт guard'а без env — ниже.
+`PI_ZONE_WRITE` префикс-формой. Без env guard запрещает запись целиком.
 
 ## Что охраняет zone-guard (fail-closed)
 
 Перехват `tool_call` в событийной модели Pi (формат — `export default function (pi: ExtensionAPI)`, TS без компиляции, грузит jiti):
 
-1. **`write`/`edit`** — запись только в зонах относительно cwd сессии:
-   `test-model/regress/**` и `tests/**` (переопределяется
-   `PI_ZONE_WRITE="зона1:зона2"`, префикс-форма — runner прокидывает зоны
-   манифеста нормализованными, J61). Все остальное — отказ с вежливой причиной.
+1. **`write`/`edit`** — запись только в зонах `PI_ZONE_WRITE="зона1:зона2"`
+   относительно cwd сессии (префикс-форма — runner прокидывает зоны манифеста
+   нормализованными, J61; сегмент с `*`/`?` — glob в пределах сегмента). Без
+   env — запись запрещена целиком (J64.10; прежний дефолт
+   `test-model/regress:tests` снят). Все остальное — отказ с вежливой причиной.
 2. **`bash`** — запрет `git push` (пушит ПМ после приемки артефакта).
 3. **`bash`** — docker только на чтение (`ps/inspect/logs/images/version/info/stats/top`);
-   мутации (`run/exec/rm/stop/build/compose up…`, `system prune` и т.п.) — отказ.
+   мутации (`run/exec/rm/stop/build/compose up…`, `system prune` и т.п.) — отказ
+   всем ролям, кроме `devops` (`PI_ZONE_ROLE`, решение Заказчика 2026-11-11);
+   чтение в той же команде мутацию не снимает (`docker ps && docker rm x` — отказ).
 
 Каждый отказ: `{ block: true, reason }` модели + строка в
-`test-model/regress/zone-guard.log` + `ui.notify` при наличии UI.
+файл `PI_ZONE_GUARD_LOG` (вне worktree; дефолт `~/.pi/agent/zone-guard.log`)
++ `ui.notify` при наличии UI.
 
 **Честное ограничение**: bash-канал — эвристика по строке команды; `mv`/`tee`/редиректы мимо зон guard не парсит. Механическая гарантия — для `write`/`edit`; секреты и прод в этот контур не давать (см. «Подводные камни»).
 
@@ -78,7 +84,7 @@ cp skills/pm-factory/pi/role-packs/regress-runner/settings.example.json \
 
 ```bash
 mkdir -p ~/.pi/agent/extensions
-cp skills/pm-factory/pi/role-packs/regress-runner/extensions/zone-guard.ts \
+cp skills/pm-factory/pi/zone-guard.ts \
    ~/.pi/agent/extensions/
 ```
 
@@ -150,10 +156,10 @@ mkdir -p /tmp/smoke-pi && cd /tmp/smoke-pi && git init -q \
   && mkdir -p tests test-model/regress/C123 src && echo t > tests/t.py \
   && git add -A && git commit -qm init
 # отказ вне зоны:
-pi -e <pack>/extensions/zone-guard.ts --no-session -p "Создай файл src/evil.txt со словом x инструментом write."
+PI_ZONE_WRITE=test-model/regress PI_ZONE_ROLE=regress_runner pi -e skills/pm-factory/pi/zone-guard.ts --no-session -p "Создай файл src/evil.txt со словом x инструментом write."
 #   → инструмент write блокируется, в ответе причина zone-guard, файла нет,
-#     в test-model/regress/zone-guard.log строка BLOCK.
+#     в ~/.pi/agent/zone-guard.log строка BLOCK.
 # успех в зоне:
-pi -e <pack>/extensions/zone-guard.ts --no-session -p "Создай файл test-model/regress/C123/notes.md со словом ok."
+PI_ZONE_WRITE=test-model/regress PI_ZONE_ROLE=regress_runner pi -e skills/pm-factory/pi/zone-guard.ts --no-session -p "Создай файл test-model/regress/C123/notes.md со словом ok."
 #   → файл создан.
 ```

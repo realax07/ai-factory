@@ -14,8 +14,8 @@ Hermes/ПМ.
 | `settings.example.json` | Дефолты сессии: провайдер/модель `zai-glm`/`glm-5.3`, tools `read/bash/edit/write`, `sessionDir`, подключение zone-guard. |
 
 Расширение **zone-guard — НЕ входит в пак**: используется уже установленный
-`~/.pi/agent/extensions/zone-guard.ts` (общий для всех паков, см.
-`regress-runner/extensions/zone-guard.ts` — тот же файл). Зоны записи задаются
+`~/.pi/agent/extensions/zone-guard.ts` (общий для всех паков — копия эталона `skills/pm-factory/pi/zone-guard.ts`;
+пакетный раннер берет эталон прямо из репо, J64.10). Зоны записи задаются
 переменной `PI_ZONE_WRITE` при вызове.
 
 ## Зона записи (PI_ZONE_WRITE)

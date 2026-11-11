@@ -22,8 +22,10 @@ Usage:
      enforcing — решение Заказчика (`flow_mode.py set enforcing --by
      customer`) или явный флаг --flow-mode enforcing. Существующий режим без
      флага не меняется.
-  3. Pi: zone-guard из репо → <PI_AGENT_DIR>/extensions/zone-guard.ts, если
-     его там нет; отличающаяся копия не перезаписывается (WARN). Наличие
+  3. Pi: zone-guard из репо (skills/pm-factory/pi/zone-guard.ts) →
+     <PI_AGENT_DIR>/extensions/zone-guard.ts для ручных запусков pi, если его
+     там нет; отличающаяся копия не перезаписывается (WARN). Пакетный раннер
+     копию не использует — берет guard из репо (J64.10). Наличие
      models.json проверяется (содержимое не читается).
   4. Кроны (политика 2026-10-23, docs/README-flow-control.md «Кроны и
      вотчдоги»): только при наличии Hermes — обертки-делегаты в
@@ -54,8 +56,9 @@ FACTORY = Path(__file__).resolve().parent.parent
 HERMES_HOME = fp.hermes_home()
 STATE = fp.state_dir()
 ARCHIVE_DIR = STATE / "session-archive"
-ZONE_GUARD_SRC = (FACTORY / "skills" / "pm-factory" / "pi" / "role-packs"
-                  / "regress-runner" / "extensions" / "zone-guard.ts")
+# Эталон guard'а (J64.10): раннер берет его прямо из репо; копия в
+# <PI_AGENT_DIR>/extensions — только для ручных запусков pi по README паков.
+ZONE_GUARD_SRC = FACTORY / "skills" / "pm-factory" / "pi" / "zone-guard.ts"
 OPENSPEC_VERSION = "1.14.0"  # README «Требования»
 # Записи системного crontab, которые ставил bootstrap до политики кронов
 # 2026-10-23 (*/2 session_watchdog, */5 delegate_watchdog мимо Hermes).

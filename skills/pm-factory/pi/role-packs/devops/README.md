@@ -57,7 +57,7 @@ cp skills/pm-factory/pi/role-packs/devops/settings.example.json ~/.pi/agent/sett
 
 ```bash
 cd /tmp/wt-<change> && \
-PI_ZONE_WRITE='deploy:ops:.github/workflows' \
+PI_ZONE_WRITE='deploy:ops:.github/workflows' PI_ZONE_ROLE=devops \
 pi --provider zai-glm --model glm-5.3-flash --no-session \
    -e ~/.pi/agent/extensions/zone-guard.ts \
    -p "<бриф: что деплоим/меняем, целевой коммит, границы. Факты инфры командами ДО скрипта; выход: deploy/RUNBOOK.md + deploy/deploy.sh (бэкап, EXPECTED_COMMIT, смоук, DRY_RUN); верификация bash -n/dry-run/git diff --stat>"
