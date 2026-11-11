@@ -8,14 +8,22 @@
   TC-J65-GST-001  агрегация: гейты × статус, решения prepare, коды отказа
                   (всего и по этапам), итоги циклов, дефекты finish, события
                   энфорсера (WARNING отдельно)
-  TC-J65-GST-002  «без срабатываний»: гейты без FAIL/ERROR и коды
-                  REASON_CODES без отказов за период
-  TC-J65-GST-003  окно --since/--until по времени записи (включительно);
-                  кривая дата — exit 2; пустой state — пустой отчет, exit 0
+  TC-J65-GST-002  «без срабатываний»: гейты, исполнявшиеся без FAIL/ERROR,
+                  отдельно от не исполнявшихся (только SKIPPED); коды
+                  REASON_CODES без отказов — без ненаблюдаемых этими
+                  источниками (ZONE_CONFLICT, STALE_SNAPSHOT run)
+  TC-J65-GST-003  окно --since/--until по UTC-дате (включительно); записи
+                  без времени при окне — счетчик undated_skipped; кривая дата
+                  и --since позже --until — exit 2; пустой state — exit 0
   TC-J65-GST-004  битый отчет / строка лога — WARN, остальное считается;
-                  `flowctl gates-stats` = `gates_stats.py` (одна реализация)
-  TC-J65-GST-005  на настоящих отчетах: prepare с DENY и finish с FAIL гейта,
-                  записанные flowctl/gate_runner, видны в статистике
+                  state не объект — exit 2; доп. каталоги --reports и лог
+                  энфорсера по FLOW_ENFORCER_STATE_DIR; `flowctl gates-stats`
+                  = `gates_stats.py`; без модуля отказывает только подкоманда
+  TC-J65-GST-005  на записях настоящего flowctl: prepare с DENY виден в
+                  статистике; отчеты finish — в каталоге, который читает
+                  gates_stats (<state>/gate-reports)
+  TC-J65-GST-006  каждый код REASON_CODES без Finding(...) в flow_transition
+                  числится ненаблюдаемым (дрейф кодов — красный тест)
 """
 from __future__ import annotations
 
@@ -94,9 +102,17 @@ def test_aggregates_all_sources(tmp_path):
 def test_never_fired(tmp_path):
     """TC-J65-GST-002."""
     s = gs.collect(make_state(tmp_path))
-    assert s["gates_never_failed"] == ["openspec_validate", "pr_validate"]
-    assert "ZONE_CONFLICT" in s["reason_codes_never_fired"]
+    assert s["gates_never_failed"] == ["openspec_validate"]
+    assert s["gates_not_executed"] == ["pr_validate"]
+    _report(tmp_path / "state" / "gate-reports", "d", "2026-11-04T10:00:00+00:00",
+            [("pr_validate", "SKIPPED")])
+    s = gs.collect(tmp_path / "state" / "flowctl_state.json")
+    assert s["gates_not_executed"] == ["pr_validate"]           # только SKIPPED
+    assert "STALE_EVIDENCE" in s["reason_codes_never_fired"]
     assert "MISSING_INPUT" not in s["reason_codes_never_fired"]
+    for code in ("ZONE_CONFLICT", "STALE_SNAPSHOT"):
+        assert code not in s["reason_codes_never_fired"]
+        assert code in s["reason_codes_unobservable"]
 
 
 def test_window_and_usage(tmp_path, capsys):
@@ -107,13 +123,20 @@ def test_window_and_usage(tmp_path, capsys):
     assert s["reason_codes"] == {} and s["enforcer_events"] == {
         "push_denied": 1, "push_allowed": 1}
     assert gs.main(["--state", str(state), "--since", "2026-11"]) == 2
+    assert gs.main(["--state", str(state), "--since", "2026-11-05",
+                    "--until", "2026-11-01"]) == 2
+    data = json.loads(state.read_text(encoding="utf-8"))
+    data["runs"]["5"] = _run("dev_task", None, "prepared")
+    state.write_text(json.dumps(data), encoding="utf-8")
+    assert gs.collect(state, since="2026-11-01")["undated_skipped"] == 1
+    assert gs.collect(state)["flowctl_runs"] == 5               # без окна — считается
     empty = tmp_path / "empty" / "flowctl_state.json"
     assert gs.main(["--state", str(empty), "--json"]) == 0
     out = json.loads(capsys.readouterr().out)
     assert out["gate_reports"] == 0 and out["flowctl_runs"] == 0
 
 
-def test_broken_inputs_and_flowctl_entry(tmp_path):
+def test_broken_inputs_and_flowctl_entry(tmp_path, monkeypatch):
     """TC-J65-GST-004."""
     state = make_state(tmp_path)
     (state.parent / "gate-reports" / "gate-report-bad.json").write_text("{", encoding="utf-8")
@@ -121,6 +144,23 @@ def test_broken_inputs_and_flowctl_entry(tmp_path):
         f.write("не json\n")
     s = gs.collect(state)
     assert s["gate_reports"] == 3 and len(s["unreadable"]) == 2
+    # доп. каталог отчетов и лог энфорсера там, где его пишет энфорсер
+    _report(tmp_path / "ci-reports", "x", "2026-11-05T10:00:00+00:00",
+            [("pr_validate", "FAIL")])
+    elog_dir = tmp_path / "enf"
+    elog_dir.mkdir()
+    (elog_dir / "flow-enforcer.log").write_text(
+        json.dumps({"ts": "2026-11-05T00:00:00+00:00", "event": "push_denied"}) + "\n",
+        encoding="utf-8")
+    monkeypatch.setenv("FLOW_ENFORCER_STATE_DIR", str(elog_dir))
+    s2 = gs.collect(state, report_dirs=[tmp_path / "ci-reports"])
+    assert s2["gates"]["pr_validate"] == {"FAIL": 1}
+    assert s2["enforcer_events"] == {"push_denied": 1}
+    monkeypatch.delenv("FLOW_ENFORCER_STATE_DIR")
+    bad = tmp_path / "bad" / "flowctl_state.json"
+    bad.parent.mkdir()
+    bad.write_text("[]", encoding="utf-8")
+    assert gs.main(["--state", str(bad)]) == 2
     r = subprocess.run([sys.executable, str(FACTORY / "scripts" / "flowctl.py"),
                         "gates-stats", "--state", str(state), "--json"],
                        capture_output=True, text=True)
@@ -130,11 +170,24 @@ def test_broken_inputs_and_flowctl_entry(tmp_path):
                            "gates-stats", "--state", str(state)],
                           capture_output=True, text=True).stdout
     assert "flow_check: FAIL 1, PASS 2" in text and "WARN:" in text
+    # копия flowctl без gates_stats.py (старый проект): падает только подкоманда
+    import shutil
+    scripts = tmp_path / "proj-scripts"
+    shutil.copytree(FACTORY / "scripts", scripts,
+                    ignore=shutil.ignore_patterns("gates_stats.py", "__pycache__"))
+    shutil.copytree(FACTORY / "agents", tmp_path / "agents")
+    miss = subprocess.run([sys.executable, str(scripts / "flowctl.py"), "gates-stats"],
+                          capture_output=True, text=True)
+    assert miss.returncode == 2 and "gates_stats.py" in miss.stderr
+    ok = subprocess.run([sys.executable, str(scripts / "flowctl.py"), "status", "--help"],
+                        capture_output=True, text=True)
+    assert ok.returncode == 0, ok.stderr
 
 
 def test_real_engine_records(tmp_path, monkeypatch):
-    """TC-J65-GST-005: prepare dev_task без плана релиза и архитектурного
-    ревью — DENY, записанный настоящим flowctl; его коды видны в статистике."""
+    """TC-J65-GST-005: prepare dev_task без плана релиза — DENY, записанный
+    настоящим flowctl; его коды видны в статистике. finish пишет отчеты в
+    <state>/gate-reports — тот же каталог читает gates_stats."""
     repo = tmp_path / "proj"
     repo.mkdir(exist_ok=True)
     env = {"GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_NOSYSTEM": "1"}
@@ -163,4 +216,16 @@ def test_real_engine_records(tmp_path, monkeypatch):
     s = gs.collect(state)
     assert s["flowctl_runs"] == 1 and s["decisions"] == {"DENY": 1}
     assert "PLAN_RELEASE_MISSING" in s["reason_codes"], s   # J41: плана нет
+    src = (FACTORY / "scripts" / "flowctl.py").read_text(encoding="utf-8")
+    assert 'report_dir=args.report_dir or str(state_path.parent / "gate-reports")' in src
     assert set(s["reason_codes"]) <= set(gs.ft.REASON_CODES)
+
+
+def test_unobservable_codes_drift():
+    """TC-J65-GST-006."""
+    import re
+    src = (FACTORY / "scripts" / "flow_transition.py").read_text(encoding="utf-8")
+    for code in gs.ft.REASON_CODES:
+        if not re.search(r"Finding\(\s*" + code + r"\b", src):
+            assert code in gs.UNOBSERVABLE_CODES, code
+    assert set(gs.UNOBSERVABLE_CODES) <= set(gs.ft.REASON_CODES)

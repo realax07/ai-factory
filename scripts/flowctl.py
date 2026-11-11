@@ -3249,11 +3249,24 @@ def main(argv: list[str] | None = None) -> int:
 
     # J65.9: статистика срабатываний гейтов и кодов отказа (дисциплина роста
     # ворот) — по уже существующим отчетам gate_runner, state и логу энфорсера.
-    import gates_stats  # noqa: E402  (ленивый импорт: только эта подкоманда)
+    # Нет модуля (старая копия в проекте) — отказывает только эта подкоманда,
+    # не весь flowctl (dry-run энфорсера).
     p_gs = sub.add_parser(
         "gates-stats", help="сколько раз срабатывал каждый гейт и код отказа (J65.9)")
-    gates_stats.add_arguments(p_gs)
-    p_gs.set_defaults(func=gates_stats.run)
+    try:
+        import gates_stats  # noqa: E402
+    except ImportError as exc:
+        gs_error = str(exc)
+        p_gs.add_argument("rest", nargs=argparse.REMAINDER)
+
+        def _gates_stats_missing(_args) -> int:
+            print(f"FLOWCTL-ERROR: gates-stats недоступен — нет gates_stats.py "
+                  f"рядом с flowctl ({gs_error})", file=sys.stderr)
+            return 2
+        p_gs.set_defaults(func=_gates_stats_missing)
+    else:
+        gates_stats.add_arguments(p_gs)
+        p_gs.set_defaults(func=gates_stats.run)
 
     p_st = sub.add_parser("status", help="состояние циклов и сессий")
     p_st.add_argument("--correlation-id", default=None)

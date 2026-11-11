@@ -16,13 +16,23 @@
                              дефекты finish (код × источник);
   3. энфорсер                <state>/flow-enforcer.log (JSONL, события).
 <state> — каталог flowctl_state.json (по умолчанию factory_paths.state_dir(),
-env AF_STATE_DIR). Окно — по полю времени записи (started_at / created_at /
-ts), даты включительно.
+env AF_STATE_DIR); лог энфорсера — FLOW_ENFORCER_STATE_DIR, если задан
+(как у энфорсера), иначе <state>. Отчеты gate_runner из других каталогов
+(`finish --report-dir`, прямой `gate_runner run` → `<repo>/.gate-logs`,
+CI) — флагом --reports DIR (повторяемый). Окно — по UTC-дате поля
+времени записи (started_at / created_at / ts; все источники пишут UTC),
+даты включительно; записи без времени при заданном окне не считаются —
+их число в отчете (undated_skipped).
 
-Не видит (честно): отказы prepare ДО записи цикла — запрос зоны вне
-политики роли (ZONE_OUTSIDE_POLICY) и защищенные пути без [pipeline]
-(J3): flowctl их только печатает; STOP раннера — в его state рядом с
-планом проекта.
+Не видит (честно), поэтому такие коды идут отдельным списком
+«не наблюдаемы по этим источникам», а не в «без срабатываний»:
+  - отказы prepare ДО записи цикла: зона вне политики роли
+    (ZONE_OUTSIDE_POLICY), защищенные пути без [pipeline] (J3),
+    ZONE_CONFLICT резервации (session_check.reserve);
+  - STALE_SNAPSHOT отказа `flowctl run` (виден только код решения prepare);
+  - отказы на спавне через энфорсер: хук зовет `prepare --dry-run`, state
+    не пишется, в логе энфорсера — только rc (`prepare_result`), не коды;
+  - STOP раннера — в его state рядом с планом проекта.
 
 Usage:
   python3 scripts/gates_stats.py [--state PATH] [--since YYYY-MM-DD]
@@ -35,6 +45,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from collections import Counter
 from datetime import date
@@ -46,6 +57,15 @@ import flow_transition as ft  # noqa: E402
 import gate_runner as gr  # noqa: E402
 
 SCHEMA = "gates-stats/1"
+# Коды REASON_CODES, которые по этим источникам не видны целиком или
+# частично (см. шапку) — в «без срабатываний» не попадают. Новый код без
+# Finding(...) в flow_transition обязан попасть сюда (тест TC-J65-GST-006).
+UNOBSERVABLE_CODES = {
+    "ZONE_CONFLICT": "резервация session_check в prepare — цикл не пишется",
+    "STALE_SNAPSHOT": "отказ flowctl run (переснимок) в runs не пишется",
+}
+SPAWN_NOTE = ("отказы на спавне (энфорсер → prepare --dry-run) в state не "
+              "пишутся: в логе энфорсера только rc prepare_result, без кодов")
 
 
 class StatsError(Exception):
@@ -71,23 +91,47 @@ def _in_window(ts: object, since: str | None, until: str | None) -> bool:
 
 def _read_json(path: Path):
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
+        data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
         raise StatsError(f"{path}: не читается ({exc})") from exc
+    if not isinstance(data, dict):
+        raise StatsError(f"{path}: ожидался JSON-объект, есть {type(data).__name__}")
+    return data
+
+
+def enforcer_log_default(state_dir: Path) -> Path:
+    """Лог энфорсера там же, где его пишет энфорсер (FLOW_ENFORCER_STATE_DIR)."""
+    env = os.environ.get("FLOW_ENFORCER_STATE_DIR", "").strip()
+    return (Path(env).expanduser() if env else state_dir) / "flow-enforcer.log"
 
 
 def collect(state_path: Path, since: str | None = None,
-            until: str | None = None) -> dict:
+            until: str | None = None, report_dirs: list[Path] | None = None,
+            enforcer_log: Path | None = None) -> dict:
     state_dir = state_path.parent
     gates: dict[str, Counter] = {}
     reports = 0
+    undated = 0
     broken: list[str] = []
-    rdir = state_dir / "gate-reports"
-    for rp in sorted(rdir.glob("gate-report-*.json")) if rdir.is_dir() else []:
+    windowed = since is not None or until is not None
+    # flowctl finish пишет отчеты в <state>/gate-reports (flowctl.py: report_dir
+    # = state_path.parent / "gate-reports"); прочие каталоги — --reports
+    dirs = [state_dir / "gate-reports", *(report_dirs or [])]
+    seen_files: set[Path] = set()
+    files = []
+    for rdir in dirs:
+        for rp in sorted(rdir.glob("gate-report-*.json")) if rdir.is_dir() else []:
+            if rp.resolve() not in seen_files:
+                seen_files.add(rp.resolve())
+                files.append(rp)
+    for rp in files:
         try:
             rep = _read_json(rp)
         except StatsError as exc:
             broken.append(str(exc))
+            continue
+        if windowed and _day(rep.get("started_at")) is None:
+            undated += 1
             continue
         if not _in_window(rep.get("started_at"), since, until):
             continue
@@ -104,9 +148,18 @@ def collect(state_path: Path, since: str | None = None,
     runs = 0
     if state_path.is_file():
         st = _read_json(state_path)
-        for rec in (st.get("runs") or {}).values():
-            if not _in_window(rec.get("created_at") or rec.get("started_at"),
-                              since, until):
+        runs_map = st.get("runs") or {}
+        if not isinstance(runs_map, dict):
+            raise StatsError(f"{state_path}: runs — не объект")
+        for rec in runs_map.values():
+            if not isinstance(rec, dict):
+                broken.append(f"{state_path}: запись runs — не объект")
+                continue
+            ts = rec.get("created_at") or rec.get("started_at")
+            if windowed and _day(ts) is None:
+                undated += 1
+                continue
+            if not _in_window(ts, since, until):
                 continue
             runs += 1
             dec = rec.get("decision") or {}
@@ -121,7 +174,7 @@ def collect(state_path: Path, since: str | None = None,
 
     events: Counter = Counter()
     warnings: Counter = Counter()
-    elog = state_dir / "flow-enforcer.log"
+    elog = enforcer_log or enforcer_log_default(state_dir)
     if elog.is_file():
         for line in elog.read_text(encoding="utf-8", errors="replace").splitlines():
             try:
@@ -129,7 +182,12 @@ def collect(state_path: Path, since: str | None = None,
             except json.JSONDecodeError:
                 broken.append(f"{elog}: строка не JSON")
                 continue
-            if not isinstance(ev, dict) or not _in_window(ev.get("ts"), since, until):
+            if not isinstance(ev, dict):
+                continue
+            if windowed and _day(ev.get("ts")) is None:
+                undated += 1
+                continue
+            if not _in_window(ev.get("ts"), since, until):
                 continue
             name = str(ev.get("event", "?"))
             events[name] += 1
@@ -138,24 +196,32 @@ def collect(state_path: Path, since: str | None = None,
 
     fired = {g for g, c in gates.items()
              if c.get(gr.STATUS_FAIL) or c.get(gr.STATUS_ERROR)}
+    # исполнялся (PASS) без отказов — честный кандидат пересмотра; только
+    # SKIPPED (pr_validate без PR-контекста) или ни разу — отдельно
+    executed = {g for g, c in gates.items() if c.get(gr.STATUS_PASS)}
     return {
         "schema_version": SCHEMA,
         "state": str(state_path),
         "window": {"since": since, "until": until},
         "gate_reports": reports,
         "gates": {g: dict(sorted(c.items())) for g, c in sorted(gates.items())},
-        "gates_never_failed": sorted(set(gr.KNOWN_GATES) - fired),
+        "gates_never_failed": sorted((set(gr.KNOWN_GATES) & executed) - fired),
+        "gates_not_executed": sorted(set(gr.KNOWN_GATES) - executed - fired),
         "flowctl_runs": runs,
         "decisions": dict(sorted(decisions.items())),
         "reason_codes": dict(reasons.most_common()),
         "reason_codes_by_action": {a: dict(c.most_common())
                                    for a, c in sorted(reasons_by_action.items())},
-        "reason_codes_never_fired": [c for c in ft.REASON_CODES if not reasons[c]],
+        "reason_codes_never_fired": [c for c in ft.REASON_CODES
+                                     if not reasons[c] and c not in UNOBSERVABLE_CODES],
+        "reason_codes_unobservable": dict(UNOBSERVABLE_CODES),
         "run_outcomes": dict(sorted(outcomes.items())),
         "finish_defects": dict(defects.most_common()),
         "enforcer_events": dict(events.most_common()),
         "enforcer_warnings": dict(warnings.most_common()),
+        "undated_skipped": undated,
         "unreadable": broken,
+        "not_observed": SPAWN_NOTE,
     }
 
 
@@ -166,8 +232,10 @@ def render(s: dict) -> str:
     out.append(f"Гейты gate_runner — отчетов: {s['gate_reports']}")
     for g, c in s["gates"].items():
         out.append(f"  {g}: " + ", ".join(f"{k} {v}" for k, v in c.items()))
-    out.append("  без FAIL/ERROR за период: "
+    out.append("  исполнялись без FAIL/ERROR: "
                + (", ".join(s["gates_never_failed"]) or "—"))
+    out.append("  не исполнялись (только SKIPPED или нет отчетов): "
+               + (", ".join(s["gates_not_executed"]) or "—"))
     out += ["", f"Решения flowctl prepare — циклов: {s['flowctl_runs']}"]
     out.append("  статусы: " + (", ".join(f"{k} {v}" for k, v in
                                            s["decisions"].items()) or "—"))
@@ -177,6 +245,8 @@ def render(s: dict) -> str:
         out.append(f"    {a}: " + ", ".join(f"{k} {v}" for k, v in c.items()))
     out.append("  коды без срабатываний: "
                + (", ".join(s["reason_codes_never_fired"]) or "—"))
+    out.append("  не наблюдаемы по этим источникам: "
+               + "; ".join(f"{k} — {v}" for k, v in s["reason_codes_unobservable"].items()))
     out.append("  итог циклов: " + (", ".join(f"{k} {v}" for k, v in
                                               s["run_outcomes"].items()) or "—"))
     out.append("  дефекты finish: " + (", ".join(f"{k} {v}" for k, v in
@@ -186,18 +256,26 @@ def render(s: dict) -> str:
     if s["enforcer_warnings"]:
         out.append("  из них WARNING: " + ", ".join(
             f"{k} {v}" for k, v in s["enforcer_warnings"].items()))
+    if s["undated_skipped"]:
+        out.append(f"WARN: записей без времени вне окна: {s['undated_skipped']}")
     for b in s["unreadable"]:
         out.append(f"WARN: {b}")
     out += ["", "Не видно: отказы prepare до записи цикла (ZONE_OUTSIDE_POLICY, "
-                "защищенные пути J3), STOP раннера (state рядом с планом)."]
+                "защищенные пути J3, ZONE_CONFLICT), " + s["not_observed"]
+            + ", STOP раннера (state рядом с планом)."]
     return "\n".join(out)
 
 
 def add_arguments(ap: argparse.ArgumentParser) -> None:
+    """Флаги команды — одни для gates_stats.py и `flowctl gates-stats`."""
     ap.add_argument("--state", default=None,
                     help="flowctl_state.json (по умолчанию — state движка)")
-    ap.add_argument("--since", default=None, help="YYYY-MM-DD включительно")
-    ap.add_argument("--until", default=None, help="YYYY-MM-DD включительно")
+    ap.add_argument("--since", default=None, help="UTC-дата YYYY-MM-DD включительно")
+    ap.add_argument("--until", default=None, help="UTC-дата YYYY-MM-DD включительно")
+    ap.add_argument("--reports", action="append", default=[],
+                    help="доп. каталог отчетов gate_runner (повторяемый)")
+    ap.add_argument("--enforcer-log", default=None,
+                    help="лог энфорсера (по умолчанию FLOW_ENFORCER_STATE_DIR или <state>)")
     ap.add_argument("--json", action="store_true", dest="as_json")
 
 
@@ -208,9 +286,15 @@ def run(args: argparse.Namespace) -> int:
             print(f"gates-stats: --{name} — дата YYYY-MM-DD, есть {val!r}",
                   file=sys.stderr)
             return 2
+    if args.since and args.until and args.since > args.until:
+        print(f"gates-stats: --since {args.since} позже --until {args.until}",
+              file=sys.stderr)
+        return 2
     state = Path(args.state) if args.state else fp.flowctl_state_path()
     try:
-        stats = collect(state, args.since, args.until)
+        stats = collect(state, args.since, args.until,
+                        [Path(d) for d in args.reports],
+                        Path(args.enforcer_log) if args.enforcer_log else None)
     except StatsError as exc:
         print(f"gates-stats: ОШИБКА — {exc}", file=sys.stderr)
         return 2

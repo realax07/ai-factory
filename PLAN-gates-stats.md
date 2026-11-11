@@ -21,6 +21,20 @@
 - Тесты `tests/unit/test_j65_gates_stats.py` (TC-J65-GST-001…005), в т.ч. на
   записи настоящего flowctl.
 
+## Возврат ревью review-001 (1 major)
+
+«Без срабатываний» числил коды, которые эти источники не видят в принципе
+(ZONE_CONFLICT — резервация в prepare без записи цикла; STALE_SNAPSHOT —
+отказ `run`; отказы на спавне — энфорсер зовет `prepare --dry-run`). Теперь
+они — отдельным списком `reason_codes_unobservable` (дрейф: код без
+Finding(...) в flow_transition обязан быть в списке — TC-J65-GST-006).
+Minor: гейты «исполнялись без отказов» отдельно от «только SKIPPED»; state
+не объект и `--since` позже `--until` — exit 2; окно — UTC-даты, записи без
+времени при окне — счетчик; `--reports DIR` (каталоги `finish
+--report-dir`, `<repo>/.gate-logs`, CI), лог энфорсера —
+FLOW_ENFORCER_STATE_DIR; без gates_stats.py в копии проекта отказывает
+только подкоманда, не весь flowctl.
+
 ## Не видно (честно)
 
 Отказы prepare до записи цикла (ZONE_OUTSIDE_POLICY, защищенные пути J3) —
