@@ -57,6 +57,8 @@ def test_runner_uses_repo_guard_role_and_log(tmp_path, monkeypatch):
     (call,) = calls
     args, env = call["args"], call["env"]
     assert Path(args[args.index("-e") + 1]) == GUARD == pr.ZONE_GUARD
+    # автозагрузка расширений (копия в ~/.pi, .pi/ проекта) выключена
+    assert "--no-extensions" in args and args.count("-e") == 1
     assert env["PI_ZONE_ROLE"] == "dev"
     log = Path(env["PI_ZONE_GUARD_LOG"])
     assert log.name == "express-x.log" and log.parent.name == "zone-guard"
@@ -93,16 +95,24 @@ process.stdout.write(JSON.stringify(res ?? null));
 
 
 def _node_cmd() -> list[str] | None:
+    """node, который грузит TypeScript (strip types): node ≥ 23.6 — сам,
+    22.6–23.5 — с --experimental-strip-types; иначе None (SKIP)."""
+    import tempfile
     node = shutil.which("node")
     if not node:
         return None
-    for flags in ([], ["--experimental-strip-types"]):
-        probe = subprocess.run([node, *flags, "--input-type=module", "-e",
-                                "await import('data:text/javascript,0')"],
-                               capture_output=True, text=True)
-        if probe.returncode != 0:
-            continue
-        return [node, *flags, "--no-warnings"]
+    with tempfile.TemporaryDirectory() as d:
+        ts = Path(d) / "probe.ts"
+        ts.write_text("const x: number = 1;\nexport default x;\n", encoding="utf-8")
+        mjs = Path(d) / "probe.mjs"
+        mjs.write_text("import { pathToFileURL } from 'node:url';\n"
+                       "const m = await import(pathToFileURL(process.argv[2]).href);\n"
+                       "if (m.default !== 1) process.exit(3);\n", encoding="utf-8")
+        for flags in ([], ["--experimental-strip-types"]):
+            probe = subprocess.run([node, *flags, "--no-warnings", str(mjs), str(ts)],
+                                   capture_output=True, text=True)
+            if probe.returncode == 0:
+                return [node, *flags, "--no-warnings"]
     return None
 
 
@@ -112,7 +122,7 @@ NODE = _node_cmd()
 @pytest.fixture
 def guard_call(tmp_path):
     if NODE is None:
-        pytest.skip("node не найден")
+        pytest.skip("нет node с поддержкой TypeScript (strip types)")
     harness = tmp_path / "harness.mjs"
     harness.write_text(HARNESS, encoding="utf-8")
     wt = tmp_path / "wt"
@@ -128,8 +138,6 @@ def guard_call(tmp_path):
         r = subprocess.run([*NODE, str(harness), str(GUARD), str(wt),
                             json.dumps(event)], capture_output=True, text=True,
                            env=env, timeout=60)
-        if r.returncode != 0 and "Unknown file extension" in r.stderr:
-            pytest.skip("node без поддержки TypeScript (strip types)")
         assert r.returncode == 0, r.stderr
         return json.loads(r.stdout)
     call.wt, call.log = wt, log
@@ -166,10 +174,43 @@ def test_guard_policy_under_node(guard_call):
     assert guard_call(_b("docker compose up -d"), role="devops") is None
     assert guard_call(_b("git push"), role="devops")["block"] is True
     assert guard_call(_b("docker rm api"), role="regress_runner")["block"] is True
+    # bash-эвристика по токенам (ревью J64.10): обход флагами и группами
+    # docker, ложный push в тексте коммита
+    for cmd in ("docker compose -f x.yml up -d", "docker container rm api",
+                "docker image rm img", "sudo docker run x", "/usr/bin/docker exec a sh",
+                "env DOCKER_HOST=x docker rm a", "cd x && docker compose down",
+                "docker system prune -f", "git -c a=b push", "x; git push --force"):
+        assert guard_call(_b(cmd))["block"] is True, cmd
+    for cmd in ('git commit -m "push-fix"', "git log --grep push", "docker compose ps",
+                "docker system df", "docker --version", "echo docker rm",
+                "grep -r 'git push' docs"):
+        assert guard_call(_b(cmd)) is None, cmd
     # лог — в PI_ZONE_GUARD_LOG, в worktree ничего
     assert "BLOCK" in guard_call.log.read_text(encoding="utf-8")
     assert "role=dev" in guard_call.log.read_text(encoding="utf-8")
     assert not any(guard_call.wt.rglob("*"))
+
+
+def test_guard_paths_edge_cases(guard_call, tmp_path):
+    """TC-J64-ZG-003: экранирование regex, литерал `[`, абсолютный путь,
+    голая зона `*`/`**` не открывает .git/, symlink наружу — отказ."""
+    wt = guard_call.wt
+    assert guard_call(_w("a.b/x"), zones="a.b") is None
+    assert guard_call(_w("aXb/x"), zones="a.b")["block"] is True
+    assert guard_call(_w("d[1]/x"), zones="d[1]") is None
+    assert guard_call(_w("d1/x"), zones="d[1]")["block"] is True
+    assert guard_call(_w(str(wt / "src" / "a.py"))) is None          # абсолютный внутри
+    assert guard_call(_w("/etc/passwd"))["block"] is True
+    for zone in ("*", "**"):
+        assert guard_call(_w("src/a.py"), zones=zone) is None
+        assert guard_call(_w(".git/hooks/pre-commit"), zones=zone)["block"] is True
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (wt / "src").mkdir()
+    (wt / "src" / "out").symlink_to(outside)
+    assert guard_call(_w("src/out/x.py"))["block"] is True
+    assert guard_call(_w("src/new/x.py")) is None   # несуществующий подкаталог зоны
+    assert not any(outside.iterdir())
 
 
 def test_single_guard_source():

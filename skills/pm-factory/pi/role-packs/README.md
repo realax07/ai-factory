@@ -8,7 +8,8 @@
 `README.md` (сборка и вызов). Оркестратор — всегда Hermes/ПМ.
 
 **Zone-guard — общий для всех паков**: эталон `skills/pm-factory/pi/zone-guard.ts` (J64.10).
-Пакетный раннер подключает его прямо из репо фабрики (`-e <фабрика>/skills/pm-factory/pi/zone-guard.ts`;
+Пакетный раннер подключает его прямо из репо фабрики (`--no-extensions -e <фабрика>/skills/pm-factory/pi/zone-guard.ts`
+— автозагрузка из `~/.pi` выключена;
 нет файла — STOP стадии `ZONE_GUARD_MISSING`, sha256 — в отчете стадии). Для
 ручных запусков копия ставится в `~/.pi/agent/extensions/` (factory_bootstrap;
 отличающуюся не перезаписывает — WARN). Env на вызове:

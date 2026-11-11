@@ -42,8 +42,9 @@ pipeline:
     `PI_ZONE_ROLE` (роль политики: bash-правила guard'а) и
     `PI_ZONE_GUARD_LOG` (лог отказов вне worktree:
     `<state>/zone-guard/<пакет>.log`) и вызывает
-    `pi --no-session -e <фабрика>/skills/pm-factory/pi/zone-guard.ts -p <бриф>`
-    — guard из репо движка, не копия в `~/.pi` (J64.10); нет файла — STOP
+    `pi --no-session --no-extensions -e <фабрика>/skills/pm-factory/pi/zone-guard.ts -p <бриф>`
+    — guard из репо движка, автозагрузка расширений (копия в `~/.pi`,
+    `.pi/` проекта) выключена (J64.10); нет файла — STOP
     `ZONE_GUARD_MISSING` до ворот входа, sha256 guard'а — в отчете стадии и
     в `flow_gates.<стадия>.zone_guard_sha256` state раннера.
     Без `zones` раннер берет зону роли целиком из реестра `agents/roles.json`

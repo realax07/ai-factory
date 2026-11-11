@@ -3,8 +3,10 @@
  *
  * Эталон один: skills/pm-factory/pi/zone-guard.ts (J64.10). Пакетный раннер
  * (scripts/package_runner.py) подключает его прямо из репо фабрики
- * (`pi -e <фабрика>/skills/pm-factory/pi/zone-guard.ts`): нет файла — STOP
- * стадии, sha256 guard'а пишется в отчет стадии. Копия в
+ * (`pi --no-extensions -e <фабрика>/skills/pm-factory/pi/zone-guard.ts`:
+ * автозагрузка расширений из ~/.pi и .pi/ проекта выключена — действует
+ * только эталон); нет файла — STOP стадии, sha256 guard'а пишется в отчет
+ * стадии. Копия в
  * ~/.pi/agent/extensions/zone-guard.ts нужна только для ручных запусков по
  * README паков; ставит ее factory_bootstrap (расхождение с репо — WARN).
  *
@@ -21,17 +23,19 @@
  *
  * Что охраняет (fail-closed):
  *   1. write/edit — только внутри зон PI_ZONE_WRITE; путь без path, вне
- *      worktree или вне зон — отказ.
+ *      worktree (symlink раскрываются realpath), в .git/ (никакой зоной, даже
+ *      `*`/`**`, не открывается) или вне зон — отказ.
  *   2. bash — `git push` запрещен всем ролям (пушит ПМ после приемки).
- *   3. bash — docker-мутации (run/exec/rm/build/compose up|down/…) запрещены
- *      всем ролям, кроме devops (решение Заказчика 2026-11-11, J64.10);
- *      чтение (ps/inspect/logs/images/version/info/stats/top/events) — всем.
+ *   3. bash — docker-мутации запрещены всем ролям, кроме devops (решение
+ *      Заказчика 2026-11-11, J64.10): разрешено только чтение
+ *      (ps/inspect/logs/images/version/info/stats/top/events/ls/df/…), любая
+ *      иная подкоманда, в т.ч. `compose -f x up`, `container rm` — отказ.
  *
  * Отказ: { block: true, reason } модели + строка в лог + ui.notify, если UI
  * есть. Ошибка обработчика тоже блокирует tool call (fail-safe самого pi).
  *
- * Ограничение (честно): bash-канал — эвристика по строке команды
- * (редиректы/tee/mv мимо зон НЕ парсятся). Механическая граница записи —
+ * Ограничение (честно): bash-канал — эвристика по токенам команды
+ * (редиректы/tee/mv мимо зон, подстановки $(…) и eval НЕ разбираются). Механическая граница записи —
  * сверка git diff с зоной на finish стадии у раннера (J63); guard — ранняя
  * подсказка агенту, его обход стоит итераций, а не дыры в зоне.
  *
@@ -85,18 +89,103 @@ export default function (pi: ExtensionAPI) {
 		return zs.every((z, i) => segMatch(z, ps[i]));
 	}
 
-	function inWriteZone(target: string, cwd: string): boolean {
-		const rel = path.relative(cwd, path.resolve(cwd, target));
+	/** Ближайший существующий предок пути — с раскрытыми symlink (realpath). */
+	async function realNearest(abs: string): Promise<string> {
+		let cur = abs;
+		const tail: string[] = [];
+		for (;;) {
+			try {
+				return path.join(await fs.realpath(cur), ...tail.reverse());
+			} catch {
+				const parent = path.dirname(cur);
+				if (parent === cur) return abs;
+				tail.push(path.basename(cur));
+				cur = parent;
+			}
+		}
+	}
+
+	/** Путь записи в зоне: относительно worktree (symlink раскрыты), не в
+	 * .git/ (никакой зоной не открывается), сегменты зоны — префикс пути. */
+	async function inWriteZone(target: string, cwd: string): Promise<boolean> {
+		const root = await realNearest(path.resolve(cwd));
+		const real = await realNearest(path.resolve(cwd, target));
+		const rel = path.relative(root, real);
 		if (rel === "" || rel.startsWith("..") || path.isAbsolute(rel)) return false;
 		const norm = rel.split(path.sep).join("/");
+		if (norm === ".git" || norm.startsWith(".git/")) return false;
 		return writeZones.some((z) => inZone(norm, z));
 	}
 
-	const GIT_PUSH = /(^|[\s;&|(])git(\s+\S+)*\s+push\b/;
-	const DOCKER_MUTATING = /\bdocker(?:\s+compose)?\s+(run|exec|rm|rmi|stop|kill|restart|pause|unpause|build|pull|push|cp|save|load|tag|import|export|commit|attach|system|volume|network|secret|config|up|down|create|update|scale|start|swarm|node|stack|prune|login|logout)\b/;
-	// Чтение (ps/inspect/logs/images/version/info/stats/top/events) мутацией не
-	// считается. Совпадение чтения мутацию НЕ снимает: `docker ps && docker rm x`
-	// — отказ (прежний guard пропускал такую команду).
+	// bash — эвристика по токенам (best-effort): команда режется на звенья по
+	// ; & | и переводу строки; git/docker — слово команды звена (после sudo/
+	// env/VAR=val), затем его подкоманда (флаги и их значения пропускаются).
+	// `echo docker rm`, `git commit -m push` — не вызов.
+	const GIT_VALUE_FLAGS = new Set(["-C", "-c", "--git-dir", "--work-tree", "--namespace"]);
+	const DOCKER_GROUPS = new Set(["compose", "container", "image", "volume", "network",
+		"buildx", "builder", "context", "plugin", "system", "swarm", "node", "stack",
+		"service", "secret", "config", "trust", "manifest"]);
+	const DOCKER_VALUE_FLAGS = new Set(["-f", "--file", "-p", "--project-name", "--env-file",
+		"--profile", "--project-directory", "-H", "--host", "--context", "--config", "-c", "-l",
+		"--log-level"]);
+	// Чтение — разрешено всем; любая иная подкоманда docker — мутация
+	// (fail-closed: неизвестное не пропускается). Чтение в том же или соседнем
+	// звене мутацию НЕ снимает (`docker ps && docker rm x` — отказ).
+	const DOCKER_READONLY = new Set(["ps", "inspect", "logs", "images", "version", "info",
+		"stats", "top", "events", "ls", "df", "history", "port", "diff", "search", "help"]);
+
+	function links(cmd: string): string[][] {
+		return cmd.split(/[;&|\n]+/).map((part) =>
+			part.trim().split(/\s+/).filter(Boolean)
+				.map((t) => t.replace(/^["'`(]+|["'`)]+$/g, "")));
+	}
+
+	function subcommand(tokens: string[], from: number, valueFlags: Set<string>): [string, number] {
+		for (let i = from; i < tokens.length; i++) {
+			const t = tokens[i];
+			if (t.startsWith("-")) {
+				if (valueFlags.has(t)) i++;   // значение флага — следующий токен
+				continue;
+			}
+			return [t, i];
+		}
+		return ["", tokens.length];
+	}
+
+	function isTool(token: string, name: string): boolean {
+		return token === name || token.endsWith(`/${name}`);
+	}
+
+	// Префиксы перед словом команды: `sudo -E docker …`, `env A=1 git …`.
+	const PREFIX_WORDS = new Set(["sudo", "env", "time", "nohup", "command", "exec", "nice"]);
+
+	/** Индекс слова команды звена (после префиксов, их флагов и VAR=val). */
+	function commandAt(tk: string[]): number {
+		let i = 0;
+		while (i < tk.length && (PREFIX_WORDS.has(tk[i]) || tk[i].startsWith("-") ||
+			/^[A-Za-z_][A-Za-z0-9_]*=/.test(tk[i]))) i++;
+		return i;
+	}
+
+	function gitPush(cmd: string): boolean {
+		return links(cmd).some((tk) => {
+			const i = commandAt(tk);
+			return i < tk.length && isTool(tk[i], "git") &&
+				subcommand(tk, i + 1, GIT_VALUE_FLAGS)[0] === "push";
+		});
+	}
+
+	function dockerMutation(cmd: string): boolean {
+		return links(cmd).some((tk) => {
+			const i = commandAt(tk);
+			if (i >= tk.length || !isTool(tk[i], "docker")) return false;
+			let [verb, at] = subcommand(tk, i + 1, DOCKER_VALUE_FLAGS);
+			if (DOCKER_GROUPS.has(verb)) {
+				[verb] = subcommand(tk, at + 1, DOCKER_VALUE_FLAGS);
+			}
+			return verb !== "" && !DOCKER_READONLY.has(verb);
+		});
+	}
 
 	async function block(kind: string, detail: string, reason: string, ctx: any) {
 		await log(`BLOCK ${kind} ${detail}`);
@@ -114,7 +203,7 @@ export default function (pi: ExtensionAPI) {
 				return block(event.toolName, ":: нет path",
 					`${event.toolName}: не указан path — блокирую fail-closed (зона роли ${role}: ${zones})`, ctx);
 			}
-			if (!inWriteZone(target, cwd)) {
+			if (!(await inWriteZone(target, cwd))) {
 				return block(event.toolName, `${target} :: вне зоны`,
 					`zone-guard: запись «${target}» вне зоны роли ${role}. ` +
 					`Разрешены только (относительно ${cwd}): ${zones}. ` +
@@ -126,11 +215,11 @@ export default function (pi: ExtensionAPI) {
 		if (event.toolName === "bash") {
 			const cmd = (event.input?.command as string | undefined) ?? "";
 			if (!cmd) return undefined;
-			if (GIT_PUSH.test(cmd)) {
+			if (gitPush(cmd)) {
 				return block("bash git-push", `:: ${cmd.slice(0, 200)}`,
 					`zone-guard: \`git push\` запрещен роли ${role} — пушит ПМ после приемки.`, ctx);
 			}
-			if (!DOCKER_MUTATION_ROLES.has(role) && DOCKER_MUTATING.test(cmd)) {
+			if (!DOCKER_MUTATION_ROLES.has(role) && dockerMutation(cmd)) {
 				return block("bash docker-mutation", `:: ${cmd.slice(0, 200)}`,
 					`zone-guard: docker-мутации запрещены роли ${role} (разрешены только devops). ` +
 					`Чтение: docker ps/inspect/logs/images/version/info/stats/top.`, ctx);

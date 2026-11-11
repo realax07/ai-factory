@@ -162,8 +162,10 @@ ROLE_PACKS = REPO_ROOT / "skills" / "pm-factory" / "pi" / "role-packs"
 WORKTREE_SCRIPT = SCRIPTS / "session_worktree.sh"
 FLOWCTL = Path(fc.__file__).resolve() if fc else SCRIPTS / "flowctl.py"
 # zone-guard исполнителя Pi (J64.10, решение Заказчика 2026-11-11 «Прямо из
-# репо»): эталон в репо движка (рядом с flowctl — у зеркала раннера в проекте
-# skills/ нет), не копия в ~/.pi; нет файла — STOP стадии до ворот входа.
+# репо»): эталон в репо движка (корень рядом с flowctl), не копия в ~/.pi;
+# pi запускается с --no-extensions, копия на стадии не грузится. Нет файла —
+# STOP стадии до ворот входа (раннер — FACTORY-ONLY; при запуске вне фабрики
+# без движка STOP дает FACTORY_ENGINE_MISSING).
 ZONE_GUARD_REL = Path("skills") / "pm-factory" / "pi" / "zone-guard.ts"
 ZONE_GUARD = FLOWCTL.parent.parent / ZONE_GUARD_REL
 ZONE_GUARD_MISSING = "ZONE_GUARD_MISSING"
@@ -2042,7 +2044,10 @@ def cmd_run(plan_path: Path, dry_run: bool) -> int:
         # Env стенда stand-стадий пакета (J62) — всем последующим pi-стадиям.
         env.update(stand_env)
         args = ["pi", "--provider", provider, "--model", model,
-                "--no-session", "-e", str(ZONE_GUARD),
+                # --no-extensions: автозагрузка расширений (~/.pi/agent/
+                # extensions, .pi/ проекта, settings.json) выключена — на
+                # стадии действует только эталон guard'а (ревью J64.10)
+                "--no-session", "--no-extensions", "-e", str(ZONE_GUARD),
                 "-p", build_brief(manifest, stage, agents_file.name)]
         try:
             rc, out, err = run_pi(args, worktree, env, timeout)

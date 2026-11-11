@@ -27,6 +27,20 @@
   гоняется настоящим node с заглушкой ExtensionAPI (SKIP без node с
   поддержкой TypeScript).
 
+## Возврат ревью review-001 (1 major)
+
+pi сам грузит расширения из `~/.pi/agent/extensions/` (и `settings.json`,
+`.pi/` проекта): старая копия guard'а действовала бы на стадии рядом с
+эталоном (devops — отказ docker, лог в worktree → OUT_OF_ZONE, sha в отчете
+неполон). Исправлено: раннер запускает `pi --no-extensions -e <эталон>`
+(флаг pi: выключает найденные, сконфигурированные и встроенные расширения;
+явные `-e` грузятся). Minor: `.git/` не открывается никакой зоной (голые
+`*`/`**` — тоже); symlink раскрываются realpath; bash-эвристика — по
+токенам и слову команды звена (ловит `docker compose -f x up`,
+`container rm`, `sudo docker …`; не блокирует `git commit -m push-fix`,
+`echo docker rm`; неизвестная подкоманда docker — мутация, fail-closed);
+проба node — настоящим `.ts`; тесты крайних случаев путей.
+
 ## После мержа (Заказчик, VPS)
 
 Копия `~/.pi/agent/extensions/zone-guard.ts` разойдется с эталоном —
