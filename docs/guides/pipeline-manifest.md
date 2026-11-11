@@ -38,8 +38,15 @@ pipeline:
     `AGENTS.md`; если в worktree уже есть `AGENTS.md` проекта, проектный
     файл **не перезаписывается** — роль кладется рядом как `AGENTS.pi.md`
     с пометкой «читай вместе с AGENTS.md проекта» (Pi читает оба), бриф
-    упоминает нужный файл. Задает `PI_ZONE_WRITE` из `zones` и вызывает
-    `pi --no-session -e ~/.pi/agent/extensions/zone-guard.ts -p <бриф>`.
+    упоминает нужный файл. Задает `PI_ZONE_WRITE` из `zones`,
+    `PI_ZONE_ROLE` (роль политики: bash-правила guard'а) и
+    `PI_ZONE_GUARD_LOG` (лог отказов вне worktree:
+    `<state>/zone-guard/<пакет>.log`) и вызывает
+    `pi --no-session --no-extensions -e <фабрика>/skills/pm-factory/pi/zone-guard.ts -p <бриф>`
+    — guard из репо движка, автозагрузка расширений (копия в `~/.pi`,
+    `.pi/` проекта) выключена (J64.10); нет файла — STOP
+    `ZONE_GUARD_MISSING` до ворот входа, sha256 guard'а — в отчете стадии и
+    в `flow_gates.<стадия>.zone_guard_sha256` state раннера.
     Без `zones` раннер берет зону роли целиком из реестра `agents/roles.json`
     (`<id>` → change-id пакета, J65.1); `zones` в манифесте ее только сужает;
     у роли без зоны в реестре (auditor, debug) `zones` обязателен. Провайдер/модель берутся из
