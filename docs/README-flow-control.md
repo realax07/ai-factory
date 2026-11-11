@@ -228,6 +228,24 @@ devops) получает резервацию по политике роли (`R
 - Timeout/crash не продвигают шаг; worktree сохраняется; повторный run без нового решения отказывает.
 - Дропнутые при rollover отчеты делегаций — `state.db → async_delegations.result_json`.
 
+## Дисциплина роста ворот (J65.9)
+
+1. **Новый гейт** — только при повторе класса инцидента или при высокой цене
+   одиночного промаха (прод, данные, безопасность). Одиночный случай —
+   запись в бэклог, не гейт.
+2. **Фактура** — `flowctl gates-stats [--since D] [--until D] [--json]`:
+   сколько раз за период каждый гейт gate_runner дал PASS/FAIL/ERROR/SKIPPED,
+   какие коды отказа prepare (`flow_transition.REASON_CODES`) сработали и на
+   каких этапах, итоги циклов, дефекты finish, события энфорсера. Источники —
+   уже существующие отчеты (`<state>/gate-reports/`, `flowctl_state.json`,
+   `flow-enforcer.log`); не видны отказы prepare до записи цикла
+   (ZONE_OUTSIDE_POLICY, защищенные пути J3) и STOP раннера.
+3. **Квартальный пересмотр** — по `gates-stats` за квартал на машине
+   фабрики: гейт или код без срабатываний — удалить или перевести в
+   предупреждение; решение — Заказчик, резолюция — строкой в бэклоге J65.
+   Отсутствие срабатываний — повод спросить, а не удалить автоматически:
+   редкий, но дорогой промах (J3, ZONE_CONFLICT) оправдывает гейт.
+
 ## Кроны и вотчдоги (политика 2026-10-23)
 
 Реестр рекомендуемых кронов (та же таблица печатается `factory_init.py`,
@@ -266,7 +284,7 @@ devops) получает резервацию по политике роли (`R
 
 | Скрипт | Кто вызывает | Режим | Что делает |
 |---|---|---|---|
-| `flowctl.py` | ПМ/диспетчеризация, enforcer, delegate_gate | enforcing | Оркестратор: prepare/run/finish/status/reconcile/integrate/regress/phase; `close` — принятая делегация: finished → closed (J64.14) |
+| `flowctl.py` | ПМ/диспетчеризация, enforcer, delegate_gate | enforcing | Оркестратор: prepare/run/finish/status/reconcile/integrate/regress/phase; `close` — принятая делегация: finished → closed (J64.14); `gates-stats` — срабатывания гейтов и кодов отказа (J65.9, модуль `gates_stats.py`) |
 | `flow_state.py` | flowctl, flow_transition | read-only | Снимок фактов по scope (чистый) |
 | `flow_transition.py` | flowctl, enforcer | enforcing | ALLOW/DENY/UNKNOWN этапов + коды причин, графы флоу |
 | `session_check.py` | flowctl (prepare/finish) | enforcing | Резервация зон, post-check (OUT_OF_ZONE), reconcile |

@@ -70,6 +70,7 @@ Usage:
         [--pm-require-review] [--pr-id ID] [--log-dir D] [--report-dir D]
         [--registry PATH] [--state PATH] [--audit PATH] [--json]
     flowctl.py status [--correlation-id ID] [--registry PATH] [--state PATH]
+    flowctl.py gates-stats [--state PATH] [--since D] [--until D] [--json]  (J65.9)
     flowctl.py phase --repo PATH --project ID --flow N --scope S
         [--registry PATH] [--state PATH]
     flowctl.py reconcile [--repo PATH] [--delegation-id ID]
@@ -3245,6 +3246,14 @@ def main(argv: list[str] | None = None) -> int:
     p_cl.add_argument("--state", default=None)
     p_cl.add_argument("--json", action="store_true", dest="as_json")
     p_cl.set_defaults(func=cmd_close)
+
+    # J65.9: статистика срабатываний гейтов и кодов отказа (дисциплина роста
+    # ворот) — по уже существующим отчетам gate_runner, state и логу энфорсера.
+    import gates_stats  # noqa: E402  (ленивый импорт: только эта подкоманда)
+    p_gs = sub.add_parser(
+        "gates-stats", help="сколько раз срабатывал каждый гейт и код отказа (J65.9)")
+    gates_stats.add_arguments(p_gs)
+    p_gs.set_defaults(func=gates_stats.run)
 
     p_st = sub.add_parser("status", help="состояние циклов и сессий")
     p_st.add_argument("--correlation-id", default=None)
