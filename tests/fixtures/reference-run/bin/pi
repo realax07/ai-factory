@@ -31,7 +31,10 @@ def main(argv: list[str]) -> int:
     cwd = Path.cwd()
     for f in sorted(src.rglob("*")):
         if f.is_file():
-            dst = cwd / f.relative_to(src)
+            rel = f.relative_to(src)
+            # *.tmpl — файлы проекта, которые фабрика не должна видеть как свои
+            # (test_*.py фиктивного проекта: pytest и flow_check J66 фабрики)
+            dst = cwd / (rel.with_suffix("") if rel.suffix == ".tmpl" else rel)
             dst.parent.mkdir(parents=True, exist_ok=True)
             if dst.exists() and f.name.startswith("review-") and stage.endswith("-review"):
                 # повторная итерация ревью — дописать (история append-only)

@@ -46,10 +46,6 @@ from pathlib import Path
 
 import pytest
 
-# Эталонный прогон J65.10: tests/fixtures/ — данные проектов (там свои
-# test_*.py фиктивного проекта), не тесты фабрики.
-collect_ignore_glob = ["fixtures/*"]
-
 PLAN_FIXTURE_NAME = "PLAN-add-widget.md"
 # Шапка — как у backlog/J41-*.md (жирный Флоу-декларант обязателен).
 PLAN_FIXTURE_TEXT = (
