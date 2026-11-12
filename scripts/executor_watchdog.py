@@ -65,7 +65,9 @@ def managed_roots(registry: Path) -> set[str]:
              for k in ("repo", "worktree") if s.get(k)}
     for p in paths:
         roots.add(p)
-        main = main_clone(p)   # раннер пишет repo = worktree: корень — основной клон
+        # раннер пишет repo = worktree: корень — основной клон; каталога уже
+        # нет (снесенный worktree старой записи) — git не зовем (review-003)
+        main = main_clone(p) if os.path.isdir(p) else None
         for repo in {Path(p), *( [Path(main)] if main else [] )}:
             roots.add(str(repo))
             roots.add(str(repo.parent / f"{repo.name}-worktrees"))

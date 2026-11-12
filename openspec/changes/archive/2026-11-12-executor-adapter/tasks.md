@@ -6,4 +6,4 @@
 - [x] 3.1 agents/roles.json: provider/model; манифест provider/model; сверка паков
 - [x] 4.1 Вотчдог: обход любого исполнителя (журнал + live-процессы)
 - [x] 5.1 Тесты, гайд манифеста, README flow-control
-- [ ] 6.1 Ревью до approve; архивация change
+- [x] 6.1 Ревью до approve; архивация change

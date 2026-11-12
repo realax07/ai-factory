@@ -270,7 +270,9 @@ def test_real_interpreted_process_is_visible(tmp_path, monkeypatch):
                 "node --inspect pi.js"):
         assert not executors.runs_binary(cmd, "pi"), cmd
     for cmd in ("node --require x /opt/pi -p b", "python -X dev /opt/pi", "env -u FOO pi",
-                'sh -c "pi -p x"', "node --inspect /opt/pi"):
+                'sh -c "pi -p x"', "node --inspect /opt/pi",
+                # ревью review-003: флаги по интерпретатору, звенья sh -c
+                "python3 -u /x/pi", "bash -e /x/pi", 'bash -c "cd /x && pi -p y"'):
         assert executors.runs_binary(cmd, "pi"), cmd
     bindir = tmp_path / "bin"
     bindir.mkdir()

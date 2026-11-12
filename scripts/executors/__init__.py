@@ -184,19 +184,40 @@ INTERPRETER_RE = re.compile(r"^(node|nodejs|bun|deno|python[0-9.]*|pypy[0-9.]*|"
                             r"sh|bash|zsh|dash|env)$", re.I)
 
 
-# Флаги интерпретаторов: со значением (значение — следующее слово) и
-# «код вместо файла» (-m модуль, -c/-e строка: бинарь-файл не запускается).
-VALUE_FLAGS = {"-X", "-W", "-r", "--require", "--import", "--loader",
-               "--experimental-loader", "-u", "--unset", "-C", "--chdir",
-               "--inspect-port", "--title"}
-CODE_FLAGS = {"-m", "-c", "-e", "-p", "--eval", "--print"}
+# Флаги интерпретаторов — по интерпретатору (ревью review-003): со значением
+# (значение — следующее слово) и «код вместо файла» (-m модуль, -c/-e строка).
+VALUE_FLAGS = {
+    "python": {"-X", "-W", "--check-hash-based-pycs"},
+    "node": {"-r", "--require", "--import", "--loader", "--experimental-loader",
+             "--inspect-port", "--title", "--conditions", "-C"},
+    "env": {"-u", "--unset", "-C", "--chdir", "-S", "--split-string"},
+    "sh": {"-o", "+o"},
+}
+CODE_FLAGS = {
+    "python": {"-m", "-c"},
+    "node": {"-e", "-p", "--eval", "--print"},
+    "deno": {"eval"}, "bun": {"-e", "--eval"},
+    "sh": {"-c"},
+}
 SHELLS = {"sh", "bash", "zsh", "dash"}
+
+
+def _family(base: str) -> str:
+    b = base.lower()
+    if b.startswith(("python", "pypy")):
+        return "python"
+    if b in ("node", "nodejs"):
+        return "node"
+    if b in SHELLS:
+        return "sh"
+    return b
 
 
 def runs_binary(cmd: str, binary: str) -> bool:
     """Командная строка запускает бинарь: argv[0], или файл-аргумент
-    интерпретатора (флаги и их значения пропускаются, цепочка `env node …`),
-    или `sh -c "<бинарь> …"`. `python -m x`, `node -e …` — код, не файл."""
+    интерпретатора (его флаги и их значения пропускаются, цепочка `env node
+    …`), или любое звено `sh -c "<строка>"`. `python -m x`, `node -e …` —
+    код, не файл."""
     words = cmd.split()
     i = 0
     while i < len(words):
@@ -205,15 +226,17 @@ def runs_binary(cmd: str, binary: str) -> bool:
             return True
         if not INTERPRETER_RE.match(base):
             return False
-        shell = base in SHELLS
+        fam = _family(base)
         i += 1
-        while i < len(words) and (words[i].startswith("-") or "=" in words[i]):
-            flag = words[i]
-            if flag in CODE_FLAGS or (flag.startswith("--") and flag.split("=")[0] in CODE_FLAGS):
-                if shell and flag == "-c" and i + 1 < len(words):
-                    return runs_binary(" ".join(words[i + 1:]).strip("\"'"), binary)
+        while i < len(words) and (words[i].startswith(("-", "+")) or "=" in words[i]):
+            flag = words[i].split("=", 1)[0]
+            if flag in CODE_FLAGS.get(fam, ()):
+                if fam == "sh" and flag == "-c" and i + 1 < len(words):
+                    text = " ".join(words[i + 1:]).strip("\"'")
+                    return any(runs_binary(part.strip(), binary)
+                               for part in re.split(r"[;&|\n]+", text) if part.strip())
                 return False
-            i += 2 if flag in VALUE_FLAGS else 1
+            i += 2 if flag in VALUE_FLAGS.get(fam, ()) and "=" not in words[i] else 1
     return False
 
 
