@@ -37,6 +37,7 @@ sys.path.insert(0, str(FACTORY / "scripts"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import package_runner as pr  # noqa: E402
+from executors import pi as pi_exec  # noqa: E402
 import test_package_runner as tpr  # noqa: E402
 from test_package_runner import flow_gates_sandbox  # noqa: E402,F401  (autouse: ворота-заглушки)
 
@@ -56,14 +57,15 @@ def test_runner_uses_repo_guard_role_and_log(tmp_path, monkeypatch):
     assert pr.cmd_run(plan, dry_run=False) == 0
     (call,) = calls
     args, env = call["args"], call["env"]
-    assert Path(args[args.index("-e") + 1]) == GUARD == pr.ZONE_GUARD
+    assert Path(args[args.index("-e") + 1]) == GUARD == pi_exec.EXECUTOR.guard_path
     # автозагрузка расширений (копия в ~/.pi, .pi/ проекта) выключена
     assert "--no-extensions" in args and args.count("-e") == 1
     assert env["PI_ZONE_ROLE"] == "dev"
     log = Path(env["PI_ZONE_GUARD_LOG"])
     assert log.name == "express-x.log" and log.parent.name == "zone-guard"
     assert repo not in log.parents and Path(call["cwd"]) not in log.parents
-    sha = pr.file_sha256(GUARD)
+    import hashlib
+    sha = hashlib.sha256(GUARD.read_bytes()).hexdigest()
     state = pr.state_load(pr.state_path_for(plan))
     assert state["flow_gates"]["impl"]["zone_guard_sha256"] == sha
     (report,) = plan.with_name(plan.name + pr.REPORTS_SUFFIX).glob("impl-*.md")
@@ -73,7 +75,7 @@ def test_runner_uses_repo_guard_role_and_log(tmp_path, monkeypatch):
 def test_runner_stops_without_guard(tmp_path, monkeypatch, capsys):
     """TC-J64-ZG-002."""
     repo, plan, calls = _run(tmp_path, monkeypatch)
-    monkeypatch.setattr(pr, "ZONE_GUARD", tmp_path / "нет" / "zone-guard.ts")
+    monkeypatch.setattr(pi_exec.EXECUTOR, "guard_path", tmp_path / "нет" / "zone-guard.ts")
     entered: list = []
     monkeypatch.setattr(pr, "gate_new", lambda *a: entered.append(a))
     assert pr.cmd_run(plan, dry_run=False) == 2
@@ -243,5 +245,5 @@ def test_guard_paths_edge_cases(guard_call, tmp_path):
 def test_single_guard_source():
     """TC-J64-ZG-004."""
     import factory_bootstrap as fb
-    assert fb.ZONE_GUARD_SRC == GUARD == pr.ZONE_GUARD and GUARD.is_file()
+    assert fb.ZONE_GUARD_SRC == GUARD == pi_exec.EXECUTOR.guard_path and GUARD.is_file()
     assert not list((FACTORY / "skills").rglob("extensions/zone-guard.ts"))

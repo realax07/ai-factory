@@ -304,7 +304,9 @@ devops) получает резервацию по политике роли (`R
 | `package_runner.py` | ПМ (`package_runner.py <PLAN> [--dry-run]`) | enforcing | Пакетный раннер по манифесту `pipeline:`: стадии `pi:<роль>` через prepare/run/finish, сверка git diff с зоной, коммит стадии; `gate:`/`hermes:` стадии (J62/J63) |
 | `ci_local.py` | ПМ/dev до push | manual | `pytest tests/` + flow_check в условиях CI: клон глубины 1, пустой HOME (J65.12) |
 | `delegate_gate.py` | ПМ перед каждым диспатчем | enforcing | Обертка prepare→run→finish: делегация не существует вне flowctl |
-| `delegate_watchdog.py` | крон */5 (на паузе — включается ПМ после проверки эвристики, см. «Кроны и вотчдоги»), вручную | detect | Обход flowctl: делегация с непустым project вне реестра → BYPASS (Н18: project-less диспатчи ПМ — норма) |
+| `delegate_watchdog.py` | крон */5 (на паузе — включается ПМ после проверки эвристики, см. «Кроны и вотчдоги»), вручную | detect | Обход flowctl: делегация с непустым project вне реестра → BYPASS (Н18: project-less диспатчи ПМ — норма); плюс обход исполнителей-процессов (executor_watchdog, J65.5) |
+| `executor_watchdog.py` | из delegate_watchdog, вручную | detect | Процесс исполнителя агентов (pi, stub, …) вне живой резервации реестра сессий → BYPASS `proc:<исполнитель>:<pid>`; журнал запусков раннера `executor_runs.jsonl` отличает сбой раннера от ручного запуска (J65.5) |
+| `executors/` | раннер, вотчдоги | — | Исполнители агентных стадий: интерфейс + `pi`, `hermes`, `stub`; новый исполнитель — один модуль (J65.5 + J64.7) |
 | `session_watchdog.py` | крон */5 (deliver=origin, политика 2026-10-23) | detect | DM-роутинг: залипшие ключи, тайтл main, dropped-делегации, контаминация; чисто = пустой stdout = молчание |
 | `stand_reaper.py` | крон 0 * * * * (deliver=local) + вручную/приемка | manual | Гашение осиротевших тестовых стендов (J29); в чат только если скрипт упал |
 | `session_archive.py` | ПМ при приемке делегаций | manual | Архив транскриптов + детерминированный разбор неуспеха (E16) |

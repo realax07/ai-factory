@@ -178,7 +178,7 @@ def _run(tmp_path, monkeypatch, review_text):
     monkeypatch.setattr(pr, "run_shell",
                         lambda cmd, cwd, timeout, stand_env=None: (0, "", ""))
     monkeypatch.setattr(pr, "ensure_worktree", lambda r, sid, br: r)
-    monkeypatch.setattr(pr, "pi_provider_model", lambda role: ("p", "m"))
+    monkeypatch.setattr(pr, "role_model", lambda stage: ("p", "m"))
     head_before = pr._git_head(repo)
     rc = pr.cmd_run(repo / "PLAN-x.md", dry_run=False)
     return repo, rc, head_before
