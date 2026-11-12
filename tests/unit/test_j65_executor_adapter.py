@@ -265,24 +265,31 @@ def test_real_interpreted_process_is_visible(tmp_path, monkeypatch):
     assert executors.runs_binary("/usr/bin/env -S node --x /opt/pi", "pi")
     assert not executors.runs_binary("vim pi", "pi")
     assert not executors.runs_binary("python3 notpi.py", "pi")
+    # ревью review-002: код вместо файла — не запуск; флаги со значением и sh -c
+    for cmd in ("python3 -m pi", "python3 -c pi", "node -e pi", 'bash -c "vim pi"',
+                "node --inspect pi.js"):
+        assert not executors.runs_binary(cmd, "pi"), cmd
+    for cmd in ("node --require x /opt/pi -p b", "python -X dev /opt/pi", "env -u FOO pi",
+                'sh -c "pi -p x"', "node --inspect /opt/pi"):
+        assert executors.runs_binary(cmd, "pi"), cmd
     bindir = tmp_path / "bin"
     bindir.mkdir()
     script = bindir / "pi"
-    script.write_text("#!/usr/bin/env python3\nimport time\ntime.sleep(60)\n",
+    # процесс блокируется на stdin (без пауз в тестах — спека qa-pipeline)
+    script.write_text("#!/usr/bin/env python3\nimport sys\nsys.stdin.read()\n",
                       encoding="utf-8")
     script.chmod(0o755)
     repo = tmp_path / "proj"
     wt = tmp_path / "proj-worktrees" / "x"
     wt.mkdir(parents=True)
     repo.mkdir(exist_ok=True)   # J41-фикстура conftest уже создала proj
-    proc = subprocess.Popen([str(script), "-p", "brief"], cwd=wt)
+    proc = subprocess.Popen([str(script), "-p", "brief"], cwd=wt,
+                            stdin=subprocess.PIPE)
     try:
         found = []
-        for _ in range(50):
+        deadline = time.monotonic() + 20
+        while not found and time.monotonic() < deadline:   # опрос ps — без пауз
             found = [r for r in executors.get("pi").list_active() if r.pid == proc.pid]
-            if found:
-                break
-            time.sleep(0.1)
         assert found and found[0].cwd == os.path.realpath(wt), found
         reg = tmp_path / "reg.json"
         reg.write_text(json.dumps({"sessions": [
@@ -296,7 +303,7 @@ def test_real_interpreted_process_is_visible(tmp_path, monkeypatch):
         assert not [f for f in ew.scan(reg, None, names=["pi"]) if f["pid"] == proc.pid]
     finally:
         proc.kill()
-        proc.wait()
+        proc.communicate()
 
 
 def test_watchdog_paths_follow_runner_env(tmp_path, monkeypatch):
@@ -309,8 +316,37 @@ def test_watchdog_paths_follow_runner_env(tmp_path, monkeypatch):
     monkeypatch.setenv("PIPELINE_FLOW_STATE", str(tmp_path / "s" / "flowctl_state.json"))
     assert ew.default_paths() == (tmp_path / "r.json", tmp_path / "s" / ew.RUNS_JOURNAL)
     assert pr.flow_paths()[1].parent / pr.EXECUTOR_RUNS == ew.default_paths()[1]
+    monkeypatch.delenv("PIPELINE_FLOW_STATE")       # только реестр — журнал рядом
+    assert pr.flow_paths()[1].parent / pr.EXECUTOR_RUNS == ew.default_paths()[1]
 
     def boom(*a, **k):
         raise RuntimeError("broken executor")
     monkeypatch.setattr(ew, "scan", boom)
     assert dw.executor_bypasses() == []
+
+
+def test_watchdog_finds_main_clone_of_runner_worktree(tmp_path, monkeypatch):
+    """TC-J65-EXE-006 (ревью review-002): раннер пишет в реестр repo = worktree
+    пакета — основной клон и соседние worktree все равно проекты конвейера
+    (git --git-common-dir): ручной запуск там — BYPASS."""
+    import os
+    import subprocess
+    import executor_watchdog as ew
+    env = dict(os.environ, GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM="1")
+    main = tmp_path / "proj"
+    main.mkdir(exist_ok=True)
+    subprocess.run(["git", "init", "-q", str(main)], check=True, env=env)
+    subprocess.run(["git", "-C", str(main), "-c", "user.email=t@t", "-c", "user.name=t",
+                    "commit", "-q", "--allow-empty", "-m", "i"], check=True, env=env)
+    wt = tmp_path / "proj-worktrees" / "pkg"
+    subprocess.run(["git", "-C", str(main), "worktree", "add", "-q", str(wt)],
+                   check=True, env=env)
+    reg = tmp_path / "reg.json"
+    reg.write_text(json.dumps({"sessions": [
+        {"delegation_id": "d", "status": "closed", "repo": str(wt), "worktree": str(wt)}]}),
+        encoding="utf-8")
+    mod = types.ModuleType("executors.procx")
+    mod.EXECUTOR = ProcExecutor([executors.ActiveRun("procx", 21, str(main), "procx")])
+    monkeypatch.setitem(sys.modules, "executors.procx", mod)
+    found = ew.scan(reg, None, names=["procx"])
+    assert [f["delegation_id"] for f in found] == ["proc:procx:21"]

@@ -61,14 +61,30 @@ def managed_roots(registry: Path) -> set[str]:
     исполнителя вне них — не наш проект (интерактивный Pi в чужом каталоге),
     инцидентом не считается (ревью review-001 m1)."""
     roots: set[str] = set()
-    for s in _sessions(registry):
-        for key in ("repo", "worktree"):
-            if s.get(key):
-                roots.add(_real(str(s[key])))
-        if s.get("repo"):
-            repo = Path(_real(str(s["repo"])))
+    paths = {_real(str(s[k])) for s in _sessions(registry)
+             for k in ("repo", "worktree") if s.get(k)}
+    for p in paths:
+        roots.add(p)
+        main = main_clone(p)   # раннер пишет repo = worktree: корень — основной клон
+        for repo in {Path(p), *( [Path(main)] if main else [] )}:
+            roots.add(str(repo))
             roots.add(str(repo.parent / f"{repo.name}-worktrees"))
     return roots
+
+
+def main_clone(path: str) -> str | None:
+    """Основной клон для пути worktree (git --git-common-dir); нет git — None."""
+    import subprocess
+    try:
+        out = subprocess.run(["git", "-C", path, "rev-parse", "--path-format=absolute",
+                              "--git-common-dir"], capture_output=True, text=True,
+                             timeout=10)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if out.returncode != 0 or not out.stdout.strip():
+        return None
+    common = Path(out.stdout.strip())
+    return _real(str(common.parent if common.name == ".git" else common))
 
 
 def default_paths() -> tuple[Path, Path]:
@@ -76,7 +92,10 @@ def default_paths() -> tuple[Path, Path]:
     / PIPELINE_FLOW_STATE (второй экземпляр фабрики, тесты), иначе state
     движка (ревью review-001 m2)."""
     registry = Path(os.environ.get("PIPELINE_FLOW_REGISTRY") or fp.registry_path())
-    state = Path(os.environ.get("PIPELINE_FLOW_STATE") or fp.flowctl_state_path())
+    # как package_runner.flow_paths + flowctl.default_state_path: state рядом
+    # с реестром, если PIPELINE_FLOW_STATE не задан (ревью review-002)
+    state = Path(os.environ.get("PIPELINE_FLOW_STATE")
+                 or registry.parent / "flowctl_state.json")
     return registry, state.parent / RUNS_JOURNAL
 
 

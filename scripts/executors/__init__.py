@@ -25,6 +25,7 @@ import os
 import pkgutil
 import re
 import subprocess
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -101,10 +102,19 @@ class Executor:
 
 
 def names() -> list[str]:
-    """Имена всех исполнителей (модули пакета с EXECUTOR)."""
+    """Имена всех исполнителей (модули пакета с EXECUTOR). Сломанный модуль
+    пропускается с WARN — он не роняет остальных (ревью review-002)."""
     out = []
     for info in pkgutil.iter_modules(__path__):
-        if NAME_RE.match(info.name) and get(info.name, required=False) is not None:
+        if not NAME_RE.match(info.name):
+            continue
+        try:
+            ok = get(info.name, required=False) is not None
+        except Exception as exc:   # noqa: BLE001 — чужой модуль, любая ошибка
+            print(f"WARN: исполнитель {info.name} не загружен ({exc!r})",
+                  file=sys.stderr)
+            continue
+        if ok:
             out.append(info.name)
     return sorted(out)
 
@@ -174,9 +184,19 @@ INTERPRETER_RE = re.compile(r"^(node|nodejs|bun|deno|python[0-9.]*|pypy[0-9.]*|"
                             r"sh|bash|zsh|dash|env)$", re.I)
 
 
+# Флаги интерпретаторов: со значением (значение — следующее слово) и
+# «код вместо файла» (-m модуль, -c/-e строка: бинарь-файл не запускается).
+VALUE_FLAGS = {"-X", "-W", "-r", "--require", "--import", "--loader",
+               "--experimental-loader", "-u", "--unset", "-C", "--chdir",
+               "--inspect-port", "--title"}
+CODE_FLAGS = {"-m", "-c", "-e", "-p", "--eval", "--print"}
+SHELLS = {"sh", "bash", "zsh", "dash"}
+
+
 def runs_binary(cmd: str, binary: str) -> bool:
-    """Командная строка запускает бинарь: argv[0] или первый не-флаговый
-    аргумент интерпретатора (через цепочку `env node …`)."""
+    """Командная строка запускает бинарь: argv[0], или файл-аргумент
+    интерпретатора (флаги и их значения пропускаются, цепочка `env node …`),
+    или `sh -c "<бинарь> …"`. `python -m x`, `node -e …` — код, не файл."""
     words = cmd.split()
     i = 0
     while i < len(words):
@@ -185,9 +205,15 @@ def runs_binary(cmd: str, binary: str) -> bool:
             return True
         if not INTERPRETER_RE.match(base):
             return False
+        shell = base in SHELLS
         i += 1
         while i < len(words) and (words[i].startswith("-") or "=" in words[i]):
-            i += 1   # флаги интерпретатора и VAR=val у env
+            flag = words[i]
+            if flag in CODE_FLAGS or (flag.startswith("--") and flag.split("=")[0] in CODE_FLAGS):
+                if shell and flag == "-c" and i + 1 < len(words):
+                    return runs_binary(" ".join(words[i + 1:]).strip("\"'"), binary)
+                return False
+            i += 2 if flag in VALUE_FLAGS else 1
     return False
 
 
