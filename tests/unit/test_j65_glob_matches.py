@@ -75,3 +75,15 @@ def test_tz04_contracts_kept():
     assert sc.glob_matches("a/**/b", "a/b") and sc.glob_matches("a/**/b", "a/x/y/b")
     assert sc.glob_matches("**", "any/path") and not sc.glob_matches("a/**/*", "a")
     assert not sc.glob_matches("", "a") and not sc.glob_matches("a/*", "")
+    # ревью review-001: '..'/'.'/пустой сегмент в пути — нет совпадения; '//' и
+    # подряд '**' в паттерне схлопываются; патологические '**' — быстро
+    assert not sc.glob_matches("openspec/changes/*/specs/**",
+                               "openspec/changes/x/specs/../../../scripts/a.py")
+    import role_zone_policy as rzp2
+    assert rzp2.narrow_zones("sa", ["openspec/changes/x/specs/../../../scripts/a.py"])["violations"]
+    assert sc.glob_matches("a/**//b", "a/b") and sc.glob_matches("a/**/**/b", "a/b")
+    import time
+    t = time.monotonic()
+    assert not sc.glob_matches("/".join(["**"] * 2 + ["x", "**"] * 6 + ["z"]),
+                               "/".join(["s"] * 40))
+    assert time.monotonic() - t < 1.0

@@ -131,16 +131,29 @@ def glob_matches(pattern: str, rel: str) -> bool:
         # '**' буквально: 'openspec/changes/*/specs/**' не матчил
         # 'openspec/changes/x/specs/a/spec.md' (СА не мог запросить конкретный
         # spec.md — ревью J65.10 review-002), а 'a/**/*' матчил сам 'a'.
-        psegs, usegs = pat.split("/"), path.split("/")
+        usegs = path.split("/")
+        # путь с '..', '.' или пустым сегментом зоной не матчится (canonical
+        # их не схлопывает; ревью glob-matches review-001)
+        if any(u in ("", ".", "..") for u in usegs):
+            return False
+        psegs: list[str] = []
+        for seg in pat.split("/"):
+            if seg and not (seg == "**" and psegs and psegs[-1] == "**"):
+                psegs.append(seg)   # '//' и подряд '**' схлопываются
+        memo: dict[tuple[int, int], bool] = {}
 
-        def rec(i: int, j: int) -> bool:
-            while i < len(psegs):
-                if psegs[i] == "**":
-                    return any(rec(i + 1, k) for k in range(j, len(usegs) + 1))
-                if j >= len(usegs) or not fnmatch.fnmatchcase(usegs[j], psegs[i]):
-                    return False
-                i, j = i + 1, j + 1
-            return j == len(usegs)
+        def rec(i: int, j: int) -> bool:   # O(|pat|·|path|) с memo
+            key = (i, j)
+            if key not in memo:
+                if i == len(psegs):
+                    memo[key] = j == len(usegs)
+                elif psegs[i] == "**":
+                    memo[key] = rec(i + 1, j) or (j < len(usegs) and rec(i, j + 1))
+                else:
+                    memo[key] = (j < len(usegs)
+                                 and fnmatch.fnmatchcase(usegs[j], psegs[i])
+                                 and rec(i + 1, j + 1))
+            return memo[key]
         return rec(0, 0)
     return path == pat or path.startswith(pat + "/")
 
