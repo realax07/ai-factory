@@ -1,0 +1,42 @@
+# Code review 001: executor-adapter (J65.5 + J64.7)
+
+Commit: 80f44a2019e894eb5a28171c4fdd8be9d0014cfe (`git diff origin/main...HEAD`, 25 файлов, +1180/−128)
+Ветка: chore/executor-adapter (worktree /Users/ekotov/AI/ai-factory-x)
+Ревьюер: code_reviewer (независимая сессия, автор диффа — не я)
+Прогоны:
+- `pytest tests/unit/test_j65_executor_adapter.py tests/unit/test_package_runner.py tests/unit/test_j64_dev_per_task.py tests/unit/test_j64_zone_guard.py tests/unit/test_j65_reference_run.py tests/unit/test_j65_review_verdict.py tests/unit/test_j65_pi_review_j10.py tests/unit/test_bug026_init_imports.py -q -p no:cacheprovider` (AF_STATE_DIR/HERMES_HOME — временные каталоги): **169 passed**;
+- `python scripts/flow_check.py .`: OK;
+- `openspec validate --all --strict`: **не проверено** — openspec CLI на машине ревьюера отсутствует (ни в PATH, ни через npx); проверка за CI/ПМ;
+- ручной смок `executors.active_by_binary("pi","pi")` против запущенного shebang-скрипта `./psbin/pi` (macOS): `[]` — см. замечание M1.
+
+Итог: раннер и манифест — без регрессов для старых планов, интерфейс и role_model — по ТЗ; вотчдог обхода на реальных процессах не видит интерпретируемые исполнители (включая stub-фикстуру и, вероятно, сам Pi — npm/node CLI). Это major по критерию приемки ТЗ «вотчдог видит обход для любого исполнителя» → return.
+
+## Что проверено
+
+1. Регрессы kind `pi→agent`, `hermes→manual`:
+   - parse_manifest: `run: pi:<роль>` → agent/executor=pi, `run: hermes:<роль>` → manual; старые планы парсятся как раньше (gate:/stand: приоритетнее имен исполнителей);
+   - все бывшие ветки `kind == "pi"` переведены: record_review_provenance (package_runner.py:722), per_task (517, 853), expand_per_task — review-под-стадия наследует executor dev-стадии (881), optional/shelve (`cleanup` вместо agents_file; попутно снят прежний NameError на agents_file при отказе gate_begin у optional), verdict/resume-ветки не завязаны на kind;
+   - resume старого state: в state не хранится kind стадии (манифест перечитывается), ключ `zone_guard_sha256` по-прежнему пишется из preflight pi — совместимо;
+   - формат коммита стадии `[pipeline] <pkg>/<stage>: <run_label>` — для pi идентичен прежнему (`pi:<роль>`); grep scripts/ и plugins/ (pm_bounds_check, pr_validate, flow_check, enforcer INTEGRATE_MARKERS, gates_stats, session_archive): потребители смотрят только маркер `[pipeline]`, хвост `pi:` никто не парсит.
+2. Интерфейс: get() не маскирует сломанный модуль (ModuleNotFoundError чужого имени и прочие ImportError/SyntaxError пробрасываются), имя ограничено `^[a-z][a-z0-9_]*$` (без выхода из пакета). Для claude-code/qwen следующим пакетом достаточно: argv+env, prepare_workdir, preflight с provenance, list_active.
+3. role_model: роль ищется по `pack`, дефолтов в коде нет (DEFAULT_PROVIDER/MODEL удалены), MODEL_UNRESOLVED — до gate_new (ворот входа). roles.json ↔ settings.example.json паков совпадают (TC-J65-EXE-004), кроме auditor (см. m5).
+4. Вотчдог: резервации раннера несут worktree (flowctl prepare `--worktree`, _zone_begin → `worktree` в reserve); журнал executor_runs.jsonl пишется в тот же каталог state, что читает вотчдог (flow_paths()[1].parent == registry.parent при дефолтах); окно «pi до резервации» отсутствует — резервация (gate_begin) раньше spawn.
+5. Спека: дельта ADDED, требования с MUST/MAY/MUST NOT, сценарии GIVEN/WHEN/THEN; дельта в архиве дословно совпадает с добавленным в openspec/specs/deterministic-flow/spec.md (контракт 7 — слияние есть).
+
+## Замечания
+
+| # | Уровень | Место | Сценарий / суть | Рекомендация |
+|---|---|---|---|---|
+| M1 | **major** | scripts/executors/__init__.py:157-167 (`active_by_binary`), pi.py:59, stub.py:41 | Детект процесса по basename **argv[0]**. Интерпретируемый исполнитель в `ps -o args` виден как `<интерпретатор> <путь>/pi …` (проверено на macOS: shebang-скрипт `./psbin/pi` → args `…/Python ./psbin/pi --provider x`, `active_by_binary` → `[]`). Pi — npm CLI (`@earendil-works/pi-coding-agent`, `#!/usr/bin/env node`) → в ps `node …/bin/pi …`: ручной запуск pi мимо раннера вотчдогу, скорее всего, **не виден** (если Pi не переписывает process.title — не подтверждено). stub-фикстура `tests/fixtures/reference-run/bin/pi` — python-скрипт — тоже невидима. Критерий приемки ТЗ J65.5 «вотчдог видит обход для любого исполнителя» на реальных процессах не выполнен; TC-J65-EXE-006 подменяет list_active и ps/lsof не покрывает. | Матчить basename argv[0] **или** argv[1] при argv[0] из интерпретаторов (node/python*/bun/deno), либо разбирать argv shlex-ом; добавить тест, который реально спавнит shebang-скрипт `pi` во временном cwd и ждет его в `executors.get("pi").list_active()` (Linux + macOS). |
+| m1 | minor | scripts/executor_watchdog.py:72-94 | Любой процесс `pi` на машине вне живой резервации — BYPASS: документированный ручной pi-auditor («ручной вызов ПМ», roles.json), интерактивный Pi в чужом проекте, другие бинари с именем `pi`. Каждый новый pid — новый id `proc:pi:<pid>` → [PM-INSTRUCTION] в канал (политика «вотчдоги молчат штатно»). Спека-сценарий говорит «в worktree запущен процесс». | Ограничить кандидатов cwd внутри git-деревьев известных репо/worktree фабрики (или пометкой env исполнителя), либо явный allowlist ручных ролей (auditor). |
+| m2 | minor | scripts/executor_watchdog.py:110, delegate_watchdog.py:203 | Вотчдог читает реестр по `fp.registry_path()`, раннер — с учетом `PIPELINE_FLOW_REGISTRY`/`PIPELINE_FLOW_STATE` (package_runner.py:1266). Второй инстанс/переопределенный реестр → живые резервации не видны → ложный BYPASS. | Использовать тот же резолвер путей (вынести flow_paths в factory_paths или читать те же env). |
+| m3 | minor | scripts/executor_watchdog.py:75-77, executors/__init__.py:96-101 | Сломанный модуль исполнителя (SyntaxError/ImportError) в `names()`/`get(required=False)` роняет весь delegate_watchdog — вместе с проверкой Hermes; в parse_manifest — сообщение «неизвестный исполнитель» тоже строится через names() и упадет на чужом сломанном модуле. Не маскирование, но выпадение всей охраны. | В scan/names ловить исключение по модулю: WARN/инцидент `executor_broken:<имя>` и продолжать остальных. |
+| m4 | minor | scripts/package_runner.py:1653 (`# Отчет pi:`), 2209 (журнал `pi:{payload} \| ok`), 2202 (`"pi ok"`), 1636 (`AGENTS.pi.md` в excludes stash) | Хардкод `pi` в отчете стадии и строке журнала плана: для `stub:dev` журнал пишет `pi:dev \| ok` — требование «сообщения и журнал — run_label» выполнено не полностью. Excludes stash — мертвый для не-pi (файлы cleanup удаляются раньше), но вводит в заблуждение. | `run_label(stage)` в обоих местах; excludes — из `cleanup`. |
+| m5 | minor | agents/roles.json (auditor: `provider: kimi`, `model: "kimi k3.1-pro"`), package_runner.py role_model | Поля auditor были описательными («модель — флагами CLI»), теперь это источник раннера: стадия `pi:auditor` (с явными zones) получит `--provider kimi --model "kimi k3.1-pro"` — значение с пробелом похоже на отображаемое имя, а не id модели Pi CLI; раньше раннер брал glm-5.3-flash из settings пака. На боевых планах auditor не стадия (zones пусты → ManifestError без явных zones), так что влияние только потенциальное. | Привести к id, который принимает `pi --model` (например `k3.1-pro`), или пометить роль как не-раннерную (role_model → MODEL_UNRESOLVED/ManifestError для `in_table: false`). |
+| m6 | minor | scripts/package_runner.py:1971-1975, StageLaunch.zones | Pi-специфика в раннере: путь роль-паков `skills/pm-factory/pi/role-packs/<роль>/role-agents.md` и передача только префикс-формы зон (normalize_zone — формат zone-guard pi). claude-code/qwen-исполнителю для своего guard'а нужны исходные globs. | Передавать в StageLaunch и glob-зоны (`zones_glob`), нормализацию — в pi.command; путь роли — через метод исполнителя/общий каталог ролей. |
+| m7 | minor | scripts/executors/__init__.py:139 | `ps -axo` — BSD-форма; на procps-ng работает, на BusyBox — нет. | `ps -eo pid=,args=` (POSIX, macOS и Linux). |
+| m8 | minor | openspec/changes/archive/2026-11-12-executor-adapter/tasks.md (6.1 `[ ]`) | Пакет заархивирован и дельта слита в master-spec до approve ревью; задача 6.1 «Ревью до approve; архивация» открыта в архиве. При return правки спеки пойдут уже в master. | Закрыть 6.1 после approve; на будущее — архивация после ревью. |
+
+Не проверено: `openspec validate --all --strict` (нет CLI), реальный Pi CLI (нет на машине — вид процесса Pi в ps не подтвержден), Linux-ветка /proc, полный сьют (за ПМ).
+
+## Вердикт: return

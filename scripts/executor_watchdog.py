@@ -3,9 +3,11 @@
 
 Вотчдог делегаций Hermes (delegate_watchdog) видит только delegate_task.
 Здесь — исполнители-процессы (pi, stub, …, `scripts/executors/`): активный
-запуск исполнителя, чей рабочий каталог не совпадает с worktree живой
+запуск исполнителя в каталоге проекта конвейера (репо, известное реестру,
+его worktree), чей рабочий каталог не совпадает с worktree живой
 резервации реестра сессий (reserved/running/finished/needs_attention), —
-обход ворот (раннер всегда резервирует worktree пакета до запуска). Ручные
+обход ворот (раннер всегда резервирует worktree пакета до запуска). Процесс
+вне проектов конвейера инцидентом не считается. Ручные
 исполнители (hermes) пропускаются: их сверяет delegate_watchdog.
 
 Журнал запусков раннера (`<state>/executor_runs.jsonl`) дополняет инцидент:
@@ -40,14 +42,42 @@ def _real(path: str) -> str:
         return path
 
 
-def live_worktrees(registry: Path) -> set[str]:
+def _sessions(registry: Path) -> list[dict]:
     try:
         data = json.loads(registry.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
-        return set()
-    return {_real(s["worktree"]) for s in data.get("sessions", [])
-            if isinstance(s, dict) and s.get("worktree")
-            and s.get("status", "reserved") in LIVE}
+        return []
+    return [s for s in data.get("sessions", []) if isinstance(s, dict)]
+
+
+def live_worktrees(registry: Path) -> set[str]:
+    return {_real(s["worktree"]) for s in _sessions(registry)
+            if s.get("worktree") and s.get("status", "reserved") in LIVE}
+
+
+def managed_roots(registry: Path) -> set[str]:
+    """Каталоги проектов конвейера, известных реестру (любой статус): репо,
+    его `<repo>-worktrees/` (session_worktree.sh) и worktree записей. Процесс
+    исполнителя вне них — не наш проект (интерактивный Pi в чужом каталоге),
+    инцидентом не считается (ревью review-001 m1)."""
+    roots: set[str] = set()
+    for s in _sessions(registry):
+        for key in ("repo", "worktree"):
+            if s.get(key):
+                roots.add(_real(str(s[key])))
+        if s.get("repo"):
+            repo = Path(_real(str(s["repo"])))
+            roots.add(str(repo.parent / f"{repo.name}-worktrees"))
+    return roots
+
+
+def default_paths() -> tuple[Path, Path]:
+    """Реестр и журнал запусков — те же, что у раннера: PIPELINE_FLOW_REGISTRY
+    / PIPELINE_FLOW_STATE (второй экземпляр фабрики, тесты), иначе state
+    движка (ревью review-001 m2)."""
+    registry = Path(os.environ.get("PIPELINE_FLOW_REGISTRY") or fp.registry_path())
+    state = Path(os.environ.get("PIPELINE_FLOW_STATE") or fp.flowctl_state_path())
+    return registry, state.parent / RUNS_JOURNAL
 
 
 def open_runner_starts(journal: Path) -> dict[str, dict]:
@@ -74,6 +104,7 @@ def scan(registry: Path, journal: Path | None = None,
          names: list[str] | None = None) -> list[dict]:
     """Обходы: активные запуски исполнителей-процессов вне живых резерваций."""
     live = live_worktrees(registry)
+    roots = managed_roots(registry)
     starts = open_runner_starts(journal) if journal else {}
     found = []
     for name in names if names is not None else executors.names():
@@ -84,6 +115,8 @@ def scan(registry: Path, journal: Path | None = None,
             cwd = _real(run.cwd)
             if any(cwd == w or cwd.startswith(w + os.sep) for w in live):
                 continue
+            if not any(cwd == r or cwd.startswith(r + os.sep) for r in roots):
+                continue   # каталог вне проектов конвейера
             start = starts.get(cwd)
             found.append({
                 "delegation_id": f"proc:{name}:{run.pid}",
@@ -104,8 +137,11 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--registry", default=None)
     ap.add_argument("--json", action="store_true", dest="as_json")
     args = ap.parse_args(argv)
-    registry = Path(args.registry) if args.registry else fp.registry_path()
-    found = scan(registry, registry.parent / RUNS_JOURNAL)
+    registry, journal = default_paths()
+    if args.registry:
+        registry = Path(args.registry)
+        journal = registry.parent / RUNS_JOURNAL
+    found = scan(registry, journal)
     if args.as_json:
         print(json.dumps(found, ensure_ascii=False, indent=2))
     elif found:

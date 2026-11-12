@@ -48,11 +48,12 @@ class StageLaunch:
     flow_role: str         # роль политики (dev, code_reviewer, …)
     workdir: Path          # worktree пакета
     brief: str             # бриф стадии (собирает раннер)
-    zones: list[str]       # зоны записи — префикс-форма (normalize_zone)
+    zones: list[str]       # зоны записи — префикс-форма (normalize_zone, guard pi)
     provider: str
     model: str
     package: str
     env: dict = field(default_factory=dict)   # env процесса (раннер: os.environ + стенд)
+    zone_globs: list[str] = field(default_factory=list)   # зоны манифеста как есть
 
 
 @dataclass
@@ -135,7 +136,7 @@ def get(name: str, required: bool = True) -> Executor | None:
 def processes() -> list[tuple[int, str]]:
     """(pid, командная строка) процессов машины; недоступно — []."""
     try:
-        out = subprocess.run(["ps", "-axo", "pid=,args="], capture_output=True,
+        out = subprocess.run(["ps", "-eo", "pid=,args="], capture_output=True,
                              text=True, timeout=10).stdout
     except (OSError, subprocess.SubprocessError):
         return []
@@ -166,13 +167,36 @@ def process_cwd(pid: int) -> str | None:
     return None
 
 
+# Интерпретаторы: исполнитель на node/python/… виден в ps как
+# `<интерпретатор> [флаги] …/<бинарь> …` (Pi — npm-пакет на node; ревью
+# executor-adapter review-001).
+INTERPRETER_RE = re.compile(r"^(node|nodejs|bun|deno|python[0-9.]*|pypy[0-9.]*|"
+                            r"sh|bash|zsh|dash|env)$", re.I)
+
+
+def runs_binary(cmd: str, binary: str) -> bool:
+    """Командная строка запускает бинарь: argv[0] или первый не-флаговый
+    аргумент интерпретатора (через цепочку `env node …`)."""
+    words = cmd.split()
+    i = 0
+    while i < len(words):
+        base = os.path.basename(words[i])
+        if base == binary:
+            return True
+        if not INTERPRETER_RE.match(base):
+            return False
+        i += 1
+        while i < len(words) and (words[i].startswith("-") or "=" in words[i]):
+            i += 1   # флаги интерпретатора и VAR=val у env
+    return False
+
+
 def active_by_binary(executor: str, binary: str) -> list[ActiveRun]:
-    """Активные процессы, чей argv[0] — указанный бинарь (по имени файла)."""
+    """Активные процессы исполнителя (по имени бинаря, в т.ч. под интерпретатором)."""
     own = os.getpid()
     runs = []
     for pid, cmd in processes():
-        argv0 = cmd.split(" ", 1)[0]
-        if pid == own or os.path.basename(argv0) != binary:
+        if pid == own or not runs_binary(cmd, binary):
             continue
         cwd = process_cwd(pid)
         if cwd:

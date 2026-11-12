@@ -356,7 +356,7 @@
       "prompt": null,
       "in_table": false,
       "pack_note": "read-only guard, ручной вызов ПМ; модель — флагами CLI поверх settings.example.json",
-      "model": "kimi k3.1-pro",
+      "model": "k3.1-pro",
       "provider": "kimi"
     }
   ]

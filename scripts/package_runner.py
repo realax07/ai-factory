@@ -1633,7 +1633,7 @@ def shelve_attempt(worktree: Path, base_sha: str, label: str) -> str:
                              f"--soft {base_sha[:12]}): "
                              f"{reset.stderr.strip() or reset.stdout.strip()}")
     excludes = [f":(exclude){p}"
-                for p in (*COMMIT_EXCLUDE, "AGENTS.pi.md")]
+                for p in (*COMMIT_EXCLUDE, *(f"AGENTS.{n}.md" for n in executors.names()))]
     proc = subprocess.run(
         ["git", "-C", str(worktree), "stash", "push", "-u", "-m", label,
          "--", ".", *excludes], capture_output=True, text=True)
@@ -1645,12 +1645,12 @@ def shelve_attempt(worktree: Path, base_sha: str, label: str) -> str:
 
 def write_report(plan_path: Path, stage: dict, attempt: int,
                  stdout: str, stderr: str, provenance: str = "") -> Path:
-    """Отчет агента для finish (указатель на файлы — хвост вывода pi)."""
+    """Отчет агента для finish (указатель на файлы — хвост вывода исполнителя)."""
     rdir = plan_path.with_name(plan_path.name + REPORTS_SUFFIX)
     rdir.mkdir(parents=True, exist_ok=True)
     path = rdir / f"{stage['id']}-{attempt}.md"
     path.write_text(
-        f"# Отчет pi:{stage['payload']} — stage {stage['id']} "
+        f"# Отчет {run_label(stage)} — stage {stage['id']} "
         f"(попытка {attempt})\n\n"
         + (f"{provenance}\n\n" if provenance else "")
         + "## stdout\n\n```\n"
@@ -2069,8 +2069,10 @@ def cmd_run(plan_path: Path, dry_run: bool) -> int:
         launch = StageLaunch(
             role=stage["payload"], flow_role=flow_role(stage["payload"]),
             workdir=worktree, brief=build_brief(manifest, stage, agents_name),
-            # зоны — в префикс-форме guard'а: срез glob-хвостов (J61, BUG-026)
+            # зоны — в префикс-форме guard'а: срез glob-хвостов (J61, BUG-026);
+            # исходные glob-зоны — для исполнителей со своей охраной (J65.5)
             zones=[normalize_zone(z) for z in stage["zones"]],
+            zone_globs=list(stage["zones"]),
             provider=provider, model=model, package=manifest["package"],
             # env стенда stand-стадий пакета (J62) — всем последующим стадиям
             env={**os.environ, **stand_env})
@@ -2199,14 +2201,14 @@ def cmd_run(plan_path: Path, dry_run: bool) -> int:
                 return _stop(stage, str(exc), None)
             print(f"RUNNER: задача {stage['per_task_review']} закрыта в tasks.md "
                   f"({closed_commit or 'уже закрыта'})")
-        state_record(state, stage["id"], "done", "pi ok", 0, out, err)
+        state_record(state, stage["id"], "done", f"{stage['executor']} ok", 0, out, err)
         state_write(spath, state)
         try:
             log_append(plan_path, stage, "ok", out, err)
         except OSError:
             pass
         journal_append(plan_path, f"{utcnow_iso()} | stage {stage['id']} | "
-                       f"pi:{stage['payload']} | ok")
+                       f"{run_label(stage)} | ok")
         done.add(stage["id"])
 
     # J64.14: пакет докатан — gc может снести worktree (маркер пакета).

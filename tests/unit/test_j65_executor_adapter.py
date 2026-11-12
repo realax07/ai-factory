@@ -17,10 +17,13 @@
                   модель флагами CLI, pack_note)
   TC-J65-EXE-005  журнал запусков: start/end с исполнителем, делегацией,
                   workdir; исполнитель недоступен — STOP до ворот входа
-  TC-J65-EXE-006  вотчдог: процесс исполнителя вне живой резервации — BYPASS
-                  (с пометкой незакрытого start раннера); в worktree живой
-                  резервации — чисто; ручные исполнители пропускаются;
-                  delegate_watchdog сводит находки в общий канал
+  TC-J65-EXE-006  вотчдог: процесс исполнителя в проекте конвейера вне живой
+                  резервации — BYPASS (с пометкой незакрытого start раннера);
+                  в worktree живой резервации и вне проектов конвейера —
+                  чисто; ручные исполнители пропускаются; delegate_watchdog
+                  сводит находки в общий канал; на настоящем процессе:
+                  исполнитель под интерпретатором (shebang `pi` на python)
+                  виден через ps/cwd
   TC-J65-EXE-007  hermes: делегации из state.db; активные — list_active;
                   delegate_watchdog читает реестр через исполнитель
   TC-J65-EXE-008  эталонный прогон J65.10 на исполнителе `stub:` — те же
@@ -103,7 +106,7 @@ def test_model_resolution(tmp_path, monkeypatch, capsys):
     assert pr.role_model({"payload": "code-reviewer"}) == ("zai-glm", "glm-5.3-flash")
     assert pr.role_model({"payload": "dev", "model": "m2"}) == ("zai-glm", "m2")
     assert pr.role_model({"payload": "dev", "provider": "p2", "model": "m2"}) == ("p2", "m2")
-    assert pr.role_model({"payload": "auditor"}) == ("kimi", "kimi k3.1-pro")
+    assert pr.role_model({"payload": "auditor"}) == ("kimi", "k3.1-pro")
     assert pr.role_model({"payload": "no-such-pack"}) is None
     repo = tpr.make_repo(tmp_path)
     bad = tpr.VALID.replace("run: check\n", "run: check\n").replace(
@@ -172,21 +175,27 @@ class ProcExecutor(executors.Executor):
 def test_watchdog_sees_bypass_of_any_executor(tmp_path, monkeypatch):
     """TC-J65-EXE-006."""
     import executor_watchdog as ew
-    wt_live, wt_gone, stray = (tmp_path / n for n in ("live", "gone", "stray"))
-    for d in (wt_live, wt_gone, stray):
-        d.mkdir()
+    repo = tmp_path / "proj"
+    wts = tmp_path / "proj-worktrees"
+    wt_live, wt_gone, stray, alien = (wts / "live", wts / "gone", repo / "sub",
+                                      tmp_path / "other-project")
+    for d in (wt_live, wt_gone, stray, alien):
+        d.mkdir(parents=True)
     reg = tmp_path / "active_sessions.json"
     reg.write_text(json.dumps({"sessions": [
-        {"delegation_id": "d1", "status": "running", "worktree": str(wt_live)},
-        {"delegation_id": "d2", "status": "closed", "worktree": str(wt_gone)}]}),
-        encoding="utf-8")
+        {"delegation_id": "d1", "status": "running", "repo": str(repo),
+         "worktree": str(wt_live)},
+        {"delegation_id": "d2", "status": "closed", "repo": str(repo),
+         "worktree": str(wt_gone)}]}), encoding="utf-8")
     journal = tmp_path / "executor_runs.jsonl"
     journal.write_text(json.dumps({"event": "start", "executor": "procx",
                                    "workdir": str(wt_gone), "delegation_id": "d2"}) + "\n",
                        encoding="utf-8")
     runs = [executors.ActiveRun("procx", 11, str(wt_live / "sub"), "procx -p x"),
             executors.ActiveRun("procx", 12, str(wt_gone), "procx -p y"),
-            executors.ActiveRun("procx", 13, str(stray), "procx -p z")]
+            executors.ActiveRun("procx", 13, str(stray), "procx -p z"),
+            # чужой проект (интерактивный Pi вне конвейера) — не инцидент
+            executors.ActiveRun("procx", 14, str(alien), "procx")]
     mod = types.ModuleType("executors.procx")
     mod.EXECUTOR = ProcExecutor(runs)
     monkeypatch.setitem(sys.modules, "executors.procx", mod)
@@ -242,3 +251,66 @@ def test_reference_run_on_stub_executor(tmp_path):
     assert {k: v["status"] for k, v in state["stages"].items()}["dev-1.2-review"] == "done"
     assert all(g.get("executor") == "stub" for g in state["flow_gates"].values())
     assert ref.registry(env).count(("dev", "closed")) == 2
+
+
+def test_real_interpreted_process_is_visible(tmp_path, monkeypatch):
+    """TC-J65-EXE-006: настоящий процесс `pi` под интерпретатором (как Pi на
+    node или stub на python) — виден list_active, его cwd — каталог запуска;
+    вне резервации проекта конвейера — BYPASS."""
+    import os
+    import subprocess
+    import time
+    import executor_watchdog as ew
+    assert executors.runs_binary("node /usr/lib/node_modules/pi/bin/pi -p x", "pi")
+    assert executors.runs_binary("/usr/bin/env -S node --x /opt/pi", "pi")
+    assert not executors.runs_binary("vim pi", "pi")
+    assert not executors.runs_binary("python3 notpi.py", "pi")
+    bindir = tmp_path / "bin"
+    bindir.mkdir()
+    script = bindir / "pi"
+    script.write_text("#!/usr/bin/env python3\nimport time\ntime.sleep(60)\n",
+                      encoding="utf-8")
+    script.chmod(0o755)
+    repo = tmp_path / "proj"
+    wt = tmp_path / "proj-worktrees" / "x"
+    wt.mkdir(parents=True)
+    repo.mkdir(exist_ok=True)   # J41-фикстура conftest уже создала proj
+    proc = subprocess.Popen([str(script), "-p", "brief"], cwd=wt)
+    try:
+        found = []
+        for _ in range(50):
+            found = [r for r in executors.get("pi").list_active() if r.pid == proc.pid]
+            if found:
+                break
+            time.sleep(0.1)
+        assert found and found[0].cwd == os.path.realpath(wt), found
+        reg = tmp_path / "reg.json"
+        reg.write_text(json.dumps({"sessions": [
+            {"delegation_id": "old", "status": "released", "repo": str(repo),
+             "worktree": str(wt)}]}), encoding="utf-8")
+        hits = [f for f in ew.scan(reg, None, names=["pi"]) if f["pid"] == proc.pid]
+        assert hits and hits[0]["delegation_id"] == f"proc:pi:{proc.pid}"
+        reg.write_text(json.dumps({"sessions": [
+            {"delegation_id": "live", "status": "running", "repo": str(repo),
+             "worktree": str(wt)}]}), encoding="utf-8")
+        assert not [f for f in ew.scan(reg, None, names=["pi"]) if f["pid"] == proc.pid]
+    finally:
+        proc.kill()
+        proc.wait()
+
+
+def test_watchdog_paths_follow_runner_env(tmp_path, monkeypatch):
+    """TC-J65-EXE-006: реестр и журнал вотчдога — те же, что у раннера
+    (PIPELINE_FLOW_REGISTRY / PIPELINE_FLOW_STATE); сломанный исполнитель не
+    роняет delegate_watchdog."""
+    import executor_watchdog as ew
+    import delegate_watchdog as dw
+    monkeypatch.setenv("PIPELINE_FLOW_REGISTRY", str(tmp_path / "r.json"))
+    monkeypatch.setenv("PIPELINE_FLOW_STATE", str(tmp_path / "s" / "flowctl_state.json"))
+    assert ew.default_paths() == (tmp_path / "r.json", tmp_path / "s" / ew.RUNS_JOURNAL)
+    assert pr.flow_paths()[1].parent / pr.EXECUTOR_RUNS == ew.default_paths()[1]
+
+    def boom(*a, **k):
+        raise RuntimeError("broken executor")
+    monkeypatch.setattr(ew, "scan", boom)
+    assert dw.executor_bypasses() == []

@@ -204,8 +204,12 @@ def executor_bypasses() -> list[dict]:
         import executor_watchdog
     except ImportError:
         return []
-    registry = fp.registry_path()
-    return executor_watchdog.scan(registry, registry.parent / executor_watchdog.RUNS_JOURNAL)
+    try:
+        registry, journal = executor_watchdog.default_paths()
+        return executor_watchdog.scan(registry, journal)
+    except Exception as exc:   # сломанный исполнитель не роняет сверку Hermes
+        print(f"WARN: сверка исполнителей не выполнена ({exc!r})", file=sys.stderr)
+        return []
 
 
 def main() -> int:
