@@ -179,9 +179,9 @@ def test_a1_valid_manifest_parsed():
     m = pr.parse_manifest(write_tmp_plan(VALID))
     assert m["package"] == "demo-pkg"
     assert m["flow"] == 4
-    kinds = [(s["kind"], s["payload"]) for s in m["stages"]]
-    assert kinds == [("pi", "dev"), ("gate", "python3 scripts/flow_check.py"),
-                     ("hermes", "pm")]
+    kinds = [(s["kind"], s["executor"], s["payload"]) for s in m["stages"]]
+    assert kinds == [("agent", "pi", "dev"), ("gate", "", "python3 scripts/flow_check.py"),
+                     ("manual", "hermes", "pm")]
     assert m["stages"][0]["zones"] == ["backend/**", "tests/**"]
     assert m["stages"][0]["inputs"] == ["openspec/changes/demo/spec.md"]
 

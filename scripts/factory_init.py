@@ -16,8 +16,8 @@ MKDIRS ниже; они и есть источник правды):
     (пути машины, J64.5), impact_rules.json (J58);
   - копии ядра Flow Control: flow_state, flow_transition, session_check,
     gate_runner, flowctl, flow_mode, role_zone_policy, flow_scope_check и их
-    зависимости flow_ids (J65.3), gates_stats (J65.9) и agents/roles.json
-    (реестр ролей, J65.1);
+    зависимости flow_ids (J65.3), gates_stats (J65.9), executor_watchdog и
+    пакет executors/ (J65.5) и agents/roles.json (реестр ролей, J65.1);
     работает экземпляр фабрики (--repo проекта), копии — для автономности;
   - контракты, шаблоны (constitution, task_delegation, pm_launch),
     .github/workflows/flow.yml, промпты ролей agents/*.md (шапка с sha
@@ -336,6 +336,12 @@ FLOW_CONTROL_FILES = [
     "scripts/gate_runner.py",
     "scripts/flowctl.py",
     "scripts/gates_stats.py",  # J65.9: flowctl gates-stats (импорт flowctl, BUG-026)
+    # J65.5: исполнители агентов и вотчдог их обхода (импорт delegate_watchdog)
+    "scripts/executor_watchdog.py",
+    "scripts/executors/__init__.py",
+    "scripts/executors/pi.py",
+    "scripts/executors/hermes.py",
+    "scripts/executors/stub.py",
     "scripts/flow_mode.py",
     "scripts/role_zone_policy.py",
     "scripts/flow_scope_check.py",

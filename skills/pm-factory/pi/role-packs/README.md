@@ -41,7 +41,7 @@
 | [`architect/`](architect/README.md) | architect (`agents/architect_agent.md`) | **glm-5.3** | zai-glm | `architecture/**`, `test-model/reviews/<id>/review-*-architecture.md` |
 | [`devops/`](devops/README.md) | devops (`agents/devops_agent.md`) | **glm-5.3-flash** | zai-glm | `deploy/**`, `ops/**`, `.github/workflows/**` (боевой деплой — только по утверждению ПМ, hermes-стоп) |
 | [`design-validator/`](design-validator/README.md) | design_validator (`agents/design_validator_agent.md`) | **glm-5.3-flash** | zai-glm | `test-model/reviews/<id>/review-*-design.md` |
-| [`auditor/`](auditor/README.md) | auditor — Аудитор (pi-auditor, вне конвейера) | **kimi k3.1-pro** | kimi | только чтение (read-only guard, ручной вызов ПМ; модель — флагами CLI поверх settings.example.json) |
+| [`auditor/`](auditor/README.md) | auditor — Аудитор (pi-auditor, вне конвейера) | **k3.1-pro** | kimi | только чтение (read-only guard, ручной вызов ПМ; модель — флагами CLI поверх settings.example.json) |
 <!-- roles:packs:end -->
 
 Распределение моделей — регруп J59 + досборка flash-паков J62: семантический

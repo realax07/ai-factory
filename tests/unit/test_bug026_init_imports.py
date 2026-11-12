@@ -31,6 +31,15 @@ import factory_init as fi  # noqa: E402
 COPIED = [p for p in fi.COPY_FILES + fi.FLOW_CONTROL_FILES if p.endswith(".py")]
 
 
+def _module(rel: str) -> str:
+    """scripts/x.py → x; scripts/executors/pi.py → executors.pi;
+    scripts/executors/__init__.py → executors (пакеты, J65.5)."""
+    parts = list(Path(rel).relative_to("scripts").with_suffix("").parts)
+    if parts[-1] == "__init__":
+        parts.pop()
+    return ".".join(parts)
+
+
 def _factory_imports(rel: str) -> set[str]:
     tree = ast.parse((FACTORY / rel).read_text(encoding="utf-8"))
     mods: set[str] = set()
@@ -40,12 +49,13 @@ def _factory_imports(rel: str) -> set[str]:
         elif isinstance(node, ast.ImportFrom) and node.module and node.level == 0:
             mods.add(node.module.split(".")[0])
     local = {p.stem for p in (FACTORY / "scripts").glob("*.py")}
+    local |= {p.parent.name for p in (FACTORY / "scripts").glob("*/__init__.py")}
     return mods & local
 
 
 def test_copied_scripts_bring_their_imports():
     """TC-BUG-026-001"""
-    copied = {Path(p).stem for p in COPIED}
+    copied = {_module(p).split(".")[0] for p in COPIED}
     missing = {rel: sorted(_factory_imports(rel) - copied) for rel in COPIED}
     missing = {k: v for k, v in missing.items() if v}
     assert not missing, missing
@@ -60,7 +70,7 @@ def test_engine_copies_import_standalone(tmp_path):
         dst = tmp_path / rel
         dst.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(FACTORY / rel, dst)
-    for mod in sorted(Path(rel).stem for rel in COPIED):
+    for mod in sorted(_module(rel) for rel in COPIED):
         proc = subprocess.run(
             [sys.executable, "-I", "-c",
              f"import sys; sys.path.insert(0, {str(scripts)!r}); import {mod}"],
