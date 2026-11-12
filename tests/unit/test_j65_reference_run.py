@@ -269,9 +269,8 @@ def test_pattern_subset_never_widens():
     пар паттернов из алфавита сегментов: _pattern_lang_subset(sub, sup) ⇒
     каждый путь, который матчит sub, матчит и sup. Оракул — семантика зон
     (`*` — один сегмент, `**` — любое число, включая ноль; паттерн без
-    glob — каталог со вложенными), а не session_check.glob_matches: у той
-    glob перед `**` сравнивается как литерал префикса (`*/**` — ровно два
-    сегмента; кандидат в бэклог J65.10)."""
+    glob — каталог со вложенными), независимый от session_check.glob_matches
+    (их совпадение держит TC-J65-GLB-001)."""
     import fnmatch
     import itertools
     sys.path.insert(0, str(FACTORY / "scripts"))
