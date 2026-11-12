@@ -145,11 +145,17 @@ def get(name: str, required: bool = True) -> Executor | None:
 
 def processes() -> list[tuple[int, str]]:
     """(pid, командная строка) процессов машины; недоступно — []."""
-    try:
-        out = subprocess.run(["ps", "-eo", "pid=,args="], capture_output=True,
-                             text=True, timeout=10).stdout
-    except (OSError, subprocess.SubprocessError):
-        return []
+    # -ww: без обрезки командной строки по ширине (procps режет args, и имя
+    # бинаря в длинном пути теряется); BusyBox без -ww — запасной вызов
+    out = ""
+    for argv in (["ps", "-ww", "-eo", "pid=,args="], ["ps", "-eo", "pid=,args="]):
+        try:
+            proc = subprocess.run(argv, capture_output=True, text=True, timeout=10)
+        except (OSError, subprocess.SubprocessError):
+            continue
+        if proc.returncode == 0:
+            out = proc.stdout
+            break
     rows = []
     for line in out.splitlines():
         pid, _, cmd = line.strip().partition(" ")

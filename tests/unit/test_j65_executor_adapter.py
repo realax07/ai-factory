@@ -292,7 +292,9 @@ def test_real_interpreted_process_is_visible(tmp_path, monkeypatch):
         deadline = time.monotonic() + 20
         while not found and time.monotonic() < deadline:   # опрос ps — без пауз
             found = [r for r in executors.get("pi").list_active() if r.pid == proc.pid]
-        assert found and found[0].cwd == os.path.realpath(wt), found
+        rows = [r for r in executors.processes() if r[0] == proc.pid]
+        assert found and found[0].cwd == os.path.realpath(wt), (
+            found, rows, executors.process_cwd(proc.pid))
         reg = tmp_path / "reg.json"
         reg.write_text(json.dumps({"sessions": [
             {"delegation_id": "old", "status": "released", "repo": str(repo),
