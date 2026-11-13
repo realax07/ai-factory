@@ -18,7 +18,7 @@
 ## 2. Модели и конфигурация
 
 - Основная модель ПМ: `glm-5.3-flash @ zai`. Смена модели — только `hermes config set` (config.yaml руками не редактировать).
-- Исполнители ролей — Pi роль-паки (J59/J62): SA/архитектор/DEV/BA — `glm-5.3`, остальные роли — `glm-5.3-flash`, аудитор — Kimi `k3.1-pro` (вручную). Модель и провайдер роли для раннера — `agents/roles.json` (J65.5; стадия манифеста может переопределить), `settings.example.json` паков с ним сверяется тестом. Исполнитель стадии сменный (`scripts/executors/`: pi, stub, hermes; Claude Code и Codex — следующими). Ключи провайдеров — `~/.pi/agent/models.json` (chmod 600), оглавление паков — `skills/pm-factory/pi/role-packs/README.md`.
+- Исполнители ролей — Pi роль-паки (J59/J62): SA/архитектор/DEV/BA — `glm-5.3`, остальные роли — `glm-5.3-flash`, аудитор — Kimi `k3.1-pro` (вручную). Модель и провайдер роли для раннера — `agents/roles.json` (J65.5; стадия манифеста может переопределить), `settings.example.json` паков с ним сверяется тестом. Исполнитель стадии сменный (`scripts/executors/`: pi и stub, hermes — стоп-точка ПМ; другие кодагенты — Claude Code, Codex, Qwen — следующими). Ключи провайдеров — `~/.pi/agent/models.json` (chmod 600), оглавление паков — `skills/pm-factory/pi/role-packs/README.md`.
 - Секреты — в `~/.hermes/.env`, настройки — в config.yaml.
 - Пути машины — env (`AF_STATE_DIR`, `HERMES_HOME`, `AI_FACTORY_HOME`, `AF_PROJECTS_ROOT`, `PI_AGENT_DIR`), дефолты и сверка контекстов — `python3 scripts/factory_paths.py [--doctor LABEL | --compare …]` (J64.5, J65.12).
 
