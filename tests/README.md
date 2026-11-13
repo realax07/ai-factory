@@ -7,6 +7,12 @@
 (`test-model/test-layout.json`). Ссылки на `tests/test_*.py` в ревью,
 баг-репортах и архивах — исторические пути до переноса (append-only).
 
+Фикстуры: `tests/fixtures/reference-run/` — эталонный прогон J65.10
+(фиктивный проект, выходы агентов по стадиям, заглушка исполнителя
+`bin/pi`); тест — `tests/unit/test_j65_reference_run.py`, он же на
+исполнителе `stub:` — `test_j65_executor_adapter.py`. Тесты фиктивного
+проекта лежат как `*.py.tmpl`: pytest и flow_check фабрики их не собирают.
+
 ## J48 — инцидент-протокол Флоу 3 (change add-incident-protocol)
 
 Файл: `tests/unit/test_j48_incident_protocol.py` (TC-J48-001…032).

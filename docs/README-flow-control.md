@@ -206,21 +206,39 @@ dev-lead, ПМ git не трогает.**
   closed, зона свободна (иначе держится до ручного разбора). Стадии раннера
   закрывает сам раннер после коммита стадии.
 
-## Пакетный раннер Pi (J62/J63)
+## Пакетный раннер (J62/J63, исполнители — J65.5)
 
 Боевой путь ролей с 2026-11: план пакета (`PLAN-<id>.md` со строкой `Флоу: N`)
 несет манифест `pipeline:`; `scripts/package_runner.py` гонит стадии по порядку.
-Стадия `pi:<роль>` — роль-пак Pi в worktree с zone-guard и проходит те же ворота,
-что делегация: `flowctl prepare → run → pi → finish post_agent`, затем сверка
-реального `git diff` с зоной (запись через bash тоже), коммит стадии в ветку
-пакета и закрытие резервации. Роль без этапа во флоу (ba, regress-runner,
-devops) получает резервацию по политике роли (`ROLE_WITHOUT_STAGE`). Стадии
-`gate:<команда>` — ворота, `hermes:<роль>` — стоп-точка ПМ. Отказ — STOP с кодом
-(DENY, ZONE_OUTSIDE_POLICY, ZONE_CONFLICT, OUT_OF_ZONE, красный гейт), повторный
-запуск продолжает со state. Гайд и примеры — `docs/guides/pipeline-manifest.md`.
+Агентная стадия `<исполнитель>:<роль>` (`pi:dev`; `stub:` — заглушка
+эталонного прогона; новый исполнитель — модуль `scripts/executors/<имя>.py`)
+проходит те же ворота, что делегация, одинаково для любого исполнителя:
+готовность исполнителя (у pi — zone-guard из репо фабрики, нет —
+`ZONE_GUARD_MISSING`) → `flowctl prepare → run` → агент → `finish post_agent`,
+затем сверка реального `git diff` с зоной (запись через bash тоже), коммит
+стадии в ветку пакета и закрытие резервации. Модель и провайдер роли — из
+`agents/roles.json`, стадия может переопределить (`provider:`/`model:`); не
+заданы — `MODEL_UNRESOLVED`. Роль без этапа во флоу (ba, regress-runner,
+devops) получает резервацию по политике роли (`ROLE_WITHOUT_STAGE`).
+`per_task: true` у dev разворачивает стадию по открытым задачам `tasks.md` в
+порядке зависимостей; с `review:` — пары «dev → ревью задачи», чекбокс ставит
+раннер после approve (J64.13). Стадии `gate:<команда>` — ворота,
+`stand:<команда>` — стенд, `hermes:<роль>` — стоп-точка ПМ. Отказ — STOP с
+кодом (DENY, ZONE_OUTSIDE_POLICY, ZONE_CONFLICT, OUT_OF_ZONE, красный гейт),
+повторный запуск продолжает со state. Гайд и примеры —
+`docs/guides/pipeline-manifest.md`.
 
-Вердикт review-стадии — единый парсер `flow_check.parse_verdict` + аудит-запись provenance раннера (J65.4). Граница: запуск `pi`
-мимо раннера не ловится ни раннером, ни delegate_watchdog (J65.5).
+Вердикт review-стадии — единый парсер `flow_check.parse_verdict` + аудит-запись
+provenance раннера (J65.4) и штамп Reviewer-Delegation для PR-ворот J10
+(J65.4b). Каждый запуск исполнителя пишется в `<state>/executor_runs.jsonl`;
+процесс исполнителя в каталоге проекта конвейера без живой резервации —
+BYPASS `proc:<исполнитель>:<pid>` (`executor_watchdog`, вызывается
+delegate_watchdog). Граница: исполнитель под чужим именем бинаря и
+переменные-команды не видны.
+
+Самопроверка: эталонный прогон `tests/fixtures/reference-run/` (Флоу 1 через
+раннер на настоящих воротах, заменен только агент) — в сьюте на каждом PR
+(J65.10).
 
 ## Инциденты и recovery
 
@@ -259,7 +277,7 @@ devops) получает резервацию по политике роли (`R
 |---|---|---|---|
 | `session-watchdog` | `*/5 * * * *` | origin | чисто (no_agent, пустой stdout) = ничего не доставляется; аномалия (залипшая сессия/ключ, dropped-делегация) → в чат |
 | `stand-reaper-hourly` | `0 * * * *` | local | сироты стендов гасятся локально, ПМ проверяет на приемке; в чат только если сам скрипт упал |
-| `delegate-watchdog` | `*/5 * * * *` | origin | на паузе; включается ПМ ПОСЛЕ проверки починенной эвристики (project-less диспатчи ПМ = норма, Н18): прогон clean, exit 0 → deliver=origin |
+| `delegate-watchdog` | `*/5 * * * *` | origin | на паузе; включается ПМ ПОСЛЕ проверки починенной эвристики (project-less диспатчи ПМ = норма, Н18): прогон clean, exit 0 → deliver=origin. С J65.5 тот же прогон сверяет и процессы исполнителей (executor_watchdog) |
 | `state-backup` | `15 3 * * *` | local | `state_backup.py backup` (J64.6): архив state в `AF_BACKUP_DIR`, ротация 14; чисто = молчание; копию вывозить вне VPS — RUNBOOK `docs/runbook-factory-move.md` |
 | `watchdog-daily-digest` | — | — | НЕ СОЗДАВАТЬ: упразднен решением Заказчика 2026-10-23 (тогда же удален pm-instruction-relay; артефакты — `archive/pm-instruction-channel/`) |
 
@@ -296,12 +314,13 @@ devops) получает резервацию по политике роли (`R
 | `flow_check.py` | CI job `flow`, gate_runner | GitHub-enforced + ворота | Ворота state machine: артефакты, трассировка, правило 6; раскладка и стек тестов по `test-model/test-layout.json` (J66); единый парсер вердикта ревью (J65.4) |
 | `flow_mode.py` | ПМ (вручную) | config | Переключатель shadow/enforcing |
 | `pr_validate.py` | CI job `flow`, gate_runner | GitHub-enforced + ворота | PR-ворота: маркер/стадия, артефакты контрактов, J58-правила (вкл. pr_body IR-05/06) |
-| `pm_bounds_check.py` | gate_runner, ПМ | enforcing | Границы записи ПМ: защищенные пути, реестр сессий, продукт-коммиты |
+| `pm_bounds_check.py` | gate_runner, ПМ | enforcing | Границы записи ПМ: защищенные пути, реестр сессий (повтор project/owner_pm — только среди незавершенных записей, J65.10), продукт-коммиты |
 | `role_zone_policy.py` | session_check/flowctl (import) | enforcing | Политика зон записи ролей (источник — реестр `agents/roles.json`, версия — его sha256; J65.1) |
 | `gen_role_docs.py` | ПМ после правки реестра, тест (`--check`) | manual | Таблица зон `agents/README.md`, оглавление роль-паков и блок зоны в README каждого пака (glob и `PI_ZONE_WRITE`) из `agents/roles.json` |
 | `flow_ids.py` | flow_state/flowctl/flow_transition (import), энфорсер (import или fallback-копия) | enforcing | Грамматика scope флоу 1–5 (J65.3); `python3 scripts/flow_ids.py <flow> <scope>` — ручная проверка |
 | `factory_paths.py` | все скрипты ворот (import), ПМ | config | Пути машины из env (J64.5); `--doctor LABEL` / `--compare` — сверка контекстов шелл/крон/Hermes (J65.12) |
-| `package_runner.py` | ПМ (`package_runner.py <PLAN> [--dry-run]`) | enforcing | Пакетный раннер по манифесту `pipeline:`: стадии `pi:<роль>` через prepare/run/finish, сверка git diff с зоной, коммит стадии; `gate:`/`hermes:` стадии (J62/J63) |
+| `package_runner.py` | ПМ (`package_runner.py <PLAN> [--dry-run]`) | enforcing | Пакетный раннер по манифесту `pipeline:`: агентные стадии `<исполнитель>:<роль>` (J65.5) через prepare/run/finish, сверка git diff с зоной, коммит стадии; `per_task` с парным ревью (J64.13); `gate:`/`stand:`/`hermes:` стадии (J62/J63); журнал запусков `executor_runs.jsonl` |
+| `gates_stats.py` | `flowctl gates-stats`, ПМ при квартальном пересмотре | detect | Срабатывания гейтов и кодов отказа по существующим отчетам (J65.9) |
 | `ci_local.py` | ПМ/dev до push | manual | `pytest tests/` + flow_check в условиях CI: клон глубины 1, пустой HOME (J65.12) |
 | `delegate_gate.py` | ПМ перед каждым диспатчем | enforcing | Обертка prepare→run→finish: делегация не существует вне flowctl |
 | `delegate_watchdog.py` | крон */5 (на паузе — включается ПМ после проверки эвристики, см. «Кроны и вотчдоги»), вручную | detect | Обход flowctl: делегация с непустым project вне реестра → BYPASS (Н18: project-less диспатчи ПМ — норма); плюс обход исполнителей-процессов (executor_watchdog, J65.5) |
