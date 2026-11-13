@@ -11,7 +11,7 @@ When planning a phase or wave, PARTITION it into independent contours (disjoint 
 
 ## External copilot agents (Codex and similar)
 
-An external agent attached to the repo (Codex as copilot) is an EXTERNAL delegation, not a Hermes subagent: its outputs are pointers to files, not proof; commits only via PR and standard gates; in provenance-sidecar it figures as author_delegation `codex:<id>` (otherwise reviewer independence computes wrong); write zones — from the role's policy, session_check reservation required; customer decisions are never passed to it verbally. Rationale lives in the factory AGENTS.md section «Внешние агенты-copilot».
+An external agent attached to the repo (Codex as copilot) is an EXTERNAL delegation, not a Hermes subagent: its outputs are pointers to files, not proof; commits only via PR and standard gates; in provenance-sidecar it figures as author_delegation `codex:<id>` (otherwise reviewer independence computes wrong); write zones — from the role's policy, session_check reservation required; customer decisions are never passed to it verbally. Rule: factory AGENTS.md п.21; rationale — archive/agents-md/AGENTS-2026-11-13.md «Внешние агенты-copilot».
 
 ## Branch practice (customer order)
 

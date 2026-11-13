@@ -48,13 +48,22 @@ def test_enforcement_map_matches_rules():
 
 
 def test_rule_references_resolve():
-    """TC-J65-AGC-003."""
+    """TC-J65-AGC-003: ссылки в обоих порядках («AGENTS.md п.N», «правило N
+    AGENTS.md»); смысл правил, на которые ссылается код: п.7 — история, п.10
+    — параллель/зоны, п.11 — worktree, п.4 — push."""
     out = subprocess.run(["git", "-C", str(FACTORY), "grep", "-hoE",
-                          r"AGENTS\.md (п\. ?|правило )[0-9]+", "--", "scripts", "plugins",
-                          "docs", "agents", "contracts", "templates", "skills"],
+                          r"AGENTS\.md (п\. ?|правило )[0-9]+|(п\. ?|правило )[0-9]+ AGENTS\.md",
+                          "--", "scripts", "plugins", "docs", "agents", "contracts",
+                          "templates", "skills"],
                          capture_output=True, text=True).stdout
-    refs = {int(re.search(r"(\d+)$", r).group(1)) for r in out.splitlines()}
+    refs = {int(re.search(r"(\d+)", r.replace("AGENTS", "")).group(1))
+            for r in out.splitlines()}
     assert refs and refs <= set(rule_numbers()), sorted(refs - set(rule_numbers()))
+    body = AGENTS.read_text(encoding="utf-8").split("## Правила", 1)[1]
+    rules = dict(re.findall(r"^(\d+)\. (.+)$", body, re.M))
+    for num, word in (("4", "Push"), ("7", "История"), ("10", "active_sessions"),
+                      ("11", "worktree"), ("17", "раннером"), ("21", "Внешний агент")):
+        assert word in rules[num], (num, word)
 
 
 def test_previous_text_archived():

@@ -15,7 +15,8 @@
   живой канал ПМ — stdout delegate_watchdog (docs/rules-enforcement.md
   «Исполняемые слои»).
 - `agents-md/` — прежние полные редакции AGENTS.md (история правил, инцидентов,
-  обоснований). AGENTS-2026-11-13.md — до сокращения до ядра (J64.15/J65.11).
+  обоснований). AGENTS-2026-11-13.md — до сокращения до ядра (J64.15/J65.11);
+  соответствие старых и новых номеров правил — PLAN-agents-core.md (после мержа — archive/plans/).
 
 Живые документы (guarantees, ci-gates, process-context, README-flow-control,
 guides/pipeline-manifest) — в docs/; `docs/chatgpt-deterministic-flow/` —

@@ -12,19 +12,19 @@ AGENTS.md читает ПМ на Hermes, glm-5.3-flash — правила кор
 | 1 | Работа только при валидном входе | `flowctl prepare` → решение flow_transition: DENY/UNKNOWN (`MISSING_INPUT`, `INVALID_GATE`, `AMBIGUOUS_STATE`), в enforcing подготовка не создается |
 | 2 | Передача только файлами | `flowctl finish`: без файла отчета приемка не проводится (`blocked`); остальное — не проверяется |
 | 3 | Зеленые ворота перед сдачей | `gate_runner` на finish (scope post_agent/pre_accept: `FAIL`/`ERROR`/`STALE`); CI `.github/workflows/flow.yml` — openspec validate --strict, flow_check |
-| 4 | Только своя зона, push только своей ветки | `session_check` reserve/check: `ZONE_CONFLICT`, `ZONE_OUTSIDE_POLICY`, `OUT_OF_ZONE`, `ZONE_POLICY_MISMATCH`; раннер — сверка git diff на finish; zone-guard Pi; flow-enforcer push_gate (`push_denied`); GitHub ruleset main (bypass never) |
+| 4 | Только своя зона, push только своей ветки | `flowctl prepare` и раннер: `ZONE_OUTSIDE_POLICY`; `session_check` reserve/check: `ZONE_CONFLICT`, `OUT_OF_ZONE`, `ZONE_POLICY_MISMATCH` (finish); раннер — сверка git diff на finish; zone-guard Pi; flow-enforcer push_gate: `PUSH_POLICY` (событие лога `push_denied`); GitHub ruleset main (bypass never) |
 | 5 | Противоречие — Заказчику | не проверяется |
 | 6 | Трассировка | `flow_check`: тест без TC-ID, раскладка tests/ (J66); `pr_validate`: артефакты по контрактам |
 | 7 | История append-only | `gate_runner record-review`: перезапись ревью запрещена; `flow_check`: архив change без слияния дельт; остальное — не проверяется |
 | 8 | Сессия заканчивается коммитом | не проверяется |
 | 9 | Блок статусов ворот в докладе | не проверяется |
 | 10 | Задача = сессия, параллель при непересекающихся зонах | `flowctl prepare --task` (ворота dev_task, зависимости J10: approve-ревью предшественницы); `session_check` `ZONE_CONFLICT`; раннер `per_task` (J64.13) |
-| 11 | Worktree на сессию | flow-enforcer: `worktree_missing`, `worktree_gate_unavailable`; раннер создает worktree сам |
+| 11 | Worktree на сессию | flow-enforcer (pre_tool_call delegate_task): `WORKTREE_MISSING` (событие `worktree_missing`; отключается `FLOW_ENFORCER_WORKTREE=0`); нечитаемый реестр — `worktree_gate_unavailable`, деградация без блокировки; раннер создает worktree сам |
 | 12 | Скиллы через бандлы | не проверяется |
 | 13 | План задачи с `Флоу: N` | flow_transition: `PLAN_RELEASE_MISSING`, `PLAN_FLOW_UNDECLARED` (Флоу 1/2/4) |
 | 14 | План релиза до СА | то же: `check_create_change`, `check_dev_task` (транзитивно) |
 | 15 | Делегация только через ворота | flow-enforcer (pre_tool_call delegate_task): маркер `flow:`, `flowctl prepare --dry-run`, strict — block; `delegate_watchdog` (BYPASS делегаций Hermes); `executor_watchdog` (BYPASS процесса исполнителя вне резервации, J65.5) |
-| 16 | scope по флоу, bypass только дословно | `flow_ids.py` (`FLOW_ID_INVALID`); bypass — лог `flow-enforcer-bypass.log` |
+| 16 | scope по флоу, bypass только дословно | flowctl / flow_state: `FLOW_ID_INVALID` по грамматике `flow_ids.py`; bypass — лог `flow-enforcer-bypass.log` |
 | 17 | Боевые роли — раннером | flow-enforcer MODEL_ENFORCE (J60): `[hermes:<роль>]` для SA/архитектора/DEV/BA — DENY |
 | 18 | Решения Заказчика — артефактами | flow_transition: `HUMAN_APPROVAL_REQUIRED` (approval_ref на decision-record) |
 | 19 | Режимы и AGENTS.md — только Заказчик | `flow_mode set … --by customer`; защищенные пути (J3): правка AGENTS.md/openspec/contracts без `[pipeline]` — отказ prepare, `pm_bounds_check` |
