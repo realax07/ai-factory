@@ -1,0 +1,1512 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Карта фабрики ai-factory</title>
+<style>
+:root{
+  --bg:#f6f5f1; --surface:#ffffff; --surface-2:#efede7; --ink:#1d1c1a; --ink-2:#55524c; --ink-3:#8a867e;
+  --line:#dcd8cf; --accent:#2f5d8a; --accent-soft:#e3ecf5;
+  --engine:#2f5d8a; --engine-soft:#e3ecf5;
+  --watch:#8a5a12; --watch-soft:#f6ecd9;
+  --rule:#6b3d7a; --rule-soft:#efe4f3;
+  --plat:#3c6e47; --plat-soft:#e2efe4;
+  --ok:#2f7a45; --ok-soft:#e0f0e5; --warn:#9a6a00; --warn-soft:#f7edd2; --bad:#a33a2c; --bad-soft:#f6e1dd;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#161614; --surface:#1f1e1c; --surface-2:#292825; --ink:#ecebe6; --ink-2:#b4b0a7; --ink-3:#827e76;
+    --line:#38362f; --accent:#8db6df; --accent-soft:#1f2c3a;
+    --engine:#8db6df; --engine-soft:#1f2c3a; --watch:#e0b56a; --watch-soft:#33281a;
+    --rule:#cfa3de; --rule-soft:#2e2233; --plat:#93c79e; --plat-soft:#1f2e22;
+    --ok:#7cc493; --ok-soft:#1d2e22; --warn:#e2b54f; --warn-soft:#332a14; --bad:#ec8a7c; --bad-soft:#3a201c;
+  }
+}
+:root[data-theme="dark"]{
+    --bg:#161614; --surface:#1f1e1c; --surface-2:#292825; --ink:#ecebe6; --ink-2:#b4b0a7; --ink-3:#827e76;
+    --line:#38362f; --accent:#8db6df; --accent-soft:#1f2c3a;
+    --engine:#8db6df; --engine-soft:#1f2c3a; --watch:#e0b56a; --watch-soft:#33281a;
+    --rule:#cfa3de; --rule-soft:#2e2233; --plat:#93c79e; --plat-soft:#1f2e22;
+    --ok:#7cc493; --ok-soft:#1d2e22; --warn:#e2b54f; --warn-soft:#332a14; --bad:#ec8a7c; --bad-soft:#3a201c;
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+a{color:var(--accent)}
+code,.mono{font-family:var(--mono);font-size:12.5px}
+code{background:var(--surface-2);padding:1px 5px;border-radius:4px;word-break:break-word}
+h1{font-size:30px;line-height:1.15;margin:0 0 8px;letter-spacing:-.01em}
+h2{font-size:21px;margin:40px 0 8px}
+h3{font-size:16px;margin:24px 0 6px}
+p{margin:0 0 10px}
+.lede{color:var(--ink-2);font-size:16px;max-width:780px}
+.sub{color:var(--ink-2);max-width:820px;margin-bottom:14px}
+
+/* layout */
+.shell{display:grid;grid-template-columns:250px 1fr;min-height:100vh}
+aside{position:sticky;top:0;height:100vh;overflow-y:auto;border-right:1px solid var(--line);background:var(--surface);padding:22px 14px}
+aside .brand{font-weight:700;font-size:15px;margin:0 8px 2px}
+aside .ver{font-family:var(--mono);font-size:11px;color:var(--ink-3);margin:0 8px 18px}
+aside nav a{display:flex;gap:10px;align-items:baseline;padding:7px 10px;border-radius:7px;color:var(--ink-2);text-decoration:none;font-size:14px}
+aside nav a .n{font-family:var(--mono);font-size:11px;color:var(--ink-3);width:18px}
+aside nav a:hover{background:var(--surface-2);color:var(--ink)}
+aside nav a.on{background:var(--ink);color:var(--bg)}
+aside nav a.on .n{color:var(--bg);opacity:.7}
+main{padding:36px 40px 80px;min-width:0}
+.page{max-width:1080px}
+.page[hidden]{display:none}
+.crumb{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--ink-3);margin-bottom:6px}
+.pager{display:flex;justify-content:space-between;gap:12px;margin-top:48px;border-top:1px solid var(--line);padding-top:16px}
+.pager a{text-decoration:none;color:var(--ink-2);font-size:14px}
+.pager a:hover{color:var(--ink)}
+.mtop{display:none}
+
+/* blocks */
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:14px 16px}
+.panel h4{margin:0 0 6px;font-size:14.5px}
+.panel p,.panel li{font-size:14px;color:var(--ink-2)}
+.panel ul{margin:0;padding-left:18px}
+.panel li{margin-bottom:5px}
+.stat .v{font-size:30px;font-weight:700;line-height:1.1}
+.stat .k{font-size:12.5px;color:var(--ink-2)}
+.tag{display:inline-block;font-size:10.5px;text-transform:uppercase;letter-spacing:.07em;font-weight:650;padding:2px 7px;border-radius:999px;white-space:nowrap}
+.t-e{background:var(--engine-soft);color:var(--engine)} .t-w{background:var(--watch-soft);color:var(--watch)}
+.t-r{background:var(--rule-soft);color:var(--rule)} .t-p{background:var(--plat-soft);color:var(--plat)}
+.t-ok{background:var(--ok-soft);color:var(--ok)} .t-warn{background:var(--warn-soft);color:var(--warn)} .t-bad{background:var(--bad-soft);color:var(--bad)}
+.bl-e{border-top:4px solid var(--engine)} .bl-w{border-top:4px solid var(--watch)} .bl-r{border-top:4px solid var(--rule)} .bl-p{border-top:4px solid var(--plat)}
+.callout{border-left:4px solid var(--accent);background:var(--accent-soft);padding:10px 14px;border-radius:0 8px 8px 0;font-size:14px;margin:12px 0}
+.callout.warn{border-color:var(--warn);background:var(--warn-soft)}
+
+/* tables */
+.tw{overflow-x:auto;border:1px solid var(--line);border-radius:10px;background:var(--surface);margin:8px 0 16px}
+table{border-collapse:collapse;width:100%;font-size:13.5px}
+th,td{text-align:left;padding:8px 11px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-size:11.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-3);background:var(--surface-2);font-weight:600;white-space:nowrap}
+tr:last-child td{border-bottom:none}
+td.grp{background:var(--surface-2);font-weight:650;font-size:12.5px;color:var(--ink-2)}
+.tw table{min-width:760px}
+
+/* figures */
+.fig{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:16px;overflow-x:auto;margin:10px 0 18px}
+.fig svg{display:block;width:100%;height:auto}
+.fig .cap{font-size:12.5px;color:var(--ink-3);margin-top:8px}
+svg text{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;fill:var(--ink)}
+svg .t2{fill:var(--ink-2);font-size:11px}
+svg .t3{fill:var(--ink-3);font-size:10.5px}
+svg .mo{font-family:var(--mono);font-size:10.5px;fill:var(--ink-2)}
+svg .hd{font-size:12.5px;font-weight:650}
+svg .box{fill:var(--surface);stroke:var(--line);stroke-width:1.2}
+svg .be{fill:var(--engine-soft);stroke:var(--engine);stroke-width:1.2}
+svg .bw{fill:var(--watch-soft);stroke:var(--watch);stroke-width:1.2}
+svg .br{fill:var(--rule-soft);stroke:var(--rule);stroke-width:1.2}
+svg .bp{fill:var(--plat-soft);stroke:var(--plat);stroke-width:1.2}
+svg .bok{fill:var(--ok-soft);stroke:var(--ok);stroke-width:1.2}
+svg .bbad{fill:var(--bad-soft);stroke:var(--bad);stroke-width:1.2}
+svg .lane{fill:var(--surface-2)}
+svg .arr{stroke:var(--ink-3);stroke-width:1.4;fill:none}
+svg .arr-b{stroke:var(--bad);stroke-width:1.3;fill:none;stroke-dasharray:4 3}
+svg .arr-o{stroke:var(--ok);stroke-width:1.4;fill:none}
+svg .bad{fill:var(--bad);font-size:10.5px;font-weight:650}
+svg .okt{fill:var(--ok);font-size:10.5px;font-weight:650}
+.legend{display:flex;flex-wrap:wrap;gap:14px;font-size:12.5px;color:var(--ink-2);margin-top:8px}
+.legend i{display:inline-block;width:11px;height:11px;border-radius:3px;margin-right:6px;vertical-align:-1px;border:1px solid}
+
+/* chips chain */
+.chain{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:6px 0}
+.chain .c{background:var(--surface);border:1px solid var(--line);border-radius:7px;padding:4px 9px;font-size:12.5px}
+.chain .c b{font-family:var(--mono);font-size:12px}
+.chain .c small{display:block;color:var(--ink-3);font-size:11px}
+.chain .c.opt{border-style:dashed}
+.chain .c.ap{border-color:var(--rule);background:var(--rule-soft)}
+.chain .s{color:var(--ink-3)}
+.flowrow{display:grid;grid-template-columns:150px 1fr;gap:14px;padding:12px 0;border-bottom:1px solid var(--line)}
+.flowrow:last-child{border-bottom:none}
+.flowrow .fn{font-weight:700}
+.flowrow .fn span{display:block;font-weight:400;font-size:12.5px;color:var(--ink-2)}
+
+/* role cards */
+.roles{display:grid;grid-template-columns:repeat(auto-fill,minmax(480px,1fr));gap:12px}
+.role{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:14px 16px;border-left:4px solid var(--engine)}
+.role.flash{border-left-color:var(--plat)}
+.role.kimi{border-left-color:var(--watch)}
+.role.hm{border-left-color:var(--rule)}
+.role .top{display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap}
+.role .top b{font-family:var(--mono);font-size:14px}
+.role .top span.ti{color:var(--ink-2);font-size:13px}
+.role .why{font-size:13.5px;color:var(--ink-2);margin:6px 0 8px}
+.role dl{display:grid;grid-template-columns:86px 1fr;gap:4px 10px;margin:0;font-size:13px}
+.role dt{color:var(--ink-3);font-size:11.5px;text-transform:uppercase;letter-spacing:.05em;padding-top:2px}
+.role dd{margin:0}
+.filters{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0 14px}
+.filters button{font:inherit;font-size:13px;border:1px solid var(--line);background:var(--surface);color:var(--ink-2);padding:5px 12px;border-radius:999px;cursor:pointer}
+.filters button[aria-pressed="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+
+/* matrix */
+.mx td,.mx th{text-align:center}
+.mx td:first-child,.mx th:first-child{text-align:left}
+.dot{display:inline-block;width:14px;height:14px;border-radius:50%;background:var(--engine)}
+.dot.o{background:transparent;border:1.5px solid var(--line)}
+
+/* bars */
+.bar{display:flex;height:26px;border-radius:6px;overflow:hidden;border:1px solid var(--line);margin:6px 0}
+.bar div{display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:650;color:var(--surface)}
+.hbar{display:grid;grid-template-columns:180px 1fr 70px;gap:10px;align-items:center;font-size:13px;margin:6px 0}
+.hbar .tr{background:var(--surface-2);border-radius:5px;height:16px;position:relative;overflow:hidden}
+.hbar .tr div{position:absolute;top:0;bottom:0;border-radius:5px}
+.hbar .vv{font-family:var(--mono);font-size:12px;color:var(--ink-2)}
+
+pre.tree{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:14px;overflow-x:auto;font-family:var(--mono);font-size:12.5px;line-height:1.6;color:var(--ink-2);margin:8px 0 16px}
+pre.tree b{color:var(--ink);font-weight:600}
+pre.tree .c{color:var(--ink-3)}
+
+@media (max-width:900px){
+  .shell{grid-template-columns:1fr}
+  aside{position:static;height:auto;border-right:none;border-bottom:1px solid var(--line);padding:12px 10px}
+  aside nav{display:flex;flex-wrap:wrap;gap:4px}
+  aside nav a{padding:5px 9px;font-size:13px}
+  aside .ver{margin-bottom:8px}
+  main{padding:22px 16px 60px}
+  .grid2,.grid3,.grid4{grid-template-columns:1fr}
+  .fig svg{min-width:760px}
+  .roles{grid-template-columns:1fr}
+  .flowrow{grid-template-columns:1fr}
+  .hbar{grid-template-columns:110px 1fr 56px}
+  h1{font-size:25px}
+}
+@media (max-width:520px){ .role dl{grid-template-columns:1fr} }
+</style>
+</head>
+<body>
+<div class="shell">
+<aside>
+  <div class="brand">Карта фабрики ai-factory</div>
+  <div class="ver">origin/main d0ca601 · 14.11.2026</div>
+  <nav id="nav">
+    <a href="#overview"><span class="n">01</span>Обзор</a>
+    <a href="#agents"><span class="n">02</span>Агенты и исполнители</a>
+    <a href="#roles"><span class="n">03</span>Роли</a>
+    <a href="#flows"><span class="n">04</span>Пять флоу</a>
+    <a href="#machine"><span class="n">05</span>Машина ворот</a>
+    <a href="#runner"><span class="n">06</span>Пакетный раннер</a>
+    <a href="#watch"><span class="n">07</span>Вотчдоги и кроны</a>
+    <a href="#ci"><span class="n">08</span>CI и GitHub</a>
+    <a href="#tests"><span class="n">09</span>Тесты и регресс</a>
+    <a href="#platform"><span class="n">10</span>Пути, state, перенос</a>
+    <a href="#guarantees"><span class="n">11</span>Гарантии и границы</a>
+    <a href="#codes"><span class="n">12</span>Справочник кодов</a>
+  </nav>
+</aside>
+<main>
+
+<!-- ============ 01 OVERVIEW ============ -->
+<section class="page" id="p-overview" data-id="overview">
+  <div class="crumb">01 · Обзор</div>
+  <h1>Как устроена фабрика</h1>
+  <p class="lede">ai-factory — это конвейер разработки из агентов. Каждая роль (аналитик, разработчик, ревьюер, QA) работает в отдельном изолированном контексте и передаёт работу только файлами в git. Порядок держит исполняемая машина ворот, а не промпты. Фабрика — шаблон для проектов: <code>factory_init.py</code> ставит те же ворота в новый репозиторий. Пилотный проект — ekotov-wiki.</p>
+
+  <div class="grid4" style="margin-top:18px">
+    <div class="panel stat"><div class="v">22</div><div class="k">роли в реестре <code>agents/roles.json</code></div></div>
+    <div class="panel stat"><div class="v">15</div><div class="k">Pi роль-паков: 14 конвейерных + аудитор</div></div>
+    <div class="panel stat"><div class="v">5</div><div class="k">флоу: фича, багфикс, хотфикс, обслуживание, экспресс</div></div>
+    <div class="panel stat"><div class="v">36</div><div class="k">скриптов в <code>scripts/</code> (+ 3 исполнителя)</div></div>
+  </div>
+
+  <h2>Архитектура одним взглядом</h2>
+  <div class="fig">
+  <svg viewBox="0 0 1040 470" role="img" aria-label="Архитектура фабрики: Заказчик, Hermes, раннер, исполнители, git, GitHub, state">
+    <defs><marker id="m1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0L10,5L0,10z" fill="var(--ink-3)"/></marker></defs>
+    <!-- customer -->
+    <rect class="br" x="20" y="20" width="180" height="64" rx="9"/>
+    <text class="hd" x="34" y="44">Заказчик (вы)</text>
+    <text class="t2" x="34" y="62">Telegram-чат, решения,</text>
+    <text class="t2" x="34" y="76">мерж PR, прод-деплой</text>
+    <!-- hermes -->
+    <rect class="bw" x="250" y="14" width="300" height="150" rx="10"/>
+    <text class="hd" x="264" y="38">Hermes Agent · ПМ-оркестратор</text>
+    <text class="t2" x="264" y="56">модель glm-5.3-flash @ zai · ~/.hermes</text>
+    <rect class="box" x="264" y="68" width="130" height="38" rx="6"/><text x="274" y="85" font-size="11.5" font-weight="600">relay / ПМ</text><text class="t3" x="274" y="99">диалог, планы, приёмка</text>
+    <rect class="box" x="404" y="68" width="132" height="38" rx="6"/><text x="414" y="85" font-size="11.5" font-weight="600">flow-enforcer</text><text class="t3" x="414" y="99">хук delegate_task</text>
+    <rect class="box" x="264" y="114" width="130" height="38" rx="6"/><text x="274" y="131" font-size="11.5" font-weight="600">delegate_task</text><text class="t3" x="274" y="145">сабагенты Hermes</text>
+    <rect class="box" x="404" y="114" width="132" height="38" rx="6"/><text x="414" y="131" font-size="11.5" font-weight="600">cron</text><text class="t3" x="414" y="145">вотчдоги, бэкап</text>
+    <path class="arr" d="M200 52 H250" marker-end="url(#m1)" marker-start="url(#m1)"/>
+    <!-- engine -->
+    <rect class="be" x="250" y="200" width="300" height="118" rx="10"/>
+    <text class="hd" x="264" y="224">Машина ворот (scripts/)</text>
+    <text class="mo" x="264" y="244">flowctl → flow_state + flow_transition</text>
+    <text class="mo" x="264" y="260">session_check · gate_runner</text>
+    <text class="mo" x="264" y="276">flow_check · pr_validate · pm_bounds</text>
+    <text class="mo" x="264" y="292">role_zone_policy ← agents/roles.json</text>
+    <text class="t3" x="264" y="309">enforcing: DENY/UNKNOWN останавливают</text>
+    <path class="arr" d="M400 164 V200" marker-end="url(#m1)"/>
+    <text class="t3" x="406" y="186">prepare --dry-run</text>
+    <!-- runner -->
+    <rect class="be" x="600" y="14" width="200" height="90" rx="10"/>
+    <text class="hd" x="614" y="38">package_runner.py</text>
+    <text class="t2" x="614" y="56">манифест pipeline: в PLAN</text>
+    <text class="t2" x="614" y="72">стадии исполнитель:роль,</text>
+    <text class="t2" x="614" y="88">gate:, stand:</text>
+    <path class="arr" d="M550 60 H600" marker-end="url(#m1)"/>
+    <path class="arr" d="M680 104 V230 H550" marker-end="url(#m1)"/>
+    <text class="t3" x="604" y="222">prepare/run/finish</text>
+    <!-- executors -->
+    <rect class="bp" x="850" y="14" width="170" height="210" rx="10"/>
+    <text class="hd" x="864" y="38">Исполнители</text>
+    <rect class="box" x="864" y="50" width="142" height="44" rx="6"/><text x="874" y="68" font-size="11.5" font-weight="600">pi (боевой)</text><text class="t3" x="874" y="84">15 паков + zone-guard</text>
+    <rect class="box" x="864" y="102" width="142" height="44" rx="6"/><text x="874" y="120" font-size="11.5" font-weight="600">hermes</text><text class="t3" x="874" y="136">стоп-точка ПМ</text>
+    <rect class="box" x="864" y="154" width="142" height="44" rx="6"/><text x="874" y="172" font-size="11.5" font-weight="600">stub</text><text class="t3" x="874" y="188">эталонный прогон</text>
+    <path class="arr" d="M800 60 H850" marker-end="url(#m1)"/>
+    <!-- models -->
+    <rect class="box" x="850" y="244" width="170" height="74" rx="10"/>
+    <text class="hd" x="864" y="266">Модели</text>
+    <text class="mo" x="864" y="284">glm-5.3 · glm-5.3-flash</text>
+    <text class="mo" x="864" y="300">kimi k3.1-pro (аудит)</text>
+    <path class="arr" d="M935 224 V244" marker-end="url(#m1)"/>
+    <!-- repo/worktrees -->
+    <rect class="box" x="600" y="160" width="200" height="110" rx="10"/>
+    <text class="hd" x="614" y="184">Репо проекта</text>
+    <text class="t2" x="614" y="202">worktree на сессию,</text>
+    <text class="t2" x="614" y="218">ветка pipeline/&lt;pkg&gt;</text>
+    <text class="t2" x="614" y="234">артефакты ролей: спеки,</text>
+    <text class="t2" x="614" y="250">код, кейсы, ревью</text>
+    <path class="arr" d="M864 120 H820 V200 H800" marker-end="url(#m1)"/>
+    <!-- state -->
+    <rect class="bw" x="20" y="200" width="200" height="118" rx="10"/>
+    <text class="hd" x="34" y="224">State (вне git)</text>
+    <text class="mo" x="34" y="244">$AF_STATE_DIR</text>
+    <text class="t2" x="34" y="262">active_sessions.json</text>
+    <text class="t2" x="34" y="278">flowctl_state.json, flow_mode</text>
+    <text class="t2" x="34" y="294">gate-reports, инциденты</text>
+    <text class="t2" x="34" y="310">executor_runs.jsonl</text>
+    <path class="arr" d="M250 260 H220" marker-end="url(#m1)" marker-start="url(#m1)"/>
+    <!-- github -->
+    <rect class="be" x="250" y="360" width="550" height="90" rx="10"/>
+    <text class="hd" x="264" y="384">GitHub · последний замок</text>
+    <text class="t2" x="264" y="404">PR из pipeline/** → CI flow.yml (test-flow-control + flow) → ruleset main: только PR, bypass never</text>
+    <text class="t2" x="264" y="422">проекты гоняют ворота фабрики закреплённой версии (factory.lock)</text>
+    <text class="t2" x="264" y="438">мерж — только Заказчик; auto-merge в репозитории выключен</text>
+    <path class="arr" d="M700 270 V360" marker-end="url(#m1)"/>
+    <text class="t3" x="706" y="320">push своей ветки + PR</text>
+    <path class="arr" d="M110 84 V420 H250" marker-end="url(#m1)"/>
+    <text class="t3" x="116" y="404">merge</text>
+    <!-- watchdogs -->
+    <rect class="bw" x="850" y="340" width="170" height="110" rx="10"/>
+    <text class="hd" x="864" y="364">Вотчдоги (*/5)</text>
+    <text class="t2" x="864" y="382">delegate + executor:</text>
+    <text class="t2" x="864" y="398">обход ворот</text>
+    <text class="t2" x="864" y="414">session: залипший чат</text>
+    <text class="t2" x="864" y="430">stand_reaper: стенды</text>
+  </svg>
+  <div class="legend">
+    <span><i style="background:var(--engine-soft);border-color:var(--engine)"></i>движок и раннер</span>
+    <span><i style="background:var(--watch-soft);border-color:var(--watch)"></i>Hermes, state, надзор</span>
+    <span><i style="background:var(--plat-soft);border-color:var(--plat)"></i>исполнители</span>
+    <span><i style="background:var(--rule-soft);border-color:var(--rule)"></i>человек</span>
+  </div>
+  </div>
+
+  <h2>Принцип: «нельзя + заметят + не засчитают»</h2>
+  <p class="sub">Инструкция агенту — не гарантия. Гарантию дают пять исполняемых слоёв (<code>docs/rules-enforcement.md</code>).</p>
+  <div class="grid3">
+    <div class="panel bl-e"><span class="tag t-e">нельзя</span><h4 style="margin-top:8px">Движок и раннер</h4><p>flowctl prepare/run/finish, session_check, gate_runner. В режиме enforcing неверный вход останавливает работу до того, как агент что-то запишет.</p></div>
+    <div class="panel bl-w"><span class="tag t-w">заметят</span><h4 style="margin-top:8px">Энфорсер и вотчдоги</h4><p>flow-enforcer блокирует delegate_task без маркера. Вотчдоги каждые 5 минут ищут делегации и процессы исполнителей вне ворот.</p></div>
+    <div class="panel bl-r"><span class="tag t-r">не засчитают</span><h4 style="margin-top:8px">CI, ruleset, правила</h4><p>Без зелёного CI мержа нет. Результат обходной делегации помечается <code>undelivered_bypass</code> и не принимается.</p></div>
+  </div>
+
+  <h2>Жизненный цикл задачи</h2>
+  <div class="chain">
+    <div class="c ap"><b>Решение</b><small>decisions/ · approval_ref</small></div><span class="s">→</span>
+    <div class="c"><b>PLAN-&lt;id&gt;.md</b><small>Флоу: N + pipeline:</small></div><span class="s">→</span>
+    <div class="c"><b>package_runner</b><small>стадии по порядку</small></div><span class="s">→</span>
+    <div class="c"><b>prepare</b><small>снимок + ALLOW/DENY</small></div><span class="s">→</span>
+    <div class="c"><b>reserve</b><small>зона роли</small></div><span class="s">→</span>
+    <div class="c"><b>агент</b><small>в worktree</small></div><span class="s">→</span>
+    <div class="c"><b>finish</b><small>diff ⊆ зона, гейты</small></div><span class="s">→</span>
+    <div class="c"><b>коммит стадии</b><small>pipeline/&lt;pkg&gt;</small></div><span class="s">→</span>
+    <div class="c"><b>PR + CI</b><small>flow, test-flow-control</small></div><span class="s">→</span>
+    <div class="c ap"><b>merge</b><small>Заказчик</small></div><span class="s">→</span>
+    <div class="c"><b>ретро</b><small>backlog/ + MAP</small></div>
+  </div>
+
+  <h2>Где читать первоисточники</h2>
+  <div class="tw"><table>
+    <thead><tr><th>Файл</th><th>Что в нём</th><th>Кто читает</th></tr></thead>
+    <tbody>
+      <tr><td><code>AGENTS.md</code></td><td>Ядро: 21 правило, флоу, оркестрация, эскалация (короткие строки)</td><td>каждая сессия</td></tr>
+      <tr><td><code>docs/rules-enforcement.md</code></td><td>Правило → чем проверяется → код отказа</td><td>люди, ревью</td></tr>
+      <tr><td><code>docs/guarantees.md</code></td><td>Что гарантировано машиной [G], что держится на дисциплине [H]</td><td>Заказчик</td></tr>
+      <tr><td><code>docs/README-flow-control.md</code></td><td>Машина: флоу, кроны, реестр скриптов, regress, решения</td><td>ПМ, dev</td></tr>
+      <tr><td><code>agents/roles.json</code> + <code>agents/README.md</code></td><td>Реестр ролей, зоны, вход/выход</td><td>движок, ПМ</td></tr>
+      <tr><td><code>contracts/artifact_contract.md</code></td><td>Контракты 1–7: условия входа и выхода этапов</td><td>все роли</td></tr>
+      <tr><td><code>docs/guides/pipeline-manifest.md</code></td><td>Манифест раннера, полный пример Флоу 1</td><td>ПМ</td></tr>
+      <tr><td><code>docs/process-context.md</code></td><td>Среда VPS, модели, дисциплина ПМ</td><td>ПМ</td></tr>
+      <tr><td><code>backlog/MAP.md</code></td><td>Карта бэклога (1 строка = 1 item)</td><td>ПМ</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<!-- ============ 02 AGENTS ============ -->
+<section class="page" id="p-agents" data-id="agents" hidden>
+  <div class="crumb">02 · Агенты и исполнители</div>
+  <h1>Агенты: Hermes, Pi и остальные</h1>
+  <p class="lede">«Агент» — это рантайм, который исполняет роль: Hermes, Pi, stub или внешний Codex. «Роль» — это ответственность: промпт, зона записи, вход и выход. Одну роль можно исполнять разными агентами: исполнитель задаётся префиксом стадии <code>run: &lt;исполнитель&gt;:&lt;роль&gt;</code>.</p>
+
+  <div class="fig">
+  <svg viewBox="0 0 1040 330" role="img" aria-label="Слои исполнения: оркестратор, раннер, интерфейс исполнителя, конкретные исполнители, модели">
+    <defs><marker id="m2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0L10,5L0,10z" fill="var(--ink-3)"/></marker></defs>
+    <rect class="lane" x="0" y="0" width="1040" height="62" rx="8"/>
+    <text class="t3" x="14" y="18" font-weight="650">УРОВЕНЬ 1 · ОРКЕСТРАТОР</text>
+    <rect class="bw" x="200" y="10" width="640" height="44" rx="8"/>
+    <text class="hd" x="214" y="31">Hermes (ПМ): ведёт диалог с вами, пишет планы, запускает раннер, принимает работу</text>
+    <text class="t2" x="214" y="47">Боевые SA, архитектор, DEV и BA через delegate_task запрещены (MODEL_ENFORCE) — только через раннер</text>
+    <rect class="lane" x="0" y="72" width="1040" height="62" rx="8"/>
+    <text class="t3" x="14" y="90" font-weight="650">УРОВЕНЬ 2 · РАННЕР</text>
+    <rect class="be" x="200" y="82" width="640" height="44" rx="8"/>
+    <text class="hd" x="214" y="103">package_runner: одинаковые ворота для любого исполнителя</text>
+    <text class="t2" x="214" y="119">preflight → prepare → reserve → run → агент → finish → сверка диффа → коммит → закрытие</text>
+    <rect class="lane" x="0" y="144" width="1040" height="62" rx="8"/>
+    <text class="t3" x="14" y="162" font-weight="650">УРОВЕНЬ 3 · ИНТЕРФЕЙС</text>
+    <rect class="box" x="200" y="154" width="640" height="44" rx="8"/>
+    <text class="mo" x="214" y="174">scripts/executors/__init__.py: Executor</text>
+    <text class="mo" x="214" y="190">preflight() · prepare_workdir() · command() · list_active() · transcript() · manual</text>
+    <rect class="lane" x="0" y="216" width="1040" height="108" rx="8"/>
+    <text class="t3" x="14" y="234" font-weight="650">УРОВЕНЬ 4 · ИСПОЛНИТЕЛИ</text>
+    <rect class="bp" x="200" y="226" width="200" height="90" rx="8"/>
+    <text class="hd" x="214" y="248">pi.py</text>
+    <text class="t2" x="214" y="266">процесс pi --no-extensions</text>
+    <text class="t2" x="214" y="282">-e zone-guard.ts из репо</text>
+    <text class="t2" x="214" y="298">нет guard → STOP стадии</text>
+    <rect class="bw" x="420" y="226" width="200" height="90" rx="8"/>
+    <text class="hd" x="434" y="248">hermes.py (manual)</text>
+    <text class="t2" x="434" y="266">раннер печатает «ЖДУ ПМ»</text>
+    <text class="t2" x="434" y="282">активные запуски — из</text>
+    <text class="t2" x="434" y="298">state.db async_delegations</text>
+    <rect class="box" x="640" y="226" width="200" height="90" rx="8"/>
+    <text class="hd" x="654" y="248">stub.py</text>
+    <text class="t2" x="654" y="266">команда AF_EXECUTOR_STUB_CMD</text>
+    <text class="t2" x="654" y="282">эталонный прогон Флоу 1</text>
+    <text class="t2" x="654" y="298">в каждом CI (J65.10)</text>
+    <rect class="box" x="860" y="226" width="170" height="90" rx="8" stroke-dasharray="4 3"/>
+    <text class="hd" x="874" y="248">новый?</text>
+    <text class="t2" x="874" y="266">один файл в</text>
+    <text class="t2" x="874" y="282">scripts/executors/</text>
+    <text class="t2" x="874" y="298">без правок движка</text>
+    <path class="arr" d="M520 54 V82" marker-end="url(#m2)"/>
+    <path class="arr" d="M520 126 V154" marker-end="url(#m2)"/>
+    <path class="arr" d="M300 198 V226" marker-end="url(#m2)"/>
+    <path class="arr" d="M520 198 V226" marker-end="url(#m2)"/>
+    <path class="arr" d="M740 198 V226" marker-end="url(#m2)"/>
+  </svg>
+  <div class="cap">Смена агента (например, Pi на другой CLI) — это новый модуль-исполнитель. Раннер, flowctl и gate_runner не меняются (J64.7 + J65.5).</div>
+  </div>
+
+  <h2>Hermes Agent</h2>
+  <div class="grid2">
+    <div class="panel"><h4>Что это</h4><p>Платформа, на которой живёт ПМ: Telegram-гейтвей, сессии, память, скиллы, плагины, крон, <code>delegate_task</code> для сабагентов. Домашний каталог — <code>$HERMES_HOME</code> (по умолчанию <code>~/.hermes</code>).</p></div>
+    <div class="panel"><h4>Модель и конфиг</h4><p>ПМ работает на <code>glm-5.3-flash @ zai</code>. Модель меняется только через <code>hermes config set</code>, config.yaml руками не правится. Секреты лежат в <code>~/.hermes/.env</code>.</p></div>
+    <div class="panel"><h4>Что фабрика ставит в Hermes</h4><ul>
+      <li>плагин <code>flow-enforcer</code> (<code>plugins.enabled</code>)</li>
+      <li>обёртки кронов в <code>~/.hermes/scripts/</code>: тонкие делегаты, которые запускают скрипт из репо</li>
+      <li>скиллы openspec-* (<code>.hermes/skills/</code>) и библиотека <code>skills/</code></li>
+    </ul></div>
+    <div class="panel"><h4>Что Hermes даёт движку</h4><ul>
+      <li><code>state.db → async_delegations</code>: реестр делегаций, его пишет сама платформа. Это источник для delegate_watchdog и pr_validate (Reviewer-Delegation)</li>
+      <li><code>cache/delegation/live/</code>: живые логи сабагентов, их пингует ПМ и архивирует session_archive</li>
+    </ul></div>
+  </div>
+  <div class="callout warn">Известные грабли Hermes: делегация, отправленная ровно на границе ротации сессии, «съедается» чатом (#92859). <code>/stop</code> убивает все фоновые делегации. Отчёты, потерянные при ротации, лежат в <code>async_delegations.result_json</code>.</div>
+
+  <h2>Pi (исполнитель ролей)</h2>
+  <div class="grid2">
+    <div class="panel"><h4>Роль-пак</h4><p><code>skills/pm-factory/pi/role-packs/&lt;роль&gt;/</code>:</p><ul>
+      <li><code>role-agents.md</code> — системный промпт. Раннер кладёт его в worktree как <code>AGENTS.md</code>, а если у проекта свой AGENTS.md, то рядом как <code>AGENTS.pi.md</code></li>
+      <li><code>settings.example.json</code> — дефолты сессии (thinking off, tools read/bash/edit/write)</li>
+      <li><code>README.md</code> — сборка и вызов (блок зоны генерируется)</li>
+    </ul></div>
+    <div class="panel"><h4>zone-guard.ts</h4><p>Одно расширение на все паки, эталон лежит в репо фабрики. Раннер грузит его явно (<code>--no-extensions -e …</code>), поэтому копия в <code>~/.pi</code> на стадии не используется.</p><ul>
+      <li><code>PI_ZONE_WRITE</code>: зоны через «:». Без этой переменной запись запрещена целиком</li>
+      <li><code>PI_ZONE_ROLE</code>: bash-правила. <code>git push</code> запрещён всем, docker-мутации — всем, кроме devops</li>
+      <li>write/edit проверяются жёстко (fail-closed); bash — эвристика</li>
+    </ul></div>
+  </div>
+  <h3>Модельные ярусы (регруп J59 + J62)</h3>
+  <div class="hbar"><span><b>glm-5.3</b> · смысл</span><div class="tr"><div style="left:0;width:26.7%;background:var(--engine)"></div></div><span class="vv">4 пака</span></div>
+  <div class="hbar"><span><b>glm-5.3-flash</b> · механика</span><div class="tr"><div style="left:0;width:66.7%;background:var(--plat)"></div></div><span class="vv">10 паков</span></div>
+  <div class="hbar"><span><b>kimi k3.1-pro</b> · контекст</span><div class="tr"><div style="left:0;width:6.7%;background:var(--watch)"></div></div><span class="vv">1 пак</span></div>
+  <p class="sub" style="margin-top:8px">glm-5.3: ba, sa, architect, dev. glm-5.3-flash: code-reviewer, qa-case-author, qa-case-reviewer, qa-automation, qa-impact-analyst, ui-designer, design-validator, devops, debug, regress-runner. kimi: auditor, только вручную. Модель берётся из <code>roles.json</code>, стадия может её переопределить. Если модель не задана нигде — STOP <code>MODEL_UNRESOLVED</code>.</p>
+
+  <h2>Остальные агенты</h2>
+  <div class="tw"><table>
+    <thead><tr><th>Агент</th><th>Где работает</th><th>Правила</th></tr></thead>
+    <tbody>
+      <tr><td><b>Сабагент Hermes</b> (delegate_task)</td><td>Роли вне раннера: dev_lead, integrator, разовые задачи ПМ</td><td>Маркер <code>flow:</code> в первой строке goal, хук делает prepare --dry-run. Для SA/архитектора/DEV/BA только с обоснованием (Pi недоступен, срочный хотфикс)</td></tr>
+      <tr><td><b>stub</b></td><td>Эталонный прогон <code>tests/fixtures/reference-run/</code></td><td>Доказывает, что ворота раннера работают с любым исполнителем</td></tr>
+      <tr><td><b>Codex и внешние copilot</b></td><td>Внешние делегации</td><td>Только через PR, обязательное ревью, зона роли, которую он замещает. В provenance: <code>author_delegation: codex:&lt;id&gt;</code></td></tr>
+      <tr><td><b>Аудитор</b> (pi + kimi)</td><td>Ручной вызов ПМ, вне конвейера</td><td>Read-only guard, своей зоны нет</td></tr>
+    </tbody>
+  </table></div>
+
+  <h2>Как агент получает задачу</h2>
+  <div class="grid2">
+    <div class="panel"><h4>Через раннер (боевой путь)</h4><p>Раннер собирает бриф из полей стадии <code>task</code>, <code>inputs</code>, <code>zones</code> и <code>verdict</code>. Создаёт worktree от текущего HEAD, кладёт промпт пака, выставляет env зон и запускает процесс с таймаутом. Каждый старт и финиш пишется в <code>executor_runs.jsonl</code>.</p></div>
+    <div class="panel"><h4>Через delegate_task (запасной)</h4><p>Goal собирается по <code>templates/task_delegation.md</code>:</p><ul><li>(а) промпт роли</li><li>(б) пути входов и выхода</li><li>(в) зона и запрет push в main</li><li>(г) дословные решения Заказчика</li><li>(д) требование отчёта</li></ul><p>Каждая делегация записывается строкой в журнал PLAN.md.</p></div>
+  </div>
+</section>
+
+<!-- ============ 03 ROLES ============ -->
+<section class="page" id="p-roles" data-id="roles" hidden>
+  <div class="crumb">03 · Роли</div>
+  <h1>Роли: кто что делает</h1>
+  <p class="lede">Одна роль — один изолированный контекст и одна ответственность. Автор не ревьюит себя, ревьюер не пишет код. Новая роль заводится, только если работа повторяется, нужна изоляция, есть своя зона и это дешевле по токенам. Источник зон — <code>agents/roles.json</code>; таблицы в README генерирует <code>gen_role_docs.py</code>.</p>
+
+  <h2>Цепочка артефактов Флоу 1</h2>
+  <div class="fig">
+  <svg viewBox="0 0 1040 400" role="img" aria-label="Цепочка ролей и артефактов Флоу 1">
+    <defs><marker id="m3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0L10,5L0,10z" fill="var(--ink-3)"/></marker></defs>
+    <text class="t3" x="14" y="22" font-weight="650">АНАЛИЗ</text>
+    <rect class="be" x="14" y="32" width="130" height="50" rx="8"/><text class="hd" x="24" y="52">ba</text><text class="t3" x="24" y="70">требования</text>
+    <rect class="box" x="164" y="32" width="160" height="50" rx="8"/><text class="mo" x="174" y="52">requirements.md</text><text class="t3" x="174" y="70">УТВЕРЖДЕН (Заказчик)</text>
+    <rect class="be" x="344" y="32" width="130" height="50" rx="8"/><text class="hd" x="354" y="52">sa</text><text class="t3" x="354" y="70">спека и план</text>
+    <rect class="box" x="494" y="32" width="230" height="50" rx="8"/><text class="mo" x="504" y="52">openspec/changes/&lt;id&gt;/ + sdd.md</text><text class="t3" x="504" y="70">proposal, specs, design, tasks, impact</text>
+    <rect class="be" x="744" y="32" width="130" height="50" rx="8"/><text class="hd" x="754" y="52">architect</text><text class="t3" x="754" y="70">ревью пакета</text>
+    <rect class="box" x="894" y="32" width="132" height="50" rx="8"/><text class="mo" x="904" y="52">review-*-arch</text><text class="t3" x="904" y="70">architecture/map.md</text>
+    <path class="arr" d="M144 57H164" marker-end="url(#m3)"/><path class="arr" d="M324 57H344" marker-end="url(#m3)"/><path class="arr" d="M474 57H494" marker-end="url(#m3)"/><path class="arr" d="M724 57H744" marker-end="url(#m3)"/><path class="arr" d="M874 57H894" marker-end="url(#m3)"/>
+
+    <text class="t3" x="14" y="118" font-weight="650">РАЗРАБОТКА · ЦИКЛ НА ЗАДАЧУ tasks.md</text>
+    <rect class="bp" x="14" y="128" width="130" height="50" rx="8" stroke-dasharray="4 3"/><text class="hd" x="24" y="148">ui_designer</text><text class="t3" x="24" y="166">мокапы (опц.)</text>
+    <rect class="be" x="164" y="128" width="130" height="50" rx="8"/><text class="hd" x="174" y="148">dev</text><text class="t3" x="174" y="166">1 задача + unit</text>
+    <rect class="box" x="314" y="128" width="160" height="50" rx="8"/><text class="mo" x="324" y="148">код + tests/unit</text><text class="t3" x="324" y="166">чекбокс задачи</text>
+    <rect class="bp" x="494" y="128" width="140" height="50" rx="8"/><text class="hd" x="504" y="148">code_reviewer</text><text class="t3" x="504" y="166">3 круга</text>
+    <rect class="box" x="654" y="128" width="200" height="50" rx="8"/><text class="mo" x="664" y="148">code-reviews/&lt;id&gt;/</text><text class="t3" x="664" y="166">## Вердикт: approve|return</text>
+    <rect class="hm" x="874" y="128" width="152" height="50" rx="8" style="fill:var(--rule-soft);stroke:var(--rule)"/><text class="hd" x="884" y="148">dev_lead</text><text class="t3" x="884" y="166">merge integration/</text>
+    <path class="arr" d="M144 153H164" marker-end="url(#m3)"/><path class="arr" d="M294 153H314" marker-end="url(#m3)"/><path class="arr" d="M474 153H494" marker-end="url(#m3)"/><path class="arr" d="M634 153H654" marker-end="url(#m3)"/><path class="arr" d="M854 153H874" marker-end="url(#m3)"/>
+    <path class="arr-b" d="M754 178 V196 H229 V178" marker-end="url(#m3)"/><text class="bad" x="420" y="210">return → доработка тем же dev → повторное ревью</text>
+
+    <text class="t3" x="14" y="244" font-weight="650">QA-КОНТУР</text>
+    <rect class="bp" x="14" y="254" width="150" height="50" rx="8"/><text class="hd" x="24" y="274">qa_impact_analyst</text><text class="t3" x="24" y="292">keep/revalidate/retire</text>
+    <rect class="bp" x="184" y="254" width="140" height="50" rx="8"/><text class="hd" x="194" y="274">qa_case_author</text><text class="t3" x="194" y="292">кейсы по спеке</text>
+    <rect class="box" x="344" y="254" width="130" height="50" rx="8"/><text class="mo" x="354" y="274">test-model/new/</text><text class="t3" x="354" y="292">1 кейс = 1 файл</text>
+    <rect class="bp" x="494" y="254" width="140" height="50" rx="8"/><text class="hd" x="504" y="274">qa_case_reviewer</text><text class="t3" x="504" y="292">перенос в approved</text>
+    <rect class="box" x="654" y="254" width="150" height="50" rx="8"/><text class="mo" x="664" y="274">test-model/approved/</text><text class="t3" x="664" y="292">законный источник</text>
+    <rect class="bp" x="824" y="254" width="202" height="50" rx="8"/><text class="hd" x="834" y="274">qa_automation</text><text class="t3" x="834" y="292">tests/api|web|integration</text>
+    <path class="arr" d="M164 279H184" marker-end="url(#m3)"/><path class="arr" d="M324 279H344" marker-end="url(#m3)"/><path class="arr" d="M474 279H494" marker-end="url(#m3)"/><path class="arr" d="M634 279H654" marker-end="url(#m3)"/><path class="arr" d="M804 279H824" marker-end="url(#m3)"/>
+
+    <text class="t3" x="14" y="340" font-weight="650">ЗАКРЫТИЕ</text>
+    <rect class="bp" x="14" y="350" width="150" height="40" rx="8" stroke-dasharray="4 3"/><text class="hd" x="24" y="374">design_validator</text>
+    <rect class="bp" x="184" y="350" width="140" height="40" rx="8"/><text class="hd" x="194" y="374">regress_runner</text>
+    <rect class="be" x="344" y="350" width="290" height="40" rx="8"/><text class="hd" x="354" y="374">sa: архивация дельт в specs</text>
+    <rect class="br" x="654" y="350" width="150" height="40" rx="8"/><text class="hd" x="664" y="374">release (ПМ)</text>
+    <rect class="bp" x="824" y="350" width="202" height="40" rx="8" stroke-dasharray="4 3"/><text class="hd" x="834" y="374">devops: deploy (опц.)</text>
+    <path class="arr" d="M164 370H184" marker-end="url(#m3)"/><path class="arr" d="M324 370H344" marker-end="url(#m3)"/><path class="arr" d="M634 370H654" marker-end="url(#m3)"/><path class="arr" d="M804 370H824" marker-end="url(#m3)"/>
+  </svg>
+  <div class="legend">
+    <span><i style="background:var(--engine-soft);border-color:var(--engine)"></i>glm-5.3</span>
+    <span><i style="background:var(--plat-soft);border-color:var(--plat)"></i>glm-5.3-flash</span>
+    <span><i style="background:var(--rule-soft);border-color:var(--rule)"></i>Hermes / человек</span>
+    <span><i style="border-color:var(--ink-3);border-style:dashed"></i>опциональная стадия</span>
+  </div>
+  </div>
+
+  <h2>Карточки ролей</h2>
+  <div class="filters" role="group" aria-label="Фильтр ролей">
+    <button data-f="all" aria-pressed="true">Все 22</button>
+    <button data-f="sem" aria-pressed="false">glm-5.3</button>
+    <button data-f="flash" aria-pressed="false">glm-5.3-flash</button>
+    <button data-f="kimi" aria-pressed="false">kimi</button>
+    <button data-f="hm" aria-pressed="false">Hermes / без пака</button>
+  </div>
+  <div class="roles" id="rolecards">
+
+    <div class="role" data-g="sem"><div class="top"><b>ba</b><span class="ti">Бизнес-аналитик · pi:ba · plan-write</span></div>
+      <p class="why">Переводит слова Заказчика в проверяемые требования без отсебятины. Не больше 2 раундов вопросов, дальше дефолты «примем X, возразите».</p>
+      <dl><dt>Вход</dt><dd>Запрос Заказчика, ответы ОВ-N дословно</dd>
+      <dt>Выход</dt><dd><code>requirements.md</code> (7 разделов, FR/NFR, MoSCoW, преамбула статуса), <code>docs/ba/answers_roundN.md</code></dd>
+      <dt>Зона</dt><dd><code>requirements.md</code>, <code>docs/ba/*</code></dd>
+      <dt>Скиллы</dt><dd>brainstorming, requirements-elaboration, openspec-authoring (чтение)</dd>
+      <dt>Этап</dt><dd>Ф1 approve_requirements (утверждает только Заказчик)</dd>
+      <dt>Проверка</dt><dd>flow_check C1/E3: преамбула, 7 разделов, уникальные FR, нет TBD и оценочных слов</dd></dl></div>
+
+    <div class="role" data-g="sem"><div class="top"><b>sa</b><span class="ti">Системный аналитик · pi:sa · auto-edit</span></div>
+      <p class="why">Превращает требования в формальный контракт поведения (OpenSpec) и план реализации. Каждый Requirement получает сценарий GIVEN/WHEN/THEN.</p>
+      <dl><dt>Вход</dt><dd>УТВЕРЖДЁННЫЙ <code>requirements.md</code> + answers всех раундов + PLAN пакета от ПМ</dd>
+      <dt>Выход</dt><dd><code>openspec/changes/&lt;id&gt;/</code>: proposal, specs-дельты, research, design, tasks (<code>[P]</code> = параллельно), <code>impact.md</code>; <code>sdd.md</code></dd>
+      <dt>Зона</dt><dd>8 путей пакета + <code>sdd.md</code></dd>
+      <dt>Скиллы</dt><dd>openspec-authoring, service-decomposition, requirements-elaboration, factory-flow</dd>
+      <dt>Этап</dt><dd>Ф1 create_change (с approval_ref), archive_change</dd>
+      <dt>Проверка</dt><dd><code>openspec validate --strict</code>, flow_check (активный change без sdd.md — ошибка)</dd></dl></div>
+
+    <div class="role" data-g="sem"><div class="top"><b>architect</b><span class="ti">Архитектор · pi:architect · auto-edit</span></div>
+      <p class="why">Ревьюит нарезку СА до передачи в разработку и ведёт карту архитектуры и ADR.</p>
+      <dl><dt>Вход</dt><dd>proposal, design пакета; кодовая база</dd>
+      <dt>Выход</dt><dd><code>review-NNN-architecture.md</code> со строкой «Карта: обновлена / без изменений»; <code>architecture/map.md</code></dd>
+      <dt>Зона</dt><dd><code>architecture/**</code>, свой review-файл</dd>
+      <dt>Скиллы</dt><dd>architecture-diagram, codebase-inspection, service-decomposition</dd>
+      <dt>Этап</dt><dd>Ф1 architecture_review (нет ревью — ARCH_REVIEW_MISSING)</dd>
+      <dt>Проверка</dt><dd>flow_check J46: в проекте с backend/services обязательна <code>architecture/map.md</code></dd></dl></div>
+
+    <div class="role" data-g="sem"><div class="top"><b>dev</b><span class="ti">Разработчик · pi:dev · auto-edit</span></div>
+      <p class="why">Реализует ровно одну задачу tasks.md в изолированной сессии. Спека — арбитр: расхождение со спекой эскалируется, а не правится.</p>
+      <dl><dt>Вход</dt><dd>Задача tasks.md + спека и дизайн; ветка от main</dd>
+      <dt>Выход</dt><dd>Код + unit-тесты, чекбокс задачи, коммит. Чекпоинт-коммит каждые ~15 итераций</dd>
+      <dt>Зона</dt><dd><code>backend/ frontend/ services/ src/ scripts/ plugins/ contracts/ deploy/</code>, <code>tests/unit/**</code>, <code>test-model/bugs/*</code>, tasks.md</dd>
+      <dt>Скиллы</dt><dd>implementation, openspec-authoring (только чтение спеки)</dd>
+      <dt>Этап</dt><dd>Ф1 dev_task, Ф2 bug_fix, Ф3 emergency_stabilize, Ф4 chore_task, Ф5 express_task</dd>
+      <dt>Проверка</dt><dd>dev_task: требования утверждены, есть arch review, предшественница одобрена (J10); J50: UI-дельта требует web-тестов или <code>[no-ui-tests]</code></dd></dl></div>
+
+    <div class="role flash" data-g="flash"><div class="top"><b>code_reviewer</b><span class="ti">Код-ревьюер · pi:code-reviewer</span></div>
+      <p class="why">Независимая валидация в три круга: спека как закон, лучшие практики, интеграция. Ловит то, чего автор не видит.</p>
+      <dl><dt>Вход</dt><dd>Дифф + спека задачи + процедура проверки + impact-карта</dd>
+      <dt>Выход</dt><dd><code>code-reviews/&lt;id&gt;/review-&lt;задача&gt;-NNN.md</code>: <code>## Вердикт: approve|return</code>, первой метой <code>Reviewer-Delegation:</code>, таблица замечаний blocker/major/minor</dd>
+      <dt>Зона</dt><dd><code>code-reviews/&lt;id&gt;/review-*.md</code></dd>
+      <dt>Скиллы</dt><dd>code-review</dd>
+      <dt>Этап</dt><dd>code_review + accept_review (Ф1, Ф2, Ф4; Ф3 — accept)</dd>
+      <dt>Проверка</dt><dd>parse_verdict (решает последний заголовок); sidecar provenance; SELF_REVIEW — DENY</dd></dl></div>
+
+    <div class="role flash" data-g="flash"><div class="top"><b>qa_case_author</b><span class="ti">QA: автор кейсов · pi:qa-case-author</span></div>
+      <p class="why">Разворачивает каждый Scenario спеки в исполняемый кейс: предусловия, шаги, проверяемое ожидание, данные. Чеклисты упразднены (J23).</p>
+      <dl><dt>Вход</dt><dd>Спека change-пакета + <code>sdd.md</code></dd>
+      <dt>Выход</dt><dd><code>test-model/new/&lt;id&gt;/TC-&lt;domain&gt;-NNN.md</code>, 1 кейс = 1 файл, ссылка на Requirement/Scenario</dd>
+      <dt>Зона</dt><dd><code>test-model/new/&lt;id&gt;/**</code></dd>
+      <dt>Скиллы</dt><dd>test-case-design</dd>
+      <dt>Этап</dt><dd>Ф1 qa_cases (контракт 4)</dd>
+      <dt>Проверка</dt><dd>flow_check: формат H1, трассировка к заголовкам спеки</dd></dl></div>
+
+    <div class="role flash" data-g="flash"><div class="top"><b>qa_case_reviewer</b><span class="ti">QA: ревьюер кейсов · pi:qa-case-reviewer</span></div>
+      <p class="why">Проверяет кейсы по осям: трассировка, покрытие, негатив, воспроизводимость. Только он переносит кейсы в approved/. Ещё ревьюит код автотестов (G8).</p>
+      <dl><dt>Вход</dt><dd>Кейсы в <code>new/</code> + спека (партии по 12 при большом объёме)</dd>
+      <dt>Выход</dt><dd><code>test-model/reviews/&lt;id&gt;/review-NNN.md</code> (append-only), перенос в <code>approved/&lt;id&gt;/</code></dd>
+      <dt>Зона</dt><dd><code>test-model/reviews/**</code>, <code>test-model/approved/**</code></dd>
+      <dt>Скиллы</dt><dd>case-review</dd>
+      <dt>Этап</dt><dd>Ф1 qa_review (контракт 5)</dd>
+      <dt>Проверка</dt><dd>flow_check: approved без ревью с «одобрить» — ошибка</dd></dl></div>
+
+    <div class="role flash" data-g="flash"><div class="top"><b>qa_automation</b><span class="ti">QA: автоматизатор · pi:qa-automation</span></div>
+      <p class="why">Превращает approved-кейсы в постоянный регресс. Падение на корректном коде оформляется баг-репортом, тест не подгоняется. Свой микрохарнесс и скиллы.</p>
+      <dl><dt>Вход</dt><dd>Только <code>test-model/approved/&lt;id&gt;/</code> (контракт 6)</dd>
+      <dt>Выход</dt><dd><code>tests/api</code> (requests), <code>tests/web</code> (playwright), <code>tests/integration</code>; TC-ID в docstring; <code>BUG-NNN</code></dd>
+      <dt>Зона</dt><dd><code>tests/api|web|integration|smoke_cross|archive/**</code>, общий conftest/fixtures, <code>pytest.ini</code>, <code>test-model/bugs/*</code></dd>
+      <dt>Скиллы</dt><dd>test-automation, playwright-pro</dd>
+      <dt>Этап</dt><dd>qa_automation во всех флоу (во Ф2–5 по необходимости, J66)</dd>
+      <dt>Проверка</dt><dd>flow_check: только по approved, TC-трассировка, без <code>time.sleep</code>, раскладка и стек по уровням</dd></dl></div>
+
+    <div class="role flash" data-g="flash"><div class="top"><b>qa_impact_analyst</b><span class="ti">QA: impact-аналитик · pi:qa-impact-analyst</span></div>
+      <p class="why">Держит регресс актуальным при MODIFIED/REMOVED-дельтах. Иначе устаревший тест даёт ложный пожар на релизе.</p>
+      <dl><dt>Вход</dt><dd>Дельты пакета + манифест регресса + трассировка TC</dd>
+      <dt>Выход</dt><dd><code>test-model/impact/&lt;id&gt;.md</code>: keep / revalidate / retire по каждому тесту, зоны воздействия, план прогонов</dd>
+      <dt>Зона</dt><dd><code>test-model/impact/*.md</code></dd>
+      <dt>Скиллы</dt><dd>test-case-design (классы покрытия)</dd>
+      <dt>Этап</dt><dd>Ф1 qa_impact_analysis</dd>
+      <dt>Проверка</dt><dd>pr_validate: при MODIFIED/REMOVED impact обязателен</dd></dl></div>
+
+    <div class="role flash" data-g="flash"><div class="top"><b>ui_designer</b><span class="ti">Дизайнер UI · pi:ui-designer</span></div>
+      <p class="why">Мокапы и дизайн-токены до кода. Продуктовый код не пишет.</p>
+      <dl><dt>Вход</dt><dd>design.md пакета, бриф</dd>
+      <dt>Выход</dt><dd>HTML-мокапы, DESIGN.md-токены в <code>design/**</code></dd>
+      <dt>Зона</dt><dd><code>design/**</code></dd>
+      <dt>Скиллы</dt><dd>frontend-design, claude-design, design-md, ui-ux-matrices, design-review</dd>
+      <dt>Этап</dt><dd>Ф1 design_task (опционально)</dd>
+      <dt>Проверка</dt><dd>Утверждение мокапа — Заказчик; J10 не применяется</dd></dl></div>
+
+    <div class="role flash" data-g="flash"><div class="top"><b>design_validator</b><span class="ti">Валидатор дизайна · pi:design-validator</span></div>
+      <p class="why">Сверяет реализованный UI с утверждёнными мокапами на стенде (computed styles, скриншоты).</p>
+      <dl><dt>Вход</dt><dd>Мокапы <code>design/</code> + стенд</dd>
+      <dt>Выход</dt><dd><code>test-model/reviews/&lt;id&gt;/review-NNN-design.md</code> с вердиктом</dd>
+      <dt>Зона</dt><dd>только свой review-файл</dd>
+      <dt>Скиллы</dt><dd>dogfood, design-review</dd>
+      <dt>Этап</dt><dd>Ф1 design_validation (этап QA)</dd>
+      <dt>Проверка</dt><dd>Ядро проверяет скоуп, содержание — работа агента</dd></dl></div>
+
+    <div class="role flash" data-g="flash"><div class="top"><b>devops</b><span class="ti">DevOps · pi:devops</span></div>
+      <p class="why">Деплой-скрипты, runbook, откаты, CI-ворота проекта. Боевой деплой — только по утверждению, накатку делает Заказчик.</p>
+      <dl><dt>Вход</dt><dd>Деплой- и инфра-задачи, impact-карта</dd>
+      <dt>Выход</dt><dd><code>deploy/**</code>, <code>ops/**</code>, <code>.github/workflows/**</code></dd>
+      <dt>Зона</dt><dd>те же три пути; docker-мутации разрешены только ему</dd>
+      <dt>Скиллы</dt><dd>ekotov-wiki-ops (проект), hermes-agent (фабрика)</dd>
+      <dt>Этап</dt><dd>Ф3 emergency_stabilize, deploy_rollback, post_mortem; роль без этапа во Ф1 (ROLE_WITHOUT_STAGE)</dd>
+      <dt>Проверка</dt><dd>deploy.sh: <code>set -euo</code>, бэкап, EXPECTED_COMMIT, смоук</dd></dl></div>
+
+    <div class="role flash" data-g="flash"><div class="top"><b>regress_runner</b><span class="ti">Регресс-раннер · pi:regress-runner</span></div>
+      <p class="why">Исполнитель прогонов с узким брифом (ветка, коммит, сьюты). Отличает баг от флака изолированным перепрогоном.</p>
+      <dl><dt>Вход</dt><dd>Ветка/коммит, затронутые сьюты, impact</dd>
+      <dt>Выход</dt><dd><code>regress-&lt;N&gt;.md</code> / <code>regress-final.md</code> (пишет <code>flowctl regress</code>)</dd>
+      <dt>Зона</dt><dd><code>test-model/regress/&lt;id&gt;/**</code></dd>
+      <dt>Скиллы</dt><dd>flow-playbooks (протокол прогона)</dd>
+      <dt>Этап</dt><dd>Эшелоны 2–3; роль без этапа</dd>
+      <dt>Проверка</dt><dd>pr_validate: regress-final PASS, commit — предок HEAD</dd></dl></div>
+
+    <div class="role flash" data-g="flash"><div class="top"><b>debug</b><span class="ti">Debug (эскалационный) · pi:debug</span></div>
+      <p class="why">Изолированный диагност на <code>needs-debug:</code>. Выносит вердикт СРЕДА / КОД / ТЕСТ. Продукт не правит: фикс делает исходный dev.</p>
+      <dl><dt>Вход</dt><dd>Гипотеза из отчёта застрявшего сабагента</dd>
+      <dt>Выход</dt><dd>Диагноз; пополнение <code>docs/project-pitfalls.md</code></dd>
+      <dt>Зона</dt><dd><code>docs/project-pitfalls.md</code> (в политике пусто — развилка Заказчика)</dd>
+      <dt>Скиллы</dt><dd>systematic-debugging, python-debugpy, node-inspect-debugger</dd>
+      <dt>Этап</dt><dd>Не стадия: ПМ запускает параллельно источнику</dd>
+      <dt>Проверка</dt><dd>—</dd></dl></div>
+
+    <div class="role kimi" data-g="kimi"><div class="top"><b>auditor</b><span class="ti">Аудитор · pi:auditor · kimi k3.1-pro</span></div>
+      <p class="why">Аудит с большим контекстом вне конвейера, по ручному вызову ПМ.</p>
+      <dl><dt>Вход</dt><dd>Задание ПМ</dd><dt>Выход</dt><dd>Отчёт в диалоге или файл ПМ</dd>
+      <dt>Зона</dt><dd>только чтение (read-only guard)</dd><dt>Скиллы</dt><dd>pi-auditor, factory-conveyor-audit</dd></dl></div>
+
+    <div class="role hm" data-g="hm"><div class="top"><b>pm</b><span class="ti">ПМ (оркестратор) · Hermes main</span></div>
+      <p class="why">Владелец оперативной картины и единственный оркестратор: планы, goal, приёмка по чеклисту, журнал делегаций, бэклог, пинг здоровья.</p>
+      <dl><dt>Вход</dt><dd>Решения Заказчика, отчёты ролей</dd>
+      <dt>Выход</dt><dd><code>PLAN.md</code>, <code>PLAN-*.md</code>, <code>backlog/</code>, <code>docs/**</code>, README</dd>
+      <dt>Не в зоне</dt><dd>openspec/specs, contracts, AGENTS.md, git продукта (J9)</dd>
+      <dt>Скиллы</dt><dd>factory-flow, handoff</dd>
+      <dt>Этап</dt><dd>release, express_close, hermes:-стопы раннера</dd>
+      <dt>Проверка</dt><dd>pm_bounds_check: защищённые пути, реестр, продукт-коммиты; push_gate PM_PUSH_POLICY</dd></dl></div>
+
+    <div class="role hm" data-g="hm"><div class="top"><b>dev_lead</b><span class="ti">Dev-lead (J9) · Hermes</span></div>
+      <p class="why">Мерж веток dev в интеграционную ветку и разрешение конфликтов. Узкий контекст вместо дорогого контекста ПМ.</p>
+      <dl><dt>Вход</dt><dd><code>flowctl integrate</code>: список веток пакета, ветка <code>integration/&lt;cid&gt;</code></dd>
+      <dt>Выход</dt><dd>Merge-коммиты, чекбоксы tasks.md, зачистка worktree</dd>
+      <dt>Push</dt><dd>интеграционной ветки, только после зелёных ворот</dd>
+      <dt>Скиллы</dt><dd>implementation, github, code-review (метрики)</dd>
+      <dt>Этап</dt><dd>merge_task, archive_change</dd></dl></div>
+
+    <div class="role hm" data-g="hm"><div class="top"><b>integrator</b><span class="ti">Integrator (merge_task) · Hermes</span></div>
+      <p class="why">Merge-артефакты и архивация пакета (контракт 7).</p>
+      <dl><dt>Зона</dt><dd><code>code-reviews/**</code>, <code>test-model/**</code></dd><dt>Этап</dt><dd>merge_task, archive_change</dd></dl></div>
+
+    <div class="role hm" data-g="hm"><div class="top"><b>relay</b><span class="ti">Основная сессия · plan</span></div>
+      <p class="why">Диалог с Заказчиком. Запись не ведёт, кроме PLAN-строк приёма эскалаций.</p></div>
+
+    <div class="role hm" data-g="hm"><div class="top"><b>qa_regression_analyst</b><span class="ti">Регресс-аналитик · пака нет</span></div>
+      <p class="why">Пост-релизно решает судьбу тестов: keep или archive. Роль создаётся при первом релизе (G5); до того метки <code>regression:</code> ставит qa_automation.</p>
+      <dl><dt>Зона</dt><dd><code>test-model/regression/manifest.md</code></dd></dl></div>
+
+    <div class="role hm" data-g="hm"><div class="top"><b>customer</b><span class="ti">Заказчик · вы</span></div>
+      <p class="why">Утверждает требования, релиз, деплой, правила фабрики. Решения фиксируются в <code>decisions/</code>, мерж PR делаете вы.</p></div>
+
+    <div class="role hm" data-g="hm"><div class="top"><b>qa_author</b><span class="ti">Легаси-имя</span></div>
+      <p class="why">Старое имя qa_case_author, оставлено для совместимости этапа qa_cases.</p></div>
+  </div>
+
+  <h2>Скиллы: кто что грузит</h2>
+  <p class="sub">Скиллы подключаются через бандлы роли (<code>/af-ba</code>, <code>/af-sa</code>, <code>/af-dev</code>, <code>/af-review</code>, <code>/af-qa-*</code>), импровизация вместо скилла запрещена. <code>factory-flow</code> входит во все бандлы. Эталон процессных скиллов — репо фабрики.</p>
+  <div class="tw"><table class="mx">
+    <thead><tr><th>Скилл</th><th>ba</th><th>sa</th><th>arch</th><th>dev</th><th>rev</th><th>case-a</th><th>case-r</th><th>auto</th><th>impact</th><th>ui</th><th>dv</th><th>pm</th><th>lead</th></tr></thead>
+    <tbody>
+      <tr><td><code>requirements-elaboration</code></td><td><span class="dot"></span></td><td><span class="dot"></span></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+      <tr><td><code>brainstorming</code></td><td><span class="dot"></span></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+      <tr><td><code>openspec-authoring</code></td><td><span class="dot o"></span></td><td><span class="dot"></span></td><td></td><td><span class="dot o"></span></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+      <tr><td><code>service-decomposition</code></td><td></td><td><span class="dot"></span></td><td><span class="dot"></span></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+      <tr><td><code>architecture-diagram</code>, <code>codebase-inspection</code></td><td></td><td></td><td><span class="dot"></span></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+      <tr><td><code>implementation</code></td><td></td><td></td><td></td><td><span class="dot"></span></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td><span class="dot"></span></td></tr>
+      <tr><td><code>code-review</code></td><td></td><td></td><td></td><td></td><td><span class="dot"></span></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td><span class="dot"></span></td></tr>
+      <tr><td><code>test-case-design</code></td><td></td><td></td><td></td><td></td><td></td><td><span class="dot"></span></td><td></td><td></td><td><span class="dot"></span></td><td></td><td></td><td></td><td></td></tr>
+      <tr><td><code>case-review</code></td><td></td><td></td><td></td><td></td><td></td><td></td><td><span class="dot"></span></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+      <tr><td><code>test-automation</code>, <code>playwright-pro</code></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td><span class="dot"></span></td><td></td><td></td><td></td><td></td><td></td></tr>
+      <tr><td><code>frontend-design</code>, <code>claude-design</code>, <code>design-md</code>, <code>ui-ux-matrices</code></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td><span class="dot"></span></td><td></td><td></td><td></td></tr>
+      <tr><td><code>design-review</code></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td><span class="dot"></span></td><td><span class="dot"></span></td><td></td><td></td></tr>
+      <tr><td><code>dogfood</code></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td><span class="dot"></span></td><td></td><td></td></tr>
+      <tr><td><code>factory-flow</code></td><td><span class="dot"></span></td><td><span class="dot"></span></td><td></td><td><span class="dot"></span></td><td><span class="dot"></span></td><td></td><td><span class="dot"></span></td><td><span class="dot"></span></td><td></td><td></td><td></td><td><span class="dot"></span></td><td></td></tr>
+      <tr><td><code>handoff</code></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td><span class="dot"></span></td><td></td></tr>
+      <tr><td><code>github</code></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td><span class="dot"></span></td></tr>
+    </tbody>
+  </table></div>
+  <p class="sub">● — грузит всегда или по задаче; ○ — только для чтения форматов. Отдельно: devops — ekotov-wiki-ops и hermes-agent; debug — systematic-debugging, python-debugpy, node-inspect-debugger; regress_runner — flow-playbooks. Скиллы лежат в <code>skills/roles/</code>, <code>skills/roles-tools/</code>, <code>skills/flow/</code>, <code>skills/pm-factory/</code>.</p>
+
+  <h2>Режимы запуска</h2>
+  <div class="grid4">
+    <div class="panel"><span class="tag t-ok">plan</span><p style="margin-top:6px">Только анализ и диалог, запись запрещена. relay, auditor.</p></div>
+    <div class="panel"><span class="tag t-e">plan-write</span><p style="margin-top:6px">Диалог + запись артефактов своей роли после подтверждения. ba.</p></div>
+    <div class="panel"><span class="tag t-p">auto-edit</span><p style="margin-top:6px">Запись только в своей зоне. Стандарт конвейера.</p></div>
+    <div class="panel"><span class="tag t-bad">yolo</span><p style="margin-top:6px">Полный доступ. В конвейере запрещён.</p></div>
+  </div>
+</section>
+
+<!-- ============ 04 FLOWS ============ -->
+<section class="page" id="p-flows" data-id="flows" hidden>
+  <div class="crumb">04 · Пять флоу</div>
+  <h1>Пять флоу и их этапы</h1>
+  <p class="lede">Флоу выбирается в плане до старта (<code>Флоу: N</code>). Номер определяет обязательные входы, грамматику scope и таблицу этапов <code>flow_transition.STAGE_TABLE</code>. Ниже показаны этапы из кода: роли, утверждение Заказчика (фиолетовые) и машинные гейты.</p>
+
+  <div class="tw"><table>
+    <thead><tr><th>№</th><th>Флоу</th><th>scope (flow_ids.py)</th><th>План</th><th>Обязательный вход</th></tr></thead>
+    <tbody>
+      <tr><td><b>1</b></td><td>Полный (фича)</td><td><code>change-id</code> kebab ≥ 2 слов</td><td>обязателен</td><td>утверждённые requirements, PLAN-&lt;change&gt;.md</td></tr>
+      <tr><td><b>2</b></td><td>Багфикс</td><td><code>BUG-[КОМПЛЕКС-]NNN[-slug]</code></td><td>обязателен</td><td>репорт <code>test-model/bugs/BUG-…md</code></td></tr>
+      <tr><td><b>3</b></td><td>Хотфикс</td><td><code>S1|S2|S3-&lt;slug&gt;</code></td><td>нет</td><td>incident_ref с severity</td></tr>
+      <tr><td><b>4</b></td><td>Обслуживание</td><td><code>chore</code> или slug</td><td>обязателен</td><td>план; изменение правил — решение rules_change</td></tr>
+      <tr><td><b>5</b></td><td>Экспресс</td><td>slug</td><td>нет</td><td>ретро-артефакты до закрытия</td></tr>
+    </tbody>
+  </table></div>
+
+  <div class="panel" style="padding:4px 16px">
+    <div class="flowrow"><div class="fn">Флоу 1<span>полный, 15 этапов</span></div><div>
+      <div class="chain">
+        <div class="c ap"><b>approve_requirements</b><small>customer, pm · flow_check C1/E3</small></div><span class="s">→</span>
+        <div class="c ap"><b>create_change</b><small>sa · openspec --strict</small></div><span class="s">→</span>
+        <div class="c"><b>architecture_review</b><small>architect · контракт 2</small></div><span class="s">→</span>
+        <div class="c opt"><b>design_task</b><small>ui_designer</small></div><span class="s">→</span>
+        <div class="c"><b>dev_task</b><small>dev · flow_check, pm_bounds</small></div><span class="s">→</span>
+        <div class="c"><b>code_review</b><small>code_reviewer · вердикт</small></div><span class="s">→</span>
+        <div class="c"><b>accept_review</b><small>provenance sidecar</small></div><span class="s">→</span>
+        <div class="c"><b>merge_task</b><small>dev_lead, integrator · pr_validate + protection</small></div>
+      </div>
+      <div class="chain">
+        <span class="s">→</span>
+        <div class="c"><b>qa_impact_analysis</b><small>qa_impact_analyst</small></div><span class="s">→</span>
+        <div class="c"><b>qa_cases</b><small>qa_case_author · контракт 4</small></div><span class="s">→</span>
+        <div class="c"><b>qa_review</b><small>qa_case_reviewer · контракт 5</small></div><span class="s">→</span>
+        <div class="c"><b>qa_automation</b><small>approved своего change</small></div><span class="s">→</span>
+        <div class="c opt"><b>design_validation</b><small>design_validator</small></div><span class="s">→</span>
+        <div class="c"><b>archive_change</b><small>sa · контракт 7</small></div><span class="s">→</span>
+        <div class="c ap"><b>release</b><small>pm · только после archive</small></div>
+      </div></div></div>
+    <div class="flowrow"><div class="fn">Флоу 2<span>багфикс, без БА/СА</span></div><div>
+      <div class="chain">
+        <div class="c"><b>bug_fix</b><small>dev · tests/unit</small></div><span class="s">→</span>
+        <div class="c opt"><b>qa_automation</b><small>регресс-тест к багу</small></div><span class="s">→</span>
+        <div class="c"><b>code_review</b></div><span class="s">→</span>
+        <div class="c"><b>accept_review</b></div><span class="s">→</span>
+        <div class="c"><b>merge_task</b></div>
+      </div>
+      <p class="sub" style="margin:6px 0 0;font-size:13px">Фикс меняет поведение, API или схему — это эскалация: <code>create_change</code> (Флоу 1) или решение Заказчика. Без неё DENY.</p></div></div>
+    <div class="flowrow"><div class="fn">Флоу 3<span>хотфикс, авария</span></div><div>
+      <div class="chain">
+        <div class="c"><b>emergency_stabilize</b><small>dev, devops</small></div><span class="s">→</span>
+        <div class="c opt"><b>qa_automation</b></div><span class="s">→</span>
+        <div class="c"><b>accept_review</b></div><span class="s">→</span>
+        <div class="c"><b>merge_task</b></div><span class="s">→</span>
+        <div class="c ap"><b>deploy_rollback</b><small>devops, pm · полномочия</small></div><span class="s">→</span>
+        <div class="c"><b>post_mortem</b><small>test-model/incidents/</small></div><span class="s">→</span>
+        <div class="c"><b>archive_change</b><small>S1/S2 без post-mortem — DENY</small></div>
+      </div>
+      <p class="sub" style="margin:6px 0 0;font-size:13px">После стабилизации PR-цикл обязателен. Пока он не закрыт, все действия несут STALE_EVIDENCE — это «долг хотфикса».</p></div></div>
+    <div class="flowrow"><div class="fn">Флоу 4<span>обслуживание</span></div><div>
+      <div class="chain">
+        <div class="c"><b>chore_task</b><small>dev · pr_validate check_chore, pm_bounds J3</small></div><span class="s">→</span>
+        <div class="c opt"><b>qa_automation</b></div><span class="s">→</span>
+        <div class="c"><b>code_review</b></div><span class="s">→</span>
+        <div class="c"><b>accept_review</b></div><span class="s">→</span>
+        <div class="c"><b>merge_task</b></div>
+      </div>
+      <p class="sub" style="margin:6px 0 0;font-size:13px">PR и ревью не обходятся. Изменение правил фабрики требует отдельного решения Заказчика.</p></div></div>
+    <div class="flowrow"><div class="fn">Флоу 5<span>экспресс</span></div><div>
+      <div class="chain">
+        <div class="c"><b>express_task</b><small>dev · pr_validate</small></div><span class="s">→</span>
+        <div class="c opt"><b>qa_automation</b></div><span class="s">→</span>
+        <div class="c"><b>express_close</b><small>pm · flow_check + openspec</small></div>
+      </div>
+      <p class="sub" style="margin:6px 0 0;font-size:13px">До закрытия обязательны ретроспективные артефакты: требования, спека-дельта и кейсы. Без них DENY (урок R1.3).</p></div></div>
+  </div>
+  <div class="legend"><span><i style="background:var(--rule-soft);border-color:var(--rule)"></i>этап с утверждением Заказчика (approval_ref)</span><span><i style="border-color:var(--ink-3);border-style:dashed"></i>по необходимости</span></div>
+
+  <h2>Сколько этапов в каждом флоу</h2>
+  <div class="hbar"><span>Флоу 1 · полный</span><div class="tr"><div style="width:100%;background:var(--engine)"></div></div><span class="vv">15</span></div>
+  <div class="hbar"><span>Флоу 3 · хотфикс</span><div class="tr"><div style="width:46.7%;background:var(--bad)"></div></div><span class="vv">7</span></div>
+  <div class="hbar"><span>Флоу 2 · багфикс</span><div class="tr"><div style="width:33.3%;background:var(--warn)"></div></div><span class="vv">5</span></div>
+  <div class="hbar"><span>Флоу 4 · обслуживание</span><div class="tr"><div style="width:33.3%;background:var(--plat)"></div></div><span class="vv">5</span></div>
+  <div class="hbar"><span>Флоу 5 · экспресс</span><div class="tr"><div style="width:20%;background:var(--ink-3)"></div></div><span class="vv">3</span></div>
+
+  <h2>Impact-карта (J58)</h2>
+  <p class="sub">Карта обязательна для change-пакета: <code>openspec/changes/&lt;id&gt;/impact.md</code> или секция «## Impact». Она перечисляет затронутые сервисы, контракты, статику, deploy, миграции и тесты. pr_validate сверяет её с диффом по правилам <code>scripts/impact_rules.json</code>:</p>
+  <div class="tw"><table>
+    <thead><tr><th>Правило</th><th>Если в диффе</th><th>То обязано быть</th></tr></thead>
+    <tbody>
+      <tr><td>IR-01</td><td><code>services/*/openapi*</code> или <code>contracts/</code></td><td><code>contracts/openapi.json</code></td></tr>
+      <tr><td>IR-02</td><td>новый <code>services/&lt;name&gt;/</code></td><td><code>deploy/deploy.sh</code> + <code>deploy/RUNBOOK.md</code></td></tr>
+      <tr><td>IR-03</td><td>frontend static или templates</td><td>bump <code>static_v</code> в <code>backend/app/pages.py</code></td></tr>
+      <tr><td>IR-04</td><td><code>migrate_*.py</code></td><td><code>deploy/RUNBOOK.md</code></td></tr>
+      <tr><td>IR-05/06</td><td>тело PR</td><td>предупреждения flow_preflight</td></tr>
+    </tbody>
+  </table></div>
+  <p class="sub">Правило активно, только если целевой артефакт уже есть в HEAD. Поэтому в фабричном репо правила молчат.</p>
+</section>
+
+<!-- ============ 05 MACHINE ============ -->
+<section class="page" id="p-machine" data-id="machine" hidden>
+  <div class="crumb">05 · Машина ворот</div>
+  <h1>Машина ворот: что, где и что смотрит</h1>
+  <p class="lede">Ядро — пять скриптов, которые вызывают друг друга. <code>flowctl</code> — единая точка входа. <code>flow_state</code> только читает факты. <code>flow_transition</code> выносит решение. <code>session_check</code> держит зоны. <code>gate_runner</code> гоняет проверки и пишет доказательства.</p>
+
+  <div class="fig">
+  <svg viewBox="0 0 1040 400" role="img" aria-label="Кто кого вызывает в машине ворот">
+    <defs><marker id="m5" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0L10,5L0,10z" fill="var(--ink-3)"/></marker></defs>
+    <rect class="bw" x="20" y="20" width="200" height="54" rx="8"/><text class="hd" x="34" y="42">flow-enforcer</text><text class="t3" x="34" y="60">prepare --dry-run</text>
+    <rect class="be" x="20" y="96" width="200" height="54" rx="8"/><text class="hd" x="34" y="118">package_runner</text><text class="t3" x="34" y="136">prepare/run/finish/close</text>
+    <rect class="br" x="20" y="172" width="200" height="54" rx="8"/><text class="hd" x="34" y="194">ПМ / delegate_gate</text><text class="t3" x="34" y="212">ручной цикл</text>
+    <rect class="be" x="290" y="96" width="200" height="54" rx="8"/><text class="hd" x="304" y="118">flowctl.py</text><text class="t3" x="304" y="136">3432 строки · оркестратор</text>
+    <path class="arr" d="M220 47 H255 V115 H290" marker-end="url(#m5)"/>
+    <path class="arr" d="M220 123 H290" marker-end="url(#m5)"/>
+    <path class="arr" d="M220 199 H255 V131 H290" marker-end="url(#m5)"/>
+    <rect class="box" x="570" y="14" width="210" height="58" rx="8"/><text class="hd" x="584" y="36">flow_state.py</text><text class="t3" x="584" y="54">снимок фактов, read-only</text>
+    <rect class="be" x="570" y="86" width="210" height="58" rx="8"/><text class="hd" x="584" y="108">flow_transition.py</text><text class="t3" x="584" y="126">ALLOW / DENY / UNKNOWN</text>
+    <rect class="be" x="570" y="158" width="210" height="58" rx="8"/><text class="hd" x="584" y="180">session_check.py</text><text class="t3" x="584" y="198">reserve / check / reconcile</text>
+    <rect class="be" x="570" y="230" width="210" height="58" rx="8"/><text class="hd" x="584" y="252">gate_runner.py</text><text class="t3" x="584" y="270">гейты, digest, provenance</text>
+    <path class="arr" d="M490 110 H530 V43 H570" marker-end="url(#m5)"/>
+    <path class="arr" d="M490 118 H570" marker-end="url(#m5)"/>
+    <path class="arr" d="M490 128 H530 V187 H570" marker-end="url(#m5)"/>
+    <path class="arr" d="M490 138 H520 V259 H570" marker-end="url(#m5)"/>
+    <path class="arr" d="M675 86 V72" marker-end="url(#m5)"/>
+    <rect class="box" x="850" y="14" width="176" height="58" rx="8"/><text class="hd" x="864" y="36">flow_ids.py</text><text class="t3" x="864" y="54">грамматика scope</text>
+    <rect class="box" x="850" y="86" width="176" height="58" rx="8"/><text class="hd" x="864" y="108">role_zone_policy</text><text class="t3" x="864" y="126">← agents/roles.json</text>
+    <rect class="box" x="850" y="158" width="176" height="58" rx="8"/><text class="hd" x="864" y="180">factory_paths</text><text class="t3" x="864" y="198">все пути из env</text>
+    <path class="arr" d="M850 43 H780" marker-end="url(#m5)"/>
+    <path class="arr" d="M850 115 H780" marker-end="url(#m5)"/>
+    <path class="arr" d="M850 187 H780" marker-end="url(#m5)"/>
+    <rect class="bp" x="290" y="320" width="150" height="56" rx="8"/><text class="hd" x="304" y="342">flow_check</text><text class="t3" x="304" y="360">артефакты по файлам</text>
+    <rect class="bp" x="460" y="320" width="150" height="56" rx="8"/><text class="hd" x="474" y="342">pr_validate</text><text class="t3" x="474" y="360">PR по маркеру</text>
+    <rect class="bp" x="630" y="320" width="150" height="56" rx="8"/><text class="hd" x="644" y="342">pm_bounds_check</text><text class="t3" x="644" y="360">границы ПМ</text>
+    <rect class="bp" x="800" y="320" width="150" height="56" rx="8"/><text class="hd" x="814" y="342">openspec validate</text><text class="t3" x="814" y="360">--all --strict</text>
+    <path class="arr" d="M675 288 V300 H365 V320" marker-end="url(#m5)"/>
+    <path class="arr" d="M535 300 V320" marker-end="url(#m5)"/>
+    <path class="arr" d="M705 300 V320" marker-end="url(#m5)"/>
+    <path class="arr" d="M675 300 H875 V320" marker-end="url(#m5)"/>
+    <text class="t3" x="20" y="300" font-weight="650">АДАПТЕРЫ gate_runner →</text>
+    <text class="t3" x="20" y="316">subprocess с repo/cwd/timeout</text>
+  </svg>
+  </div>
+
+  <h2>Жизненный цикл сессии (резервации)</h2>
+  <div class="fig">
+  <svg viewBox="0 0 1040 250" role="img" aria-label="Состояния резервации session_check">
+    <defs><marker id="m6" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0L10,5L0,10z" fill="var(--ink-3)"/></marker></defs>
+    <rect class="be" x="20" y="70" width="120" height="50" rx="25"/><text class="hd" x="48" y="100">reserved</text>
+    <rect class="be" x="200" y="70" width="120" height="50" rx="25"/><text class="hd" x="232" y="100">running</text>
+    <rect class="be" x="380" y="70" width="120" height="50" rx="25"/><text class="hd" x="410" y="100">finished</text>
+    <rect class="bok" x="580" y="20" width="120" height="44" rx="22"/><text class="hd" x="606" y="47">accepted</text>
+    <rect class="bw" x="580" y="74" width="120" height="44" rx="22"/><text class="hd" x="609" y="101">returned</text>
+    <rect class="bbad" x="580" y="128" width="120" height="44" rx="22"/><text class="hd" x="619" y="155">failed</text>
+    <rect class="box" x="790" y="70" width="120" height="50" rx="25"/><text class="hd" x="828" y="100">closed</text>
+    <rect class="bbad" x="200" y="180" width="200" height="44" rx="22"/><text class="hd" x="222" y="207">needs_attention / stale</text>
+    <path class="arr" d="M140 95 H200" marker-end="url(#m6)"/><text class="t3" x="150" y="88">run</text>
+    <path class="arr" d="M320 95 H380" marker-end="url(#m6)"/><text class="t3" x="330" y="88">агент</text>
+    <path class="arr" d="M500 90 L580 44" marker-end="url(#m6)"/>
+    <path class="arr" d="M500 95 H580" marker-end="url(#m6)"/>
+    <path class="arr" d="M500 100 L580 148" marker-end="url(#m6)"/>
+    <text class="t3" x="506" y="60">finish</text>
+    <path class="arr" d="M700 42 H750 V90 H790" marker-end="url(#m6)"/><text class="t3" x="712" y="36">close / раннер</text>
+    <path class="arr-b" d="M260 120 V180" marker-end="url(#m6)"/><text class="bad" x="268" y="156">reconcile: PID мёртв</text>
+    <path class="arr" d="M400 202 H850 V120" marker-end="url(#m6)"/><text class="t3" x="560" y="196">flowctl release (решение ПМ)</text>
+    <rect x="20" y="20" width="240" height="30" rx="6" fill="var(--surface-2)"/>
+    <text class="t2" x="30" y="40">ZONE_HOLDING: держат зону</text>
+  </svg>
+  <div class="cap">Зону держат reserved, running, finished и needs_attention. Пока сессию не закрыли, никто другой не зарезервирует пересекающиеся пути: будет <code>ZONE_CONFLICT</code>.</div>
+  </div>
+
+  <h2>Что смотрит flow_state (снимок фактов)</h2>
+  <p class="sub">Чистая read-only операция: ничего не пишет, не делает fetch и checkout. Статусы фактов: <b>missing</b> (нет), <b>invalid</b> (есть, но непригоден), <b>unknown</b> (не читается), <b>ready</b>. Готовность не выводится из имени файла или чекбокса, только из содержимого.</p>
+  <div class="tw"><table>
+    <thead><tr><th>Факт</th><th>Файл / источник</th><th>Что именно проверяется</th></tr></thead>
+    <tbody>
+      <tr><td><code>requirements.status</code></td><td><code>requirements.md</code></td><td>Статус «УТВЕРЖДЕН rN» берётся из текста преамбулы, не из имени файла</td></tr>
+      <tr><td><code>change.package</code>, <code>change.spec_deltas</code></td><td><code>openspec/changes/&lt;id&gt;/</code></td><td>Наличие пакета и дельт specs/</td></tr>
+      <tr><td><code>change.tasks</code></td><td><code>…/tasks.md</code></td><td>Счётчики чекбоксов (факт, а не готовность), зависимости и <code>[P]</code></td></tr>
+      <tr><td>задача</td><td><code>…/tasks.md</code></td><td>Статус одной task ID независимо от других</td></tr>
+      <tr><td><code>reviews.approved</code></td><td><code>code-reviews/&lt;id&gt;/</code></td><td>Вердикт approve через parse_verdict (решает последний)</td></tr>
+      <tr><td><code>specs.present</code></td><td><code>openspec/specs/</code></td><td>Мастер-спеки есть</td></tr>
+      <tr><td><code>sdd.present</code>, <code>sdd.approved_skip</code></td><td><code>sdd.md</code>, <code>sdd-skip.md</code></td><td>SDD есть, или skip с обязательной строкой <code>approved_by:</code></td></tr>
+      <tr><td><code>test_model.present</code></td><td><code>test-model/</code></td><td>Контур тест-модели</td></tr>
+      <tr><td>approved своего change</td><td><code>test-model/approved/&lt;id&gt;/</code></td><td>Кейсы именно этого change, а не старых пакетов</td></tr>
+      <tr><td>archived</td><td><code>openspec/changes/archive/&lt;id&gt;</code></td><td>Пакет в archive, И дельты слиты в specs, И <code>openspec validate --strict</code> проходит</td></tr>
+      <tr><td>release approval</td><td><code>releases/&lt;id&gt;.md</code></td><td>change-id + слово согласия + привязка к SHA</td></tr>
+      <tr><td>github protection</td><td><code>.flow-evidence/github-protection.json</code></td><td>Отчёт адаптера не старше 24 ч: ruleset active, PR-only, без bypass</td></tr>
+      <tr><td><code>sessions.state</code></td><td><code>active_sessions.json</code></td><td>Реестр. Битый или отсутствующий файл — unknown, а не «сессий нет»</td></tr>
+      <tr><td>git</td><td>HEAD, статус</td><td>SHA, изменённые пути</td></tr>
+    </tbody>
+  </table></div>
+
+  <h2>Что проверяет flow_transition</h2>
+  <p class="sub">Для запрошенного действия (флоу + action + роль + scope) берётся этап из STAGE_TABLE и выполняется его check-функция по снимку. Сквозные проверки идут для всех этапов:</p>
+  <div class="grid2">
+    <div class="panel"><h4>Сквозные ворота</h4><ul>
+      <li>роль разрешена этапу, иначе <code>WRONG_ROLE</code></li>
+      <li>план с <code>Флоу: N</code>, совпадающим с запрошенным (Ф1/2/4) — <code>PLAN_RELEASE_MISSING</code>, <code>PLAN_FLOW_UNDECLARED</code></li>
+      <li>этап с утверждением требует approval_ref на запись <code>decisions/</code> — <code>HUMAN_APPROVAL_REQUIRED</code></li>
+      <li>scope по грамматике флоу — <code>FLOW_ID_INVALID</code></li>
+      <li>защищённые пути без <code>[pipeline]</code> — отказ</li>
+      <li>merge и release требуют внешней защиты — <code>EXTERNAL_ENFORCEMENT_UNKNOWN</code></li>
+    </ul></div>
+    <div class="panel"><h4>Защищённые пути (J3)</h4><ul>
+      <li><code>openspec/</code></li><li><code>contracts/</code></li><li><code>AGENTS.md</code></li>
+      <li><code>agents/README.md</code>, <code>agents/roles.json</code></li>
+      <li><code>test-model/test-layout.json</code></li>
+    </ul><p>Правка только коммитом с маркером <code>[pipeline]</code>, правка правил — только по решению Заказчика.</p></div>
+  </div>
+
+  <h2>gate_runner: какие гейты в каком скоупе</h2>
+  <div class="tw"><table class="mx">
+    <thead><tr><th>Скоуп</th><th>openspec validate</th><th>flow_check</th><th>pm_bounds_check</th><th>pr_validate</th><th>Когда</th></tr></thead>
+    <tbody>
+      <tr><td><code>preflight</code></td><td><span class="dot"></span></td><td></td><td></td><td></td><td>до запуска</td></tr>
+      <tr><td><code>post_agent</code></td><td></td><td><span class="dot"></span></td><td></td><td></td><td>после агента (раннер)</td></tr>
+      <tr><td><code>pre_accept</code></td><td></td><td><span class="dot"></span></td><td><span class="dot"></span></td><td></td><td>перед приёмкой</td></tr>
+      <tr><td><code>pre_merge</code></td><td></td><td><span class="dot"></span></td><td><span class="dot"></span></td><td><span class="dot"></span></td><td>перед мержем</td></tr>
+      <tr><td><code>ci</code></td><td><span class="dot"></span></td><td><span class="dot"></span></td><td><span class="dot"></span></td><td><span class="dot"></span></td><td>в CI</td></tr>
+    </tbody>
+  </table></div>
+  <div class="grid4">
+    <div class="panel"><span class="tag t-ok">PASS</span><p style="margin-top:6px">exit 0</p></div>
+    <div class="panel"><span class="tag t-bad">FAIL</span><p style="margin-top:6px">exit 1</p></div>
+    <div class="panel"><span class="tag t-bad">ERROR</span><p style="margin-top:6px">иной exit, таймаут, нет бинаря, pm_bounds без режима. Блокирует</p></div>
+    <div class="panel"><span class="tag t-warn">SKIPPED / STALE</span><p style="margin-top:6px">SKIPPED ≠ PASS. После нового коммита отчёт становится STALE, повтор обязателен</p></div>
+  </div>
+  <p class="sub" style="margin-top:10px">Обязательный набор гейтов вычисляется из политики: гейты точки запуска плюс машинные ворота этапа. <code>--gates</code> может только добавить. Попытка заменить набор даёт <code>MISSING_REQUIRED_GATES</code>, а <code>--diagnostic</code> — вердикт <code>diagnostic_only</code> без права accepted.</p>
+
+  <h2>Что проверяет flow_check (по файлам)</h2>
+  <div class="tw"><table>
+    <thead><tr><th>Область</th><th>Правило</th><th>Результат</th></tr></thead>
+    <tbody>
+      <tr><td>Архитектура (J46)</td><td>Есть <code>backend/</code> или <code>services/</code> — обязательна <code>architecture/map.md</code>. Архивный пакет с продуктовыми дельтами — строка «Карта:» в arch-ревью</td><td>ERROR</td></tr>
+      <tr><td>Требования (C1/E3)</td><td>Преамбула статуса, 7 разделов, уникальные FR/NFR, нет TBD/TODO, нет оценочных слов в FR</td><td>ERROR</td></tr>
+      <tr><td>Change-пакет</td><td>Пакет требует requirements.md и sdd.md; каждый Requirement имеет Scenario</td><td>ERROR</td></tr>
+      <tr><td>Архив (контракт 7)</td><td>Пакет в archive обязан быть слит в master-spec</td><td>ERROR</td></tr>
+      <tr><td>Code review (J10)</td><td>Каждая закрытая dev-задача имеет approve последней итерации</td><td>ERROR / WARN</td></tr>
+      <tr><td>Кейсы new/ (контракт 4)</td><td>1 кейс = 1 файл, имя = ID, трассировка к заголовкам спеки</td><td>ERROR</td></tr>
+      <tr><td>approved/ (5/6)</td><td>Не пусто, есть ревью с «одобрить»</td><td>ERROR</td></tr>
+      <tr><td>Автотесты (6, J66)</td><td>Только по approved; TC в docstring (кроме unit); без <code>time.sleep</code>; каталог и стек уровня</td><td>ERROR / WARN по test-layout.json</td></tr>
+      <tr><td>API-эндпоинты</td><td>Маршрут из кода упомянут в дельтах, sdd или impact</td><td>эвристика</td></tr>
+      <tr><td>Промпты</td><td>Рассинхрон с эталоном фабрики</td><td>WARN</td></tr>
+    </tbody>
+  </table></div>
+
+  <h2>Что проверяет pr_validate (по маркеру PR)</h2>
+  <div class="tw"><table>
+    <thead><tr><th>Маркер</th><th>Обязательные артефакты</th></tr></thead>
+    <tbody>
+      <tr><td><code>[change-id]</code></td><td>proposal, design, tasks, дельты specs; impact при MODIFIED/REMOVED; impact-карта; approve-ревью с Reviewer-Delegation (J10); regress-final PASS (commit — предок HEAD); правила IR. Пакет в archive — используй <code>[chore]</code></td></tr>
+      <tr><td><code>[BUG-NNN]</code></td><td>Репорт <code>test-model/bugs/BUG-…md</code> с разделом «Статус»; механическая сверка IR</td></tr>
+      <tr><td><code>[chore]</code>, <code>[docs]</code>, <code>[ops]</code></td><td>check_chore + механическая сверка IR; карту не требует</td></tr>
+    </tbody>
+  </table></div>
+  <p class="sub">Reviewer-Delegation проверяется по <code>async_delegations</code> Hermes (реальная, completed, не dev-делегация задачи) или по штампу раннера для стадий Pi (J65.4b).</p>
+
+  <h2>Остальные скрипты движка</h2>
+  <div class="tw"><table>
+    <thead><tr><th>Скрипт</th><th>Режим</th><th>Что делает</th></tr></thead>
+    <tbody>
+      <tr><td><code>pm_bounds_check</code></td><td>enforcing</td><td>Режимы <code>commits / sessions / product-commits</code>: защищённые пути, уникальность project/owner_pm в реестре, коммиты ПМ в продукте без <code>[pipeline]</code></td></tr>
+      <tr><td><code>flow_scope_check</code></td><td>enforcing</td><td>Коммиты ветки соответствуют заявленному change-id (чужие маркеры — DENY)</td></tr>
+      <tr><td><code>flow_preflight</code></td><td>advisory</td><td>Дешёвые чеки до dev-цикла: static_v, свежесть regress, тело PR</td></tr>
+      <tr><td><code>flow_mode</code></td><td>config</td><td><code>set enforcing|shadow --by customer</code> → <code>flow_mode.json</code></td></tr>
+      <tr><td><code>delegate_gate</code></td><td>enforcing</td><td>Обёртка start (prepare+run) / finish / status для ручных делегаций</td></tr>
+      <tr><td><code>gates_stats</code></td><td>detect</td><td><code>flowctl gates-stats</code>: срабатывания гейтов и кодов для квартального пересмотра (J65.9)</td></tr>
+      <tr><td><code>gen_role_docs</code></td><td>manual</td><td>Генерирует таблицы зон и оглавление паков из roles.json (<code>--check</code> в тестах)</td></tr>
+    </tbody>
+  </table></div>
+
+  <h2>Подкоманды flowctl</h2>
+  <div class="grid3">
+    <div class="panel"><h4>Цикл</h4><p><code>prepare</code> · <code>run</code> · <code>finish</code> · <code>close</code> · <code>release</code> · <code>reconcile</code> · <code>status</code></p></div>
+    <div class="panel"><h4>Прокси и память</h4><p><code>inspect</code> · <code>check</code> · <code>next</code> · <code>phase</code></p></div>
+    <div class="panel"><h4>Сервис</h4><p><code>integrate</code> · <code>regress</code> · <code>gc</code> · <code>gates-stats</code></p></div>
+  </div>
+
+  <h2>Журнал решений Заказчика</h2>
+  <p class="sub">Этапные ворота принимают <code>--approval-ref</code> только как decision_id записи <code>decisions/&lt;YYYY-MM-DD&gt;-&lt;slug&gt;.md</code> (блок <code>decision-record/1</code>: action, scope, SHA на момент решения, source с дословной цитатой, необязательный expiration). Проверяется: action и scope совпадают, SHA — предок HEAD, срок не истёк. Запись делается через <code>gate_runner record-decision</code>, она append-only. Журнал подтверждает факт решения, но не личность.</p>
+</section>
+
+<!-- ============ 06 RUNNER ============ -->
+<section class="page" id="p-runner" data-id="runner" hidden>
+  <div class="crumb">06 · Пакетный раннер</div>
+  <h1>Пакетный раннер и манифест</h1>
+  <p class="lede"><code>scripts/package_runner.py &lt;PLAN&gt; [--dry-run]</code> исполняет секцию <code>pipeline:</code> из YAML-блока плана. План остаётся единым артефактом ПМ, раннер лишь исполняет объявленное. Повторный запуск продолжает с сохранённого state.</p>
+
+  <h2>Виды стадий</h2>
+  <div class="grid4">
+    <div class="panel bl-e"><h4><code>pi:&lt;роль&gt;</code></h4><p>Агентная стадия через Pi. Полный набор ворот.</p></div>
+    <div class="panel bl-w"><h4><code>hermes:&lt;роль&gt;</code></h4><p>Стоп-точка ПМ: «ЖДУ ПМ», exit 2. Повторный запуск — после действия ПМ.</p></div>
+    <div class="panel bl-p"><h4><code>gate:&lt;команда&gt;</code></h4><p>Скрипт-проверка. Красный результат — STOP.</p></div>
+    <div class="panel bl-p"><h4><code>stand:&lt;команда&gt;</code></h4><p>Подъём стенда. Его <code>export</code> пробрасывается в env следующих стадий.</p></div>
+  </div>
+
+  <h2>Ключи стадии</h2>
+  <div class="tw"><table>
+    <thead><tr><th>Ключ</th><th>Зачем</th></tr></thead>
+    <tbody>
+      <tr><td><code>id</code>, <code>run</code></td><td>Имя стадии и исполнитель:роль или команда</td></tr>
+      <tr><td><code>zones</code></td><td>Зоны записи; только сужение политики роли. Нет ключа — берётся зона роли из roles.json</td></tr>
+      <tr><td><code>inputs</code>, <code>task</code></td><td>Входные файлы и текст задачи для брифа</td></tr>
+      <tr><td><code>gate</code></td><td>Доп. гейт после агента</td></tr>
+      <tr><td><code>verdict: {file}</code></td><td>Файл ревью. Return или нет заголовка — STOP «ЖДУ ПМ: возврат ревью»</td></tr>
+      <tr><td><code>optional: true</code></td><td>Падение даёт skipped + WARNING, пакет едет дальше</td></tr>
+      <tr><td><code>task_id</code> / <code>per_task: true</code> + <code>review:</code></td><td>Одна задача или все открытые задачи tasks.md по зависимостям, парами «dev → ревью». Чекбокс ставит раннер после approve (J64.13)</td></tr>
+      <tr><td><code>approval_ref</code></td><td>Ссылка на решение для этапа с утверждением</td></tr>
+      <tr><td><code>provider</code>, <code>model</code></td><td>Переопределение модели роли</td></tr>
+      <tr><td><code>pipeline.gate_env_strip</code></td><td>Какие env убрать из окружения гейтов</td></tr>
+    </tbody>
+  </table></div>
+
+  <h2>Анатомия агентной стадии</h2>
+  <div class="fig">
+  <svg viewBox="0 0 1040 300" role="img" aria-label="Шаги агентной стадии раннера">
+    <defs><marker id="m7" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0L10,5L0,10z" fill="var(--ink-3)"/></marker><marker id="m7b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0L10,5L0,10z" fill="var(--bad)"/></marker></defs>
+    <g>
+      <rect class="bp" x="6" y="30" width="118" height="112" rx="8"/><text class="hd" x="16" y="52">0 · preflight</text>
+      <text class="t2" x="16" y="72">готовность:</text><text class="t2" x="16" y="88">guard на месте,</text><text class="t2" x="16" y="104">модель известна</text><text class="mo" x="16" y="126">sha256 guard</text>
+    </g>
+    <g><rect class="be" x="134" y="30" width="118" height="112" rx="8"/><text class="hd" x="144" y="52">1 · prepare</text>
+      <text class="mo" x="144" y="72">--repo worktree</text><text class="t2" x="144" y="90">снимок + решение,</text><text class="t2" x="144" y="106">план и «Флоу: N»</text><text class="t2" x="144" y="122">зона ⊆ политика</text></g>
+    <g><rect class="be" x="262" y="30" width="118" height="112" rx="8"/><text class="hd" x="272" y="52">2 · reserve</text>
+      <text class="t2" x="272" y="72">зона в главном</text><text class="t2" x="272" y="88">клоне, policy +</text><text class="t2" x="272" y="104">role_zone_digest</text></g>
+    <g><rect class="be" x="390" y="30" width="118" height="112" rx="8"/><text class="hd" x="400" y="52">3 · run + агент</text>
+      <text class="t2" x="400" y="72">переснимок</text><text class="t2" x="400" y="88">(STALE_SNAPSHOT),</text><text class="t2" x="400" y="104">процесс с таймаутом,</text><text class="mo" x="400" y="122">executor_runs</text></g>
+    <g><rect class="be" x="518" y="30" width="118" height="112" rx="8"/><text class="hd" x="528" y="52">4 · finish</text>
+      <text class="mo" x="528" y="72">post_agent</text><text class="t2" x="528" y="90">гейты этапа,</text><text class="t2" x="528" y="106">accepted /</text><text class="t2" x="528" y="122">returned / blocked</text></g>
+    <g><rect class="be" x="646" y="30" width="118" height="112" rx="8"/><text class="hd" x="656" y="52">5 · diff ⊆ зона</text>
+      <text class="t2" x="656" y="72">реальный git diff,</text><text class="t2" x="656" y="88">включая bash,</text><text class="t2" x="656" y="104">renames, symlink</text><text class="mo" x="656" y="122">OUT_OF_ZONE</text></g>
+    <g><rect class="be" x="774" y="30" width="118" height="112" rx="8"/><text class="hd" x="784" y="52">6 · вердикт</text>
+      <text class="mo" x="784" y="72">parse_verdict</text><text class="t2" x="784" y="90">провенанс,</text><text class="t2" x="784" y="106">штамп Reviewer-</text><text class="t2" x="784" y="122">Delegation</text></g>
+    <g><rect class="bok" x="902" y="30" width="132" height="112" rx="8"/><text class="hd" x="912" y="52">7 · коммит</text>
+      <text class="mo" x="912" y="72">pipeline/&lt;pkg&gt;</text><text class="t2" x="912" y="90">отчёт стадии</text><text class="mo" x="912" y="106">.runner-reports/</text><text class="t2" x="912" y="122">резервация closed</text></g>
+    <path class="arr" d="M124 86H134" marker-end="url(#m7)"/><path class="arr" d="M252 86H262" marker-end="url(#m7)"/><path class="arr" d="M380 86H390" marker-end="url(#m7)"/><path class="arr" d="M508 86H518" marker-end="url(#m7)"/><path class="arr" d="M636 86H646" marker-end="url(#m7)"/><path class="arr" d="M764 86H774" marker-end="url(#m7)"/><path class="arr" d="M892 86H902" marker-end="url(#m7)"/>
+    <path class="arr-b" d="M65 142V190"/><path class="arr-b" d="M193 142V190"/><path class="arr-b" d="M321 142V190"/><path class="arr-b" d="M449 142V190"/><path class="arr-b" d="M577 142V190"/><path class="arr-b" d="M705 142V190"/><path class="arr-b" d="M833 142V190"/>
+    <path class="arr-b" d="M65 190H900" marker-end="url(#m7b)"/>
+    <rect x="6" y="204" width="1028" height="86" rx="8" fill="var(--bad-soft)" stroke="var(--bad)" stroke-dasharray="4 3"/>
+    <text class="bad" x="20" y="226" font-size="12">STOP с кодом, exit 2: попытка откладывается, ветка пакета остаётся чистой</text>
+    <text class="mo" x="20" y="246">ZONE_GUARD_MISSING · EXECUTOR_UNAVAILABLE · MODEL_UNRESOLVED · DENY · ZONE_OUTSIDE_POLICY · ZONE_CONFLICT · STALE_SNAPSHOT</text>
+    <text class="mo" x="20" y="262">OUT_OF_ZONE · ZONE_POLICY_MISMATCH · красный гейт · вердикт return · ENGINE_ERROR · FACTORY_ENGINE_MISSING · PIPELINE_TIMEOUT</text>
+    <text class="t2" x="20" y="280">shelve_attempt: soft reset + git stash -u (кроме SESSION.md и AGENTS.pi.md). Ошибка или таймаут flowctl — rc 2, fail-closed. Остановленная стадия переисполняется целиком.</text>
+  </svg>
+  </div>
+
+  <h2>Пример манифеста Флоу 1 (скелет)</h2>
+  <div class="chain">
+    <div class="c"><b>pi:ba</b><small>requirements</small></div><span class="s">→</span>
+    <div class="c ap"><b>hermes:pm</b><small>approve</small></div><span class="s">→</span>
+    <div class="c"><b>pi:sa</b><small>create_change</small></div><span class="s">→</span>
+    <div class="c"><b>pi:architect</b><small>verdict</small></div><span class="s">→</span>
+    <div class="c opt"><b>pi:ui-designer</b><small>optional</small></div><span class="s">→</span>
+    <div class="c opt"><b>pi:design-validator</b><small>optional</small></div><span class="s">→</span>
+    <div class="c"><b>pi:dev</b><small>per_task</small></div><span class="s">→</span>
+    <div class="c"><b>pi:code-reviewer</b><small>verdict</small></div><span class="s">→</span>
+    <div class="c"><b>pi:qa-case-author</b></div><span class="s">→</span>
+    <div class="c"><b>pi:qa-case-reviewer</b><small>verdict</small></div><span class="s">→</span>
+    <div class="c"><b>stand:</b><small>qa_stand_up</small></div><span class="s">→</span>
+    <div class="c"><b>pi:qa-automation</b></div><span class="s">→</span>
+    <div class="c"><b>pi:qa-impact-analyst</b></div><span class="s">→</span>
+    <div class="c"><b>pi:regress-runner</b></div><span class="s">→</span>
+    <div class="c ap"><b>hermes:pm</b><small>archive, PR</small></div><span class="s">→</span>
+    <div class="c ap"><b>hermes:pm</b><small>release, merge</small></div><span class="s">→</span>
+    <div class="c opt"><b>pi:devops</b><small>deploy, optional</small></div>
+  </div>
+  <p class="sub">Полный YAML с комментариями лежит в <code>docs/guides/pipeline-manifest.md</code>. Debug — не стадия: ПМ запускает <code>pi:debug</code> параллельно застрявшей стадии.</p>
+
+  <h2>Что раннер пишет</h2>
+  <div class="grid3">
+    <div class="panel"><h4>В репо</h4><p>Коммит на каждую стадию в <code>pipeline/&lt;pkg&gt;</code>; отчёты <code>&lt;plan&gt;.runner-reports/&lt;stage&gt;-&lt;n&gt;.md</code> с provenance и sha256 guard'а.</p></div>
+    <div class="panel"><h4>В state</h4><p><code>executor_runs.jsonl</code> (start/end), лог отказов guard'а <code>zone-guard/&lt;pkg&gt;.log</code>, state раннера для продолжения.</p></div>
+    <div class="panel"><h4>В движке</h4><p>Записи flowctl для каждой стадии: снимок, резервация, вердикт, закрытие.</p></div>
+  </div>
+  <div class="callout">Роль без этапа во флоу (ba, regress_runner, devops) получает резервацию по политике роли, код <code>ROLE_WITHOUT_STAGE</code>. Самопроверка — эталонный прогон <code>tests/fixtures/reference-run/</code> через stub на каждом PR.</div>
+</section>
+
+<!-- ============ 07 WATCH ============ -->
+<section class="page" id="p-watch" data-id="watch" hidden>
+  <div class="crumb">07 · Вотчдоги и кроны</div>
+  <h1>Вотчдоги и кроны</h1>
+  <p class="lede">Слой «заметят». Кроны запускает Hermes cron. В <code>~/.hermes/scripts/</code> лежат только тонкие обёртки-делегаты, источник истины — репо-копия скрипта. Политика тишины: при чистом состоянии вотчдог молчит, а в чат попадает только аномалия.</p>
+
+  <h2>Расписание за час</h2>
+  <div class="fig">
+  <svg viewBox="0 0 1040 250" role="img" aria-label="Кроны на шкале одного часа">
+    <line x1="160" y1="30" x2="1020" y2="30" stroke="var(--line)"/>
+    <g class="t3">
+      <text x="156" y="22" class="t3">:00</text><text x="363" y="22" class="t3">:15</text><text x="578" y="22" class="t3">:30</text><text x="793" y="22" class="t3">:45</text><text x="1000" y="22" class="t3">:60</text>
+    </g>
+    <text class="hd" x="10" y="64">session-watchdog</text><text class="t3" x="10" y="80">*/5 · origin</text>
+    <text class="hd" x="10" y="114">delegate-watchdog</text><text class="t3" x="10" y="130">*/5 · origin</text>
+    <text class="hd" x="10" y="164">stand-reaper-hourly</text><text class="t3" x="10" y="180">0 * * * * · local</text>
+    <text class="hd" x="10" y="214">state-backup</text><text class="t3" x="10" y="230">15 3 * * * · local</text>
+    <g id="ticks1"></g>
+    <rect class="bok" x="160" y="150" width="14" height="34" rx="3"/>
+    <rect x="160" y="200" width="860" height="34" rx="4" fill="var(--surface-2)"/>
+    <text class="t2" x="172" y="222">раз в сутки в 03:15 UTC: архив state, ротация 14 шт.</text>
+  </svg>
+  <div class="cap">Каждая полоска — запуск. delegate-watchdog на паузе: его включает ПМ после проверки эвристики (прогон clean, exit 0, затем deliver=origin). Тот же прогон вызывает executor_watchdog.</div>
+  </div>
+
+  <h2>Карточки вотчдогов</h2>
+  <div class="grid2">
+    <div class="panel bl-w"><h4><code>delegate_watchdog.py</code> · обход делегаций</h4>
+      <p><b>Читает:</b> <code>state.db → async_delegations</code> (пишет сама платформа при каждом delegate_task), <code>flowctl_state.json</code>, ack-файл.</p>
+      <p><b>Ловит:</b> BYPASS — делегация с непустым project без записи flowctl; STALE_FINISH — делегация завершилась, а сессия flowctl осталась running.</p>
+      <p><b>Норма:</b> диспатчи ПМ без project не флагаются (23 ложных bypass 2026-10-23).</p>
+      <p><b>Анти-спам:</b> дедуп по составу, cooldown 15 мин, не больше 3 доставок в час. Exit 1 — нарушения.</p></div>
+    <div class="panel bl-w"><h4><code>executor_watchdog.py</code> · обход исполнителей</h4>
+      <p><b>Читает:</b> процессы исполнителей (<code>list_active()</code> каждого модуля), реестр сессий, <code>executor_runs.jsonl</code>.</p>
+      <p><b>Ловит:</b> процесс pi или stub в каталоге проекта конвейера, чей cwd не совпадает с worktree живой резервации — BYPASS <code>proc:&lt;исполнитель&gt;:&lt;pid&gt;</code>. По журналу отличает сбой раннера от ручного запуска.</p>
+      <p><b>Слепые зоны:</b> бинарь под чужим именем, команды в переменных.</p></div>
+    <div class="panel bl-w"><h4><code>session_watchdog.py</code> · чат Заказчика</h4>
+      <p><b>Читает:</b> <code>state.db</code> (gateway_routing, sessions), <code>sessions.json</code>.</p>
+      <p><b>Ловит:</b> ключ роутинга Telegram, который указывает на завершённую сессию (вы «проваливаетесь» в зомби-сабагента), dropped-делегации, контаминацию ролью.</p>
+      <p><b>Действие:</b> удаляет залипшую запись роутинга, и следующее сообщение создаёт свежую сессию. Exit 1 — было лечение.</p></div>
+    <div class="panel bl-w"><h4><code>stand_reaper.py</code> · осиротевшие стенды</h4>
+      <p><b>Читает:</b> процессы uvicorn / http.server / nginx пользователя openclaw, <code>/proc/&lt;pid&gt;/cwd</code>, реестр сессий.</p>
+      <p><b>Решение:</b> cwd удалён или worktree без живой сессии — REAP. Обычный клон — только отчёт. Прод, docker и чужих пользователей не трогает.</p>
+      <p><b>Режим:</b> по умолчанию dry-run, <code>--kill</code> только руками.</p></div>
+    <div class="panel bl-p"><h4><code>state_backup.py</code> · бэкап state</h4>
+      <p><b>Делает:</b> <code>backup</code> — <code>state-&lt;UTC&gt;.tar.gz</code> в <code>AF_BACKUP_DIR</code> (0600), хранит 14 последних. <code>restore</code> откладывает текущий state и откатывается при сбое. Если есть активные сессии — отказ без <code>--force</code>.</p>
+      <p><b>Важно:</b> копию нужно вывозить с VPS (runbook-factory-move).</p></div>
+    <div class="panel"><h4><code>chat_degrade_watchdog.py</code> · деградация моделей</h4>
+      <p><b>Читает:</b> только новые байты <code>errors.log</code> гейтвея (offset в state).</p>
+      <p><b>Ловит:</b> runaway repetition, обрыв стрима, EOF без finish_reason. Не чаще раза в час на тип. Exit всегда 0.</p>
+      <p><b>Статус:</b> в рекомендованном реестре кронов его нет; включается отдельно.</p></div>
+  </div>
+
+  <h2>Таблица кронов</h2>
+  <div class="tw"><table>
+    <thead><tr><th>Джоба</th><th>Расписание</th><th>deliver</th><th>Статус</th><th>Когда пишет в чат</th></tr></thead>
+    <tbody>
+      <tr><td><code>session-watchdog</code></td><td><code>*/5 * * * *</code></td><td>origin</td><td><span class="tag t-ok">активен</span></td><td>залипший ключ или сессия, dropped-делегация</td></tr>
+      <tr><td><code>delegate-watchdog</code></td><td><code>*/5 * * * *</code></td><td>origin</td><td><span class="tag t-warn">включает ПМ</span></td><td>новые BYPASS / STALE_FINISH (только дельта)</td></tr>
+      <tr><td><code>stand-reaper-hourly</code></td><td><code>0 * * * *</code></td><td>local</td><td><span class="tag t-ok">активен</span></td><td>только если упал сам скрипт</td></tr>
+      <tr><td><code>state-backup</code></td><td><code>15 3 * * *</code></td><td>local</td><td><span class="tag t-ok">рекомендован</span></td><td>никогда (молчит при успехе)</td></tr>
+      <tr><td><code>watchdog-daily-digest</code></td><td>—</td><td>—</td><td><span class="tag t-bad">упразднён</span></td><td>не создавать (решение 2026-10-23)</td></tr>
+    </tbody>
+  </table></div>
+
+  <h2>Как устроен запуск крона</h2>
+  <div class="chain">
+    <div class="c"><b>Hermes cron</b><small>--no-agent, расписание</small></div><span class="s">→</span>
+    <div class="c"><b>~/.hermes/scripts/&lt;x&gt;.py</b><small>обёртка: exec к репо</small></div><span class="s">→</span>
+    <div class="c"><b>&lt;фабрика&gt;/scripts/&lt;x&gt;.py</b><small>источник истины</small></div><span class="s">→</span>
+    <div class="c"><b>stdout</b><small>пусто = тишина</small></div><span class="s">→</span>
+    <div class="c ap"><b>чат</b><small>только аномалия</small></div>
+  </div>
+  <p class="sub">Обёртки ставит и обновляет <code>factory_init.install_crons()</code>. Устаревшие standalone-копии он показывает в WARN. Почему так: до 2026-10-23 кроны исполняли копии от 4 октября, фикс в репо не доезжал до боевого файла, и старая копия спамила чат «ok» каждые 5 минут.</p>
+</section>
+
+<!-- ============ 08 CI ============ -->
+<section class="page" id="p-ci" data-id="ci" hidden>
+  <div class="crumb">08 · CI и GitHub</div>
+  <h1>CI и GitHub: последний замок</h1>
+  <p class="lede">Слой, который нельзя обойти локально: без зелёных обязательных чеков мерж в main невозможен.</p>
+
+  <div class="fig">
+  <svg viewBox="0 0 1040 290" role="img" aria-label="Пайплайн CI flow.yml">
+    <defs><marker id="m8" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0L10,5L0,10z" fill="var(--ink-3)"/></marker></defs>
+    <rect class="br" x="10" y="110" width="150" height="70" rx="8"/><text class="hd" x="22" y="134">push / PR</text><text class="t3" x="22" y="152">main, pipeline/**</text><text class="t3" x="22" y="168">pull_request</text>
+    <rect class="be" x="210" y="20" width="380" height="110" rx="10"/>
+    <text class="hd" x="224" y="44">job test-flow-control</text>
+    <text class="t2" x="224" y="64">Python + pytest 9.2.0 (версия закреплена)</text>
+    <text class="mo" x="224" y="84">pytest tests/ -q  (1400+ тестов)</text>
+    <text class="t2" x="224" y="104">включая эталонный прогон Флоу 1 через раннер</text>
+    <text class="t2" x="224" y="120">и harness CI-среды (shallow clone, env -i)</text>
+    <rect class="be" x="210" y="150" width="380" height="130" rx="10"/>
+    <text class="hd" x="224" y="174">job flow</text>
+    <text class="mo" x="224" y="194">1 factory.lock → checkout фабрики по SHA</text>
+    <text class="mo" x="224" y="210">2 openspec validate --all --strict (1.14.0)</text>
+    <text class="mo" x="224" y="226">3 flow_check.py .</text>
+    <text class="mo" x="224" y="242">4 pr_validate (маркер, контракты, J10)</text>
+    <text class="mo" x="224" y="258">5 push gate: pipeline/** без PR → error</text>
+    <path class="arr" d="M160 135 H185 V75 H210" marker-end="url(#m8)"/>
+    <path class="arr" d="M160 155 H185 V215 H210" marker-end="url(#m8)"/>
+    <rect class="br" x="650" y="90" width="200" height="110" rx="10"/>
+    <text class="hd" x="664" y="114">ruleset main</text>
+    <text class="t2" x="664" y="134">active, только PR</text>
+    <text class="t2" x="664" y="150">bypass никому</text>
+    <text class="t2" x="664" y="166">без force-push</text>
+    <text class="t2" x="664" y="182">required: оба job'а</text>
+    <path class="arr" d="M590 75 H620 V130 H650" marker-end="url(#m8)"/>
+    <path class="arr" d="M590 215 H620 V160 H650" marker-end="url(#m8)"/>
+    <rect class="bok" x="900" y="115" width="130" height="60" rx="10"/><text class="hd" x="914" y="140">merge</text><text class="t3" x="914" y="158">только Заказчик</text>
+    <path class="arr" d="M850 145 H900" marker-end="url(#m8)"/>
+  </svg>
+  </div>
+
+  <div class="grid2">
+    <div class="panel"><h4>Push-политика сабагентов (J42)</h4><ul>
+      <li><b>L1:</b> ruleset main, bypass never</li>
+      <li><b>L2:</b> CI-триггер <code>pipeline/**</code>. Голый push без открытого PR — падающий шаг и сигнал ПМ</li>
+      <li><b>L4:</b> flow-enforcer push_gate. В делегации разрешён push только в свою ветку, иначе <code>PUSH_POLICY</code>. Push ПМ в продукт без <code>[integrate]</code>/<code>[pipeline]</code> — <code>PM_PUSH_POLICY</code></li>
+      <li><b>Pi:</b> zone-guard блокирует <code>git push</code> всем ролям</li>
+    </ul></div>
+    <div class="panel"><h4>Проекты: factory.lock (J65.7)</h4><p>CI проекта не держит свои копии ворот: он берёт фабрику на SHA из <code>factory.lock</code> и гоняет её flow_check и pr_validate.</p><ul>
+      <li><code>factory_lock.py show</code></li>
+      <li><code>factory_lock.py update [--sha]</code> — без <code>--sha</code> только HEAD, влитый в origin/main</li>
+    </ul></div>
+    <div class="panel"><h4>Проверка ruleset</h4><p><code>scripts/ruleset_check.py</code> (read-only) проверяет: active, bypass никому, PR-only, без force-push, оба обязательных чека. Аварийный мерж — только админ, по <code>docs/runbook-emergency-merge.md</code>.</p></div>
+    <div class="panel"><h4>До push: ci_local</h4><p><code>python3 scripts/ci_local.py</code> гоняет <code>pytest tests/</code> и flow_check в условиях CI: клон глубины 1 и пустой HOME. Ловит класс «у автора PASS, в CI FAIL» (урок #218).</p></div>
+  </div>
+
+  <h2>Ревью-мета: формат, который читают ворота</h2>
+  <pre class="tree"><span class="c"># code-reviews/&lt;change-id&gt;/review-&lt;задача&gt;-&lt;NNN&gt;.md</span>
+<b>Reviewer-Delegation: deleg_&lt;id&gt;</b>      <span class="c"># первая мета; сверка с async_delegations или штампом раннера</span>
+Commit: &lt;sha&gt;                       <span class="c"># ревью без коммита HEAD — STALE</span>
+...
+<b>## Вердикт: approve</b>                 <span class="c"># или return; решает ПОСЛЕДНИЙ заголовок</span>
+<span class="c"># несколько задач в одном файле → review-mapping.json: {"review-002.md": ["2.1","2.2"]}</span></pre>
+</section>
+
+<!-- ============ 09 TESTS ============ -->
+<section class="page" id="p-tests" data-id="tests" hidden>
+  <div class="crumb">09 · Тесты и регресс</div>
+  <h1>Тесты и регресс</h1>
+  <p class="lede">Полный регресс гоняется не на каждый change. Обычный change — это доменный прогон своего куска плюс smoke. Полный regress-final запускается пакетно перед плановым деплоем (J54).</p>
+
+  <h2>Пять эшелонов регресса</h2>
+  <div class="fig">
+  <svg viewBox="0 0 1040 290" role="img" aria-label="Эшелоны регресса по длительности">
+    <text class="t3" x="230" y="20">ориентировочное время, минуты (шкала: 0–25)</text>
+    <line x1="230" y1="30" x2="230" y2="270" stroke="var(--line)"/>
+    <g>
+      <text class="hd" x="10" y="54">0 · Инстант</text><text class="t3" x="10" y="70">dev · каждая итерация</text>
+      <rect x="230" y="44" width="6" height="26" rx="3" fill="var(--plat)"/><text class="mo" x="244" y="62">секунды · юнит своего модуля</text>
+      <text class="hd" x="10" y="104">1 · Доменный</text><text class="t3" x="10" y="120">dev · закрытие задачи</text>
+      <rect x="230" y="94" width="160" height="26" rx="3" fill="var(--plat)"/><text class="mo" x="398" y="112">1–5 мин · flowctl regress --change C</text>
+      <text class="hd" x="10" y="154">2 · Cross-smoke</text><text class="t3" x="10" y="170">regress_runner / CI</text>
+      <rect x="230" y="144" width="96" height="26" rx="3" fill="var(--engine)"/><text class="mo" x="334" y="162">2–3 мин · --tier smoke (пусто → WARN)</text>
+      <text class="hd" x="10" y="204">3 · Regress-final</text><text class="t3" x="10" y="220">regress_runner · пакетно</text>
+      <rect x="230" y="194" width="790" height="26" rx="3" fill="var(--watch)"/><text class="mo" x="244" y="212" style="fill:var(--surface)">15–25 мин · --final · baseline игнорируется · вход ворот merge</text>
+      <text class="hd" x="10" y="254">4 · Прод-приёмка</text><text class="t3" x="10" y="270">Заказчик · после деплоя</text>
+      <rect x="230" y="244" width="128" height="26" rx="3" fill="var(--rule)"/><text class="mo" x="366" y="262">минуты · смоук deploy.sh</text>
+    </g>
+  </svg>
+  </div>
+  <div class="grid3">
+    <div class="panel"><h4>Baseline</h4><p><code>test-model/regress/baseline.json</code> — известные падения main. Эшелоны 1–2 их не краснят, <code>--final</code> игнорирует. <code>--suggest-baseline</code> предлагает кандидатов, переносит ПМ.</p></div>
+    <div class="panel"><h4>Freeze tooling</h4><p>Между regress-final и деплоем <code>scripts/**</code> и <code>.github/**</code> не трогаются: любой tooling-коммит означает перегон.</p></div>
+    <div class="panel"><h4>xdist</h4><p><code>--xdist N</code> ускоряет прогон. Требование: стенды не делятся между воркерами, стендозависимые тесты помечаются serial.</p></div>
+  </div>
+
+  <h2>Раскладка тестов (J66)</h2>
+  <pre class="tree"><b>tests/</b>
+├─ <b>unit/</b>          <span class="c"># dev · без TC-ID · без requests/playwright</span>
+├─ <b>api/</b>           <span class="c"># qa_automation · pytest + requests · TC в docstring</span>
+├─ <b>web/</b>           <span class="c"># qa_automation · pytest + playwright (e2e/ — сьют стенда)</span>
+├─ <b>integration/</b>   <span class="c"># qa_automation · сервисный слой без HTTP и браузера</span>
+├─ smoke_cross/    <span class="c"># манифест cross-domain smoke</span>
+└─ archive/        <span class="c"># выведенные из регресса (не удаляются)</span>
+<b>test-model/test-layout.json</b>  <span class="c"># {"mode": "warn"|"strict"} — защищённый путь</span></pre>
+
+  <h2>Тесты самой фабрики</h2>
+  <div class="grid2">
+    <div class="panel"><h4>Герметичность</h4><p><code>tests/conftest.py</code> подменяет HOME на всю сессию (<code>isolated_home</code>). Tree guard валит тест, оставивший мусор в дереве (<code>FACTORY-TREE-LEAK</code>). Боевой <code>~/.hermes</code> тесты не трогают.</p></div>
+    <div class="panel"><h4>Самообкатка</h4><p><code>test_gate_harness.py</code> строит tmp-репо, делает shallow clone и гоняет pr_validate, flow_check и factory_init в чистом env. Эталонный прогон раннера проходит в каждом CI.</p></div>
+  </div>
+</section>
+
+<!-- ============ 10 PLATFORM ============ -->
+<section class="page" id="p-platform" data-id="platform" hidden>
+  <div class="crumb">10 · Пути, state, перенос</div>
+  <h1>Пути, state и перенос фабрики</h1>
+  <p class="lede">Фабрика должна быть заменяемой: все пути машины берутся из env через <code>factory_paths.py</code>, state бэкапится, установка на новую машину сделана одной командой.</p>
+
+  <h2>Переменные окружения</h2>
+  <div class="tw"><table>
+    <thead><tr><th>Переменная</th><th>По умолчанию</th><th>Что это</th></tr></thead>
+    <tbody>
+      <tr><td><code>AI_FACTORY_HOME</code></td><td><code>~/ai-factory</code></td><td>Клон фабрики (движок, паки, guard)</td></tr>
+      <tr><td><code>AF_STATE_DIR</code></td><td><code>~/.hermes/state</code></td><td>Память движка. Не зависит от HERMES_HOME</td></tr>
+      <tr><td><code>HERMES_HOME</code></td><td><code>~/.hermes</code></td><td>Платформа Hermes, state.db</td></tr>
+      <tr><td><code>AF_PROJECTS_ROOT</code></td><td>домашний каталог</td><td>Где лежат проекты</td></tr>
+      <tr><td><code>PI_AGENT_DIR</code></td><td><code>~/.pi/agent</code></td><td>Конфиг Pi, models.json (chmod 600)</td></tr>
+      <tr><td><code>AF_BACKUP_DIR</code></td><td>—</td><td>Куда state_backup кладёт архивы</td></tr>
+    </tbody>
+  </table></div>
+  <p class="sub">Проверка: <code>python3 scripts/factory_paths.py --doctor LABEL</code> печатает пути в текущем контексте, а <code>--compare</code> сверяет контексты шелла, крона и Hermes. У flow_check, pr_validate и flow_mode есть fallback-копии, поэтому копии в проектах работают без модуля.</p>
+
+  <h2>Что лежит в state</h2>
+  <pre class="tree"><b>$AF_STATE_DIR/</b>
+├─ active_sessions.json        <span class="c"># реестр резерваций (зоны, worktree, digest, lifecycle)</span>
+├─ flowctl_state.json          <span class="c"># циклы prepare/run/finish</span>
+├─ flow_mode.json              <span class="c"># enforcing | shadow</span>
+├─ flow-bypass-decisions.json  <span class="c"># разрешённые обходы {repo, scope, action, decision_ref, expires}</span>
+├─ gate-reports/               <span class="c"># отчёты gate_runner с digest</span>
+├─ executor_runs.jsonl         <span class="c"># старты и финиши исполнителей</span>
+├─ zone-guard/&lt;pkg&gt;.log        <span class="c"># отказы guard'а Pi</span>
+├─ инциденты вотчдогов, ack-файлы
+└─ session-archive/&lt;deleg&gt;/    <span class="c"># транскрипты + analysis.json</span></pre>
+
+  <h2>Установка и обновление</h2>
+  <div class="fig">
+  <svg viewBox="0 0 1040 170" role="img" aria-label="Установка фабрики и проекта">
+    <defs><marker id="m10" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0L10,5L0,10z" fill="var(--ink-3)"/></marker></defs>
+    <rect class="bp" x="10" y="20" width="230" height="130" rx="10"/><text class="hd" x="24" y="44">factory_bootstrap.py</text><text class="t3" x="24" y="62">разово на новой машине</text>
+    <text class="t2" x="24" y="84">git, node, OpenSpec, pytest, Pi</text><text class="t2" x="24" y="100">state + flow_mode</text><text class="t2" x="24" y="116">zone-guard в ~/.pi</text><text class="t2" x="24" y="132">обёртки кронов, сьют</text>
+    <rect class="bp" x="290" y="20" width="230" height="130" rx="10"/><text class="hd" x="304" y="44">factory_init.py &lt;repo&gt;</text><text class="t3" x="304" y="62">разово на новый проект</text>
+    <text class="t2" x="304" y="84">копии ворот, flow.yml, шаблоны</text><text class="t2" x="304" y="100">скелеты regress и smoke</text><text class="t2" x="304" y="116">install_crons()</text><text class="t2" x="304" y="132">без --force существующее не трогает</text>
+    <rect class="bp" x="570" y="20" width="220" height="130" rx="10"/><text class="hd" x="584" y="44">factory_lock.py</text><text class="t3" x="584" y="62">версия ворот проекта</text>
+    <text class="t2" x="584" y="84">show / update [--sha]</text><text class="t2" x="584" y="100">CI проекта берёт фабрику</text><text class="t2" x="584" y="116">на этом SHA</text>
+    <rect class="bp" x="840" y="20" width="190" height="130" rx="10"/><text class="hd" x="854" y="44">check_mirrors.py</text><text class="t3" x="854" y="62">дрейф копий</text>
+    <text class="t2" x="854" y="84">sha256 копий в проектах</text><text class="t2" x="854" y="100">против эталона</text>
+    <path class="arr" d="M240 85 H290" marker-end="url(#m10)"/><path class="arr" d="M520 85 H570" marker-end="url(#m10)"/><path class="arr" d="M790 85 H840" marker-end="url(#m10)"/>
+  </svg>
+  </div>
+
+  <h2>Runbook'и</h2>
+  <div class="grid3">
+    <div class="panel"><h4>Перенос фабрики</h4><p><code>docs/runbook-factory-move.md</code>: бэкап state, вывоз копии, bootstrap на новой машине, restore.</p></div>
+    <div class="panel"><h4>Аварийный мерж</h4><p><code>docs/runbook-emergency-merge.md</code>: только админ, процедура с ruleset_check до и после.</p></div>
+    <div class="panel"><h4>Уборка</h4><p><code>flowctl gc [--apply] [--deep]</code>: merged-ветки, worktree закрытых сессий, стенды, tmp. По умолчанию dry-run.</p></div>
+  </div>
+
+  <h2>Прочие утилиты</h2>
+  <div class="tw"><table>
+    <thead><tr><th>Скрипт</th><th>Назначение</th></tr></thead>
+    <tbody>
+      <tr><td><code>session_worktree.sh</code></td><td><code>create|remove|list</code>: worktree на сессию, ветка ↔ каталог 1:1</td></tr>
+      <tr><td><code>session_archive.py</code></td><td>Архив транскриптов при приёмке + вердикт clean / suspicious / degraded</td></tr>
+      <tr><td><code>codegraph.py</code></td><td>Граф зависимостей кода проекта (AST backend + ES-imports)</td></tr>
+      <tr><td><code>smoke_static.py</code></td><td>Смоук статики: ссылки шаблонов, диск, прод-URL</td></tr>
+      <tr><td><code>check_auth_timing.py</code></td><td>Timing-safety аутентификации: bcrypt, dummy-проверки</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<!-- ============ 11 GUARANTEES ============ -->
+<section class="page" id="p-guarantees" data-id="guarantees" hidden>
+  <div class="crumb">11 · Гарантии и границы</div>
+  <h1>Что гарантировано, а что нет</h1>
+  <p class="lede">Честная карта: какие из 21 правила AGENTS.md проверяются машиной и где проходят границы гарантий. Источники — <code>docs/rules-enforcement.md</code> и <code>docs/guarantees.md</code>.</p>
+
+  <h2>21 правило AGENTS.md по покрытию</h2>
+  <div class="bar">
+    <div style="flex:14;background:var(--ok)">14 проверяется</div>
+    <div style="flex:2;background:var(--warn)">2</div>
+    <div style="flex:5;background:var(--bad)">5 нет</div>
+  </div>
+  <div class="legend"><span><i style="background:var(--ok);border-color:var(--ok)"></i>скрипт с кодом отказа</span><span><i style="background:var(--warn);border-color:var(--warn)"></i>частично (2 — файлы, 7 — история)</span><span><i style="background:var(--bad);border-color:var(--bad)"></i>не проверяется: 5, 8, 9, 12, 20</span></div>
+
+  <div class="tw" style="margin-top:14px"><table>
+    <thead><tr><th>№</th><th>Правило</th><th>Чем проверяется</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td>Только валидный вход</td><td>prepare → <code>MISSING_INPUT</code>, <code>INVALID_GATE</code>, <code>AMBIGUOUS_STATE</code></td></tr>
+      <tr><td>2</td><td>Передача файлами</td><td>finish без отчёта — blocked; остальное нет</td></tr>
+      <tr><td>3</td><td>Зелёные ворота</td><td>gate_runner (FAIL/ERROR/STALE), CI</td></tr>
+      <tr><td>4</td><td>Своя зона, push своей ветки</td><td><code>ZONE_OUTSIDE_POLICY</code>, <code>ZONE_CONFLICT</code>, <code>OUT_OF_ZONE</code>, <code>ZONE_POLICY_MISMATCH</code>, zone-guard, <code>PUSH_POLICY</code>, ruleset</td></tr>
+      <tr><td>5</td><td>Противоречие — Заказчику</td><td><span class="tag t-bad">нет</span></td></tr>
+      <tr><td>6</td><td>Трассировка</td><td>flow_check (TC, раскладка), pr_validate</td></tr>
+      <tr><td>7</td><td>История append-only</td><td>record-review запрещает перезапись; архив без слияния</td></tr>
+      <tr><td>8</td><td>Сессия кончается коммитом</td><td><span class="tag t-bad">нет</span></td></tr>
+      <tr><td>9</td><td>Строка статусов ворот</td><td><span class="tag t-bad">нет</span></td></tr>
+      <tr><td>10</td><td>Задача = сессия, параллель без пересечений</td><td>prepare --task (J10), <code>ZONE_CONFLICT</code>, per_task</td></tr>
+      <tr><td>11</td><td>Worktree на сессию</td><td>enforcer <code>WORKTREE_MISSING</code>; раннер создаёт сам</td></tr>
+      <tr><td>12</td><td>Скиллы через бандлы</td><td><span class="tag t-bad">нет</span></td></tr>
+      <tr><td>13–14</td><td>План с «Флоу: N», план релиза до СА</td><td><code>PLAN_RELEASE_MISSING</code>, <code>PLAN_FLOW_UNDECLARED</code></td></tr>
+      <tr><td>15</td><td>Делегация через ворота</td><td>enforcer, delegate_watchdog, executor_watchdog</td></tr>
+      <tr><td>16</td><td>scope по флоу, bypass дословно</td><td><code>FLOW_ID_INVALID</code>; bypass-лог и реестр решений</td></tr>
+      <tr><td>17</td><td>Боевые роли — раннером</td><td>MODEL_ENFORCE (J60)</td></tr>
+      <tr><td>18</td><td>Решения — артефактами</td><td><code>HUMAN_APPROVAL_REQUIRED</code></td></tr>
+      <tr><td>19</td><td>Режимы и AGENTS.md — Заказчик</td><td><code>flow_mode --by customer</code>, защищённые пути, pm_bounds</td></tr>
+      <tr><td>20</td><td>Бэклог после цикла</td><td><span class="tag t-bad">нет</span></td></tr>
+      <tr><td>21</td><td>Внешний агент через PR</td><td>ruleset, pr_validate J10, <code>codex:&lt;id&gt;</code></td></tr>
+    </tbody>
+  </table></div>
+
+  <h2>Слои гарантий</h2>
+  <div class="grid3">
+    <div class="panel bl-e"><h4>Слой 1 · GitHub</h4><p>Обход физически невозможен: ruleset, required checks, openspec strict, flow_check, 1400+ тестов, ворота проектов по lock.</p></div>
+    <div class="panel bl-w"><h4>Слой 2 · машина</h4><p>Работает на штатном маршруте: вотчдоги, сверка зон, ворота раннера, zone-guard, MODEL_ENFORCE, provenance, pm_bounds.</p></div>
+    <div class="panel bl-r"><h4>Слой 3 · дисциплина [H]</h4><p>Держится на честном слове: push только своей ветки мимо ворот, cwd worktree при 4+ параллелях, коммит до исчерпания итераций, гашение стендов, ротация сессий.</p></div>
+  </div>
+
+  <h2>Принятые риски</h2>
+  <div class="grid2">
+    <div class="panel"><h4>Общая ОС-учётка</h4><p>Машинный enforcing работает только на маршруте flowctl. Правка через GitHub UI или локальные файлы ничем не блокируется (решение 2026-10-02).</p></div>
+    <div class="panel"><h4>Качество ревью</h4><p>Проверяется форма (вердикт, мета, делегация), но не глубина ревью.</p></div>
+    <div class="panel"><h4>Approve по частичному прогону</h4><p>Промежуточные PR Флоу 1 валидны без полного QA-хвоста. Риск снимается финальным PR.</p></div>
+    <div class="panel"><h4>Слепые зоны вотчдогов</h4><p>Исполнитель под чужим именем бинаря; delegate-watchdog, пока ПМ его не включил; bash-канал Pi (эвристика).</p></div>
+  </div>
+</section>
+
+<!-- ============ 12 CODES ============ -->
+<section class="page" id="p-codes" data-id="codes" hidden>
+  <div class="crumb">12 · Справочник кодов</div>
+  <h1>Справочник кодов отказа</h1>
+  <p class="lede">Если в докладе или выводе раннера встретился код, найдите его здесь. Поле поиска фильтрует таблицу.</p>
+  <input id="q" type="search" placeholder="Найти код, например ZONE" style="font:inherit;width:100%;max-width:420px;padding:8px 12px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--ink);margin:6px 0 12px">
+  <div class="tw"><table id="codes">
+    <thead><tr><th>Код</th><th>Кто выдаёт</th><th>Что значит и что делать</th></tr></thead>
+    <tbody>
+      <tr><td class="grp" colspan="3">Решение flow_transition (prepare)</td></tr>
+      <tr><td><code>MISSING_INPUT</code></td><td>flow_transition</td><td>Нет входного артефакта этапа (требования, задача, репорт, incident_ref)</td></tr>
+      <tr><td><code>INVALID_GATE</code></td><td>flow_transition</td><td>Нарушен порядок этапов или гейт этапа не пройден</td></tr>
+      <tr><td><code>WRONG_ROLE</code></td><td>flow_transition, gate_runner</td><td>Роль не разрешена этапу, или ревьюер не независим</td></tr>
+      <tr><td><code>HUMAN_APPROVAL_REQUIRED</code></td><td>flow_transition</td><td>Нужна запись в <code>decisions/</code> и <code>--approval-ref</code></td></tr>
+      <tr><td><code>PLAN_RELEASE_MISSING</code></td><td>flow_transition</td><td>Нет PLAN-файла пакета (Ф1/2/4)</td></tr>
+      <tr><td><code>PLAN_FLOW_UNDECLARED</code></td><td>flow_transition</td><td>В плане нет строки «Флоу: N», или она не совпадает с запрошенным</td></tr>
+      <tr><td><code>ARCH_REVIEW_MISSING</code></td><td>flow_transition</td><td>Dev-задача до архитектурного ревью пакета</td></tr>
+      <tr><td><code>STALE_EVIDENCE</code></td><td>flow_transition, gate_runner</td><td>Доказательство относится к старому SHA, или висит долг хотфикса</td></tr>
+      <tr><td><code>AMBIGUOUS_STATE</code></td><td>flow_transition</td><td>Факты противоречивы, решение не выносится</td></tr>
+      <tr><td><code>EXTERNAL_ENFORCEMENT_UNKNOWN</code></td><td>flow_transition</td><td>Merge и release требуют подтверждённой защиты main</td></tr>
+      <tr><td><code>FLOW_ID_INVALID</code></td><td>flow_state, flowctl</td><td>scope не по грамматике флоу (flow_ids.py)</td></tr>
+      <tr><td class="grp" colspan="3">Зоны и сессии</td></tr>
+      <tr><td><code>ZONE_OUTSIDE_POLICY</code></td><td>flowctl prepare, раннер</td><td>Запрошенная зона шире политики роли в roles.json</td></tr>
+      <tr><td><code>ZONE_CONFLICT</code></td><td>session_check reserve</td><td>Пересечение с живой резервацией. Дождаться, закрыть (<code>flowctl close</code>) или освободить (<code>release</code>)</td></tr>
+      <tr><td><code>OUT_OF_ZONE</code></td><td>session_check check, раннер</td><td>Дифф вышел за зону (в том числе через bash)</td></tr>
+      <tr><td><code>ZONE_POLICY_MISMATCH</code></td><td>flowctl finish</td><td>Зона своей роли изменилась после резервации</td></tr>
+      <tr><td><code>DUPLICATE_PAYLOAD</code></td><td>flowctl prepare</td><td>Тот же correlation-id с другим payload</td></tr>
+      <tr><td><code>STALE_SNAPSHOT</code></td><td>flowctl run</td><td>Факты изменились между prepare и run</td></tr>
+      <tr><td><code>MISSING_REQUIRED_GATES</code></td><td>flowctl finish</td><td>Попытка заменить обязательный набор гейтов</td></tr>
+      <tr><td><code>ROLE_WITHOUT_STAGE</code></td><td>раннер</td><td>Информационный: роль без этапа получила резервацию по политике</td></tr>
+      <tr><td class="grp" colspan="3">Раннер и исполнители</td></tr>
+      <tr><td><code>ZONE_GUARD_MISSING</code></td><td>executors/pi</td><td>Нет <code>zone-guard.ts</code> в репо фабрики</td></tr>
+      <tr><td><code>EXECUTOR_UNAVAILABLE</code></td><td>executors</td><td>Исполнитель не готов (нет бинаря или команды stub)</td></tr>
+      <tr><td><code>MODEL_UNRESOLVED</code></td><td>раннер</td><td>Модель не задана ни в roles.json, ни в стадии</td></tr>
+      <tr><td><code>FACTORY_ENGINE_MISSING</code>, <code>ENGINE_ERROR</code></td><td>раннер</td><td>Не найден или упал движок (flowctl)</td></tr>
+      <tr><td><code>PIPELINE_TIMEOUT</code></td><td>раннер</td><td>Стадия превысила таймаут</td></tr>
+      <tr><td><code>STAGE_ACTION_INVALID</code></td><td>раннер</td><td>Ошибка манифеста: неизвестное действие стадии</td></tr>
+      <tr><td class="grp" colspan="3">flow-enforcer (хук delegate_task, bash)</td></tr>
+      <tr><td><code>MARKERS_MISSING</code></td><td>enforcer (strict)</td><td>В goal нет заголовка <code>flow:</code></td></tr>
+      <tr><td><code>FLOW_MARKER_INVALID</code></td><td>enforcer</td><td>Битый маркер (flow=9, пустой scope, неверный BUG-id, путь с ..). Блокирует в любом режиме</td></tr>
+      <tr><td><code>PATHS_MISSING</code></td><td>enforcer</td><td>Продуктовая задача без <code>paths=</code></td></tr>
+      <tr><td><code>WORKTREE_MISSING</code></td><td>enforcer</td><td>Делегация без worktree (отключается <code>FLOW_ENFORCER_WORKTREE=0</code>)</td></tr>
+      <tr><td><code>MODEL_ENFORCE</code></td><td>enforcer</td><td>SA/архитектор/DEV/BA через <code>[hermes:]</code>: используй pi-пак</td></tr>
+      <tr><td><code>SEQUENCE_VIOLATION</code></td><td>enforcer</td><td>Нарушен порядок этапов scope (sequence-gate включается env)</td></tr>
+      <tr><td><code>PUSH_POLICY</code></td><td>enforcer push_gate</td><td>Push не в свою ветку из делегации</td></tr>
+      <tr><td><code>PM_PUSH_POLICY</code></td><td>enforcer push_gate</td><td>Push ПМ в продукт без маркера интеграции: передай сборку dev-lead</td></tr>
+      <tr><td class="grp" colspan="3">Вотчдоги и CI</td></tr>
+      <tr><td><code>BYPASS</code></td><td>delegate_watchdog</td><td>Делегация с project вне flowctl</td></tr>
+      <tr><td><code>proc:&lt;исп&gt;:&lt;pid&gt;</code></td><td>executor_watchdog</td><td>Процесс исполнителя вне живой резервации</td></tr>
+      <tr><td><code>STALE_FINISH</code></td><td>delegate_watchdog</td><td>Делегация завершена, а finish не сделан</td></tr>
+      <tr><td><code>REGRESS_FINAL_MISSING</code> / <code>_STALE</code></td><td>pr_validate</td><td>Нет regress-final или он старше продуктовых коммитов</td></tr>
+      <tr><td><code>SELF_REVIEW</code></td><td>pr_validate, delegate_gate</td><td>Ревьюер = автор (или dev-делегация задачи)</td></tr>
+      <tr><td><code>CHANGE-ARCHIVED</code></td><td>pr_validate</td><td>Пакет уже в archive: для пост-релизных работ нужен <code>[chore]</code></td></tr>
+      <tr><td><code>FACTORY-TREE-LEAK</code></td><td>tests/conftest</td><td>Тест оставил мусор в дереве репо</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<div class="pager" id="pager"></div>
+</main>
+</div>
+
+<script>
+(function(){
+  // cron ticks
+  var g=document.getElementById('ticks1');
+  if(g){var ns='http://www.w3.org/2000/svg';
+    for(var i=0;i<12;i++){var x=160+i*(860/12);
+      [[50,'var(--ok)'],[100,'var(--warn)']].forEach(function(r){var e=document.createElementNS(ns,'rect');
+        e.setAttribute('x',x);e.setAttribute('y',r[0]);e.setAttribute('width',10);e.setAttribute('height',34);e.setAttribute('rx',3);e.setAttribute('fill',r[1]);g.appendChild(e);});}}
+  // routing
+  var pages=[].slice.call(document.querySelectorAll('.page'));
+  var links=[].slice.call(document.querySelectorAll('#nav a'));
+  var pager=document.getElementById('pager');
+  function show(id){
+    var idx=0; pages.forEach(function(p,i){var on=p.getAttribute('data-id')===id; p.hidden=!on; if(on) idx=i;});
+    if(!pages.some(function(p){return !p.hidden})){pages[0].hidden=false; id='overview'; idx=0;}
+    links.forEach(function(a){a.classList.toggle('on',a.getAttribute('href')==='#'+id)});
+    var prev=pages[idx-1], next=pages[idx+1], h='';
+    function title(p){return p.querySelector('h1').textContent}
+    h+= prev? '<a href="#'+prev.getAttribute('data-id')+'">← '+title(prev)+'</a>' : '<span></span>';
+    h+= next? '<a href="#'+next.getAttribute('data-id')+'">'+title(next)+' →</a>' : '<span></span>';
+    pager.innerHTML=h; window.scrollTo(0,0);
+  }
+  function route(){show((location.hash||'#overview').slice(1))}
+  window.addEventListener('hashchange',route); route();
+  // role filter
+  var fb=document.querySelectorAll('#p-roles .filters button'), rc=document.querySelectorAll('#rolecards .role');
+  fb.forEach(function(b){b.addEventListener('click',function(){var f=b.getAttribute('data-f');
+    fb.forEach(function(x){x.setAttribute('aria-pressed',x===b?'true':'false')});
+    rc.forEach(function(c){c.style.display=(f==='all'||c.getAttribute('data-g')===f)?'':'none'});});});
+  // code search
+  var q=document.getElementById('q');
+  if(q) q.addEventListener('input',function(){var v=q.value.trim().toLowerCase();
+    document.querySelectorAll('#codes tbody tr').forEach(function(tr){
+      if(tr.querySelector('.grp')){tr.style.display=v?'none':'';return;}
+      tr.style.display=!v||tr.textContent.toLowerCase().indexOf(v)>=0?'':'none';});});
+})();
+</script>
+</body>
+</html>
