@@ -52,7 +52,7 @@
   `python3 scripts/flow_ids.py <flow> <scope>`.
 - Ролевая модель: **ПМ не пишет прод-код** — изменения через роли: боевой
   путь — пакетный раннер `scripts/package_runner.py` со стадиями `pi:<роль>`
-  (Pi роль-паки, AGENTS.md §2.1, ворота J63), прочие роли — `delegate_task`
+  (Pi роль-паки, AGENTS.md п.17, ворота J63), прочие роли — `delegate_task`
   Hermes (dev/devops/code_reviewer/design_validator/qa_automation/leaf); ПМ коммитит,
   пушит, мержит PR, деплоит. Исключение допускается явно и с оговоркой
   (прецедент: дозавершение PO-рефакторинга при мертвом пуле провайдера).

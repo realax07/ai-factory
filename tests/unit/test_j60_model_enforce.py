@@ -3,7 +3,7 @@
 
 Регруп J59 (решение Заказчика 2026-10-31): боевые волны SA/архитектор/DEV/BA
 — через Pi роль-паки (glm-5.3), не через general-делегацию. Правило —
-AGENTS.md §Оркестрация 2.1; энфорсер — model_enforce_gate в
+AGENTS.md п.17; энфорсер — model_enforce_gate в
 plugins/flow-enforcer/enforcer.py (перехват delegate_task ДО разбора
 flow-маркеров).
 

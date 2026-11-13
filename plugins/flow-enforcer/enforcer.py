@@ -99,7 +99,7 @@ Env:
                            недоступности Pi-инфраструктуры)
 
 J60 (MODEL_ENFORCE): боевой этап 5.3-роли (SA/архитектор/DEV/BA — регруп
-J59, AGENTS.md §Оркестрация 2.1) распознается ЭВРИСТИКОЙ по ключевым словам
+J59, AGENTS.md п.17) распознается ЭВРИСТИКОЙ по ключевым словам
 роли в goal («СА», «create_change», «архитектор», «arch-review», «dev_task»,
 «задача dev», «BA», «requirements»). Ни одно слово не совпало → не боевой
 вызов, без директивы (свобода выбора исполнителя для Флоу 2/4/5,
@@ -751,7 +751,7 @@ def pm_integration_gate(pushes: list[dict], cwd: str | None,
 # ------------------------------------------------------- J60: MODEL_ENFORCE
 # Модели-регруп (J59, решение Заказчика 2026-10-31): боевые волны
 # SA/архитектор/DEV/BA исполняются через Pi роль-паки (glm-5.3), не через
-# general-делегацию. Правило — AGENTS.md §Оркестрация 2.1; здесь —
+# general-делегацию. Правило — AGENTS.md п.17; здесь —
 # механический энфорсер (J60).
 MODEL_ENFORCE_ENV = "FLOW_MODEL_ENFORCE"
 MODEL_ENFORCE_POLICY = "MODEL_ENFORCE"
@@ -826,7 +826,7 @@ def model_enforce_gate(goal: str | None, task_id: str = "") -> dict | None:
         return {"action": "block", "message": (
             f"FLOW-ENFORCER [{MODEL_ENFORCE_POLICY}]: боевой этап "
             f"5.3-роли ({', '.join(stages)}) с маркером [hermes:{role}] — "
-            "general-делегация запрещена (J59, AGENTS.md §Оркестрация 2.1): "
+            "general-делегация запрещена (J59, AGENTS.md п.17): "
             f"используй pi роль-пак skills/pm-factory/pi/role-packs/{role} "
             "(J59); делегация — только с обоснованием в журнале PLAN.md. "
             f"Отключение механики: {MODEL_ENFORCE_ENV}=off (деградация).")}
