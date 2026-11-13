@@ -90,8 +90,10 @@ code_reviewer→code_review, qa_automation→qa_automation, ...
 `[hermes:<роль>]` → DENY с подсказкой «используй pi роль-пак»; маркера нет —
 WARN в лог (миграционный период). Флоу 2/4/5 и devops/qa/docs-вызовы — свобода
 выбора исполнителя. Выключение — `FLOW_MODEL_ENFORCE=off` (недоступность Pi).
-Стадии `pi:<роль>` пакетного раннера идут мимо хука: их ворота — в
-`scripts/package_runner.py` (J63).
+Агентные стадии пакетного раннера (`pi:<роль>` и любого исполнителя
+`scripts/executors/`, J65.5) идут мимо хука: их ворота — в
+`scripts/package_runner.py` (J63); ручной запуск исполнителя мимо раннера
+видит вотчдог (`executor_watchdog`, через delegate_watchdog).
 
 ## Bypass
 

@@ -63,9 +63,11 @@ pipeline:
     в `flow_gates.<стадия>.zone_guard_sha256` state раннера.
     Без `zones` раннер берет зону роли целиком из реестра `agents/roles.json`
     (`<id>` → change-id пакета, J65.1); `zones` в манифесте ее только сужает;
-    у роли без зоны в реестре (auditor, debug) `zones` обязателен. Провайдер/модель берутся из
-    `settings.example.json` пака (дефолт `zai-glm`/`glm-5.3`); ключ pi берет
-    сам из `~/.pi/agent/models.json` — раннер секретов не касается.
+    у роли без зоны в реестре (auditor, debug) `zones` обязателен. Провайдер/модель —
+    поля `provider`/`model` роли в `agents/roles.json` или ключи стадии
+    `provider:`/`model:`; не заданы — STOP `MODEL_UNRESOLVED` (дефолтов в
+    коде нет, J65.5); ключ pi берет сам из `~/.pi/agent/models.json` —
+    раннер секретов не касается.
   - `gate:<команда>` — shell-команда в worktree; ненулевой exit → STOP
     (exit 2, диагностика; воротные отказы НЕ ретраятся). Env стенда (E6;
     список — ключ манифеста `pipeline.gate_env_strip: [VAR, …]`, без ключа —
@@ -241,7 +243,7 @@ create_change).
 
 ### Dev по задачам tasks.md (`per_task: true`, J64.13)
 
-Правило 11 и J31: одна задача tasks.md — одна dev-сессия. Ключ `per_task:
+Правило 10 и J31: одна задача tasks.md — одна dev-сессия. Ключ `per_task:
 true` у pi-стадии (без `task_id` и `verdict`) разворачивает ее в
 под-стадии `<id>-<задача>` перед запуском:
 

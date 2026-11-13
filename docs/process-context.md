@@ -10,7 +10,7 @@
 
 - **venv wiki:** `/home/openclaw/venvs/wiki` — python для ekotov-wiki (uvicorn, pytest, playwright).
 - **Прод ekotov-wiki:** systemd-сервис `ekotov-wiki`, uvicorn 127.0.0.1:8377 (пользователь wiki), nginx TLS :10443 (self-signed CN=IP), БД `/var/lib/ekotov-wiki/wiki.db`. Деплой: `deploy/deploy.sh` (EXPECTED_COMMIT — клон на целевом коммите), бэкапы `/var/backups/ekotov-wiki/`.
-- **Локальные стенды:** порт 8080 (dev/PM-стенд), env: `EKOTOV_WIKI_DB_PATH`, `EKOTOV_WIKI_AVATARS_DIR` (тесты) + `AVATARS_DIR` (приложение) — задавать ОБА; после seed ОБЯЗАТЕЛЬНО `python -m app.migrate_r4` (нужен SECRET_KEY), иначе роль wife=NULL.
+- **Локальные стенды:** порт 8080 (dev/PM-стенд), env: `EKOTOV_WIKI_DB_PATH`, `EKOTOV_WIKI_AVATARS_DIR` (тесты) + `AVATARS_DIR` (приложение) — задавать ОБА; после seed ОБЯЗАТЕЛЬНО `python -m app.migrate_r4` (нужен SECRET_KEY), иначе роль wife=NULL. Прочие грабли стенда, OpenSpec и сессий Hermes — `docs/project-pitfalls.md`.
 - **Реестр сессий:** `~/.hermes/state/active_sessions.json` — вне git, оперативный источник; путь в тесты передавать параметром, реальный в тестах не трогать.
 - **Сессии Telegram:** главный чат — сессия с title `main` (возврат `/resume main`); вотчдог `scripts/session_watchdog.py` (крон Hermes */5 через обертку-делегат, no_agent; политика 2026-10-23) возвращает тайтл и предупреждает о dropped-делегациях.
 - **Hermes-баг #92859 (наш репорт приложен):** delegate_task, отправленный ровно на границе ротации сессии чата, поглощается чатом (ТЗ становится первым сообщением новой сессии), результат — delivery_state=dropped. Правило: не диспатчить делегацию в ходу чужого входящего/steer-сообщения; результат dropped читается из `state.db → async_delegations.result_json`.
@@ -18,7 +18,7 @@
 ## 2. Модели и конфигурация
 
 - Основная модель ПМ: `glm-5.3-flash @ zai`. Смена модели — только `hermes config set` (config.yaml руками не редактировать).
-- Исполнители ролей — Pi роль-паки (J59/J62): SA/архитектор/DEV/BA — `glm-5.3`, остальные роли — `glm-5.3-flash`, аудитор — Kimi K3.1 (вручную). Ключи провайдеров — `~/.pi/agent/models.json` (chmod 600), оглавление паков — `skills/pm-factory/pi/role-packs/README.md`.
+- Исполнители ролей — Pi роль-паки (J59/J62): SA/архитектор/DEV/BA — `glm-5.3`, остальные роли — `glm-5.3-flash`, аудитор — Kimi `k3.1-pro` (вручную). Модель и провайдер роли для раннера — `agents/roles.json` (J65.5; стадия манифеста может переопределить), `settings.example.json` паков с ним сверяется тестом. Исполнитель стадии сменный (`scripts/executors/`: pi и stub, hermes — стоп-точка ПМ; другие кодагенты — Claude Code, Codex, Qwen — следующими). Ключи провайдеров — `~/.pi/agent/models.json` (chmod 600), оглавление паков — `skills/pm-factory/pi/role-packs/README.md`.
 - Секреты — в `~/.hermes/.env`, настройки — в config.yaml.
 - Пути машины — env (`AF_STATE_DIR`, `HERMES_HOME`, `AI_FACTORY_HOME`, `AF_PROJECTS_ROOT`, `PI_AGENT_DIR`), дефолты и сверка контекстов — `python3 scripts/factory_paths.py [--doctor LABEL | --compare …]` (J64.5, J65.12).
 
@@ -54,7 +54,9 @@
 | `flow_mode.py` | переключатель shadow/enforcing (enforcing: DENY/UNKNOWN блокируют) | меняет режим |
 | `flow_ids.py` | грамматика scope флоу 1–5 (J65.3): движок, flowctl и энфорсер — по одному источнику | чистый |
 | `role_zone_policy.py` | политика зон ролей для ворот из реестра `agents/roles.json` (J65.1); таблицы ролей — `gen_role_docs.py` | чистый |
-| `package_runner.py` | пакетный раннер по манифесту `pipeline:` плана: стадии `pi:<роль>` через `flowctl prepare/run/finish`, сверка диффа с зоной, коммит стадии (J62/J63) | меняет worktree/state |
+| `package_runner.py` | пакетный раннер по манифесту `pipeline:` плана: агентные стадии `<исполнитель>:<роль>` через `flowctl prepare/run/finish`, сверка диффа с зоной, коммит стадии (J62/J63/J65.5) | меняет worktree/state |
+| `executors/` | исполнители агентных стадий (pi, stub, hermes); новый исполнитель — один модуль (J65.5) | — |
+| `gates_stats.py` | `flowctl gates-stats`: срабатывания гейтов и кодов отказа для квартального пересмотра (J65.9) | чистый |
 | `ci_local.py` | прогон сьюта и flow_check в условиях CI (клон глубины 1, пустой HOME, J65.12) | чистый для репо |
 
 - **Режимы:** shadow (решения вычисляются, не блокируют) → enforcing (блокируют). Переключение — решение Заказчика: `python scripts/flow_mode.py set enforcing --by customer`.

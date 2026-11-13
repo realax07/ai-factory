@@ -14,20 +14,22 @@
 |---|---|---|---|
 | `openspec validate --all --strict` | GitHub Actions (job `flow`, `.github/workflows/flow.yml`) | Обязательна | **GitHub-enforced** (job `flow` на PR и push в main) |
 | `flow_check` (`scripts/flow_check.py .`) | GitHub Actions (job `flow`) | Обязательна | **GitHub-enforced** (job `flow` на PR и push в main; main зелен — самоссылочные ошибки пакета add-deterministic-flow вычищены, гигиена P0.6 закрыта) |
-| `pytest tests/` (полный набор, 1200+ тестов на 2026-11-06, вкл. негативные сценарии P0.2–P0.4) | GitHub Actions (job `test-flow-control`, `.github/workflows/flow.yml`) | Обязательна для merge после включения Заказчиком в required checks ruleset | **GitHub-enforced** (после включения; до того — CI-сигнал без блокировки merge) |
+| `pytest tests/` (полный набор, 1400+ тестов на 2026-11-14, вкл. негативные сценарии P0.2–P0.4 и эталонный прогон Флоу 1 без QA-контура через раннер, J65.10) | GitHub Actions (job `test-flow-control`, `.github/workflows/flow.yml`) | Обязательна для merge: required check ruleset | **GitHub-enforced** (проверка ruleset — `scripts/ruleset_check.py`) |
 | Branch protection ruleset на `main` (required checks, ветка + PR) | GitHub (ruleset репозитория) | Обязательна; bypass не предусмотрен и не должен выдаваться | **GitHub-enforced** |
 | `session_check` zone-check (резервация зоны, diff ⊆ зона, OUT_OF_ZONE) | Машина (`scripts/session_check.py` на маршруте `flowctl finish`) | Обязательна на штатном маршруте `flowctl` | **машинная (enforcing)** — GitHub не видит и не блокирует обход вне маршрута |
 | `gate_runner` (openspec/flow_check/pm_bounds/pr_validate с digest и STALE, SKIPPED ≠ PASS) | Машина (`scripts/gate_runner.py` на `flowctl finish`) | Обязательна на штатном маршруте; FAIL/ERROR/SKIPPED не дают `accepted` | **машинная (enforcing)** |
 | Provenance (SHA, diff_digest, автор/ревьюер, независимость роли) | Машина (`scripts/gate_runner.py` record-review/check) | Обязательна на штатном маршруте; STALE_EVIDENCE / WRONG_ROLE блокируют | **машинная (enforcing)** |
 | Review независимой ролью (approve-вердикты задач в `code-reviews/<change-id>/`) | Машина + GitHub (файлы в PR) | Договоренность + machine-факт: проверяется `gate_runner` при приемке, но содержательное качество ревью — не платформа | **договоренность** (с машинной проверкой формы) |
 | Решение заказчика (`approval_ref` на конкретную запись решения) | Журнал в репозитории (`releases/<id>.md`) | Договоренность: файл в репо под общим пользователем не является независимым одобрением; фиксирует решение, но не подтверждает личность | **договоренность** |
-| Ворота стадии `pi:<роль>` (prepare/run/finish, сверка git diff с зоной, коммит стадии) | Машина (`scripts/package_runner.py`, J63) | Обязательна для пакетов, идущих через раннер | **машинная (enforcing)** — GitHub не видит; запуск `pi` мимо раннера не ловится |
+| Ворота агентной стадии `<исполнитель>:<роль>` (prepare/run/finish, сверка git diff с зоной, коммит стадии) | Машина (`scripts/package_runner.py`, J63, J65.5) | Обязательна для пакетов, идущих через раннер | **машинная (enforcing)** — GitHub не видит; ручной запуск исполнителя мимо раннера — BYPASS вотчдога (`executor_watchdog`), не блок |
+| Ворота CI проекта по закрепленной версии фабрики | GitHub Actions проекта: checkout фабрики на SHA из `factory.lock` в `.factory/` (J65.7) | Для проектов с `factory.lock` | **GitHub-enforced** в проекте (если `flow` — required check проекта) |
 | Самоотчет агента (статусы в отчете сабагента) | Чат / отчет агента | Не является проверкой; только сигнал для диспетчера | **НЕ проверка** |
 
 ## Итог
 
-- Реально обязательны в GitHub: `openspec validate`, `flow_check`, (после
-  включения в ruleset) `pytest tests/`, и сам branch protection ruleset.
+- Реально обязательны в GitHub: `openspec validate`, `flow_check`,
+  `pytest tests/` (required checks `flow` и `test-flow-control`), и сам
+  branch protection ruleset.
 - Обязательны, но только на машине: zone-check, gate_runner, provenance —
   гарантируют корректность штатного маршрута, но не защищены от обхода
   напрямую через GitHub или файловую систему (общая учетка, общий токен).
