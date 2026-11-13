@@ -12,7 +12,10 @@
   (волна 4, АУД Н2/Н3, 2026-10-23): `watchdog_daily_digest.py` (суточный
   дайджест 23:00) и `pm_instruction_monitor.py` (change-detector крона
   pm-instruction-relay). Джобы отключены, скрипты ниоткуда не вызываются;
-  живой канал ПМ — stdout delegate_watchdog (см. AGENTS.md правило 6).
+  живой канал ПМ — stdout delegate_watchdog (docs/rules-enforcement.md
+  «Исполняемые слои»).
+- `agents-md/` — прежние полные редакции AGENTS.md (история правил, инцидентов,
+  обоснований). AGENTS-2026-11-13.md — до сокращения до ядра (J64.15/J65.11).
 
 Живые документы (guarantees, ci-gates, process-context, README-flow-control,
 guides/pipeline-manifest) — в docs/; `docs/chatgpt-deterministic-flow/` —
