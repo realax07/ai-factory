@@ -110,7 +110,9 @@ Impact-анализ — обязательный артефакт change-пак�
   [BUG-NNN] — только механическая сверка, карту не душим.
 - **Механическая сверка** — правила `scripts/impact_rules.json`
   (расширяемые: правка JSON, код ворот не меняется). Четыре стартовых:
-  IR-01 `services/*/openapi*`|`contracts/` → `contracts/openapi.json` в
+  IR-01 `services/*/openapi*` → `contracts/openapi.json` в диффе; IR-07
+  `contracts/` структурные маркеры (`/api/`, методы, `schemas`, `$ref`) в
+  патче → `contracts/openapi.json` (процедурные правки .md — мимо)
   диффе; IR-02 новый `services/<name>/` (статус A) → `deploy/deploy.sh` +
   `deploy/RUNBOOK.md`; IR-03 frontend static|templates → bump static_v в
   `backend/app/pages.py`; IR-04 `migrate_*.py` → `deploy/RUNBOOK.md`.
