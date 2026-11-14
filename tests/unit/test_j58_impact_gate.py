@@ -83,6 +83,53 @@ def test_j58_ir01_negative(rules_repo, no_env):
     assert "перегенерируй" in errs[0]  # подсказка: что ожидалось
 
 
+# --- content_when контрактов (IR-07, решение ПМ 2026-11-15): процедурная
+# правка contracts/*.md (штампы/доки, схема не менялась) не требует
+# перегенерации openapi.json; структурные маркеры — требуют. Патч нечитаем —
+# консервативно: правило действует. Механика — как IR-06 (АУД-4). IR-01
+# (services/*/openapi) остается без сужения.
+
+def test_j58_ir07_procedural_md_silent(rules_repo, no_env, monkeypatch):
+    """contracts/*.md без структурных маркеров — IR-07 молчит."""
+    patch = (
+        "diff --git a/contracts/artifact_contract.md"
+        " b/contracts/artifact_contract.md\n"
+        "--- a/contracts/artifact_contract.md\n"
+        "+++ b/contracts/artifact_contract.md\n"
+        "@@ -1,3 +1,4 @@\n"
+        "+обновлен штамб версии и ссылки на доки, см. также README\n"
+    )
+    monkeypatch.setattr(pr_validate, "_diff_patch", lambda repo: patch)
+    files = [F("M", "contracts/artifact_contract.md")]
+    assert pr_validate.check_impact_rules(rules_repo, files) == []
+
+
+def test_j58_ir07_structural_marker_fires(rules_repo, no_env, monkeypatch):
+    """contracts/*.md с /api/-маркером — IR-07 требует openapi.json."""
+    patch = (
+        "diff --git a/contracts/artifact_contract.md"
+        " b/contracts/artifact_contract.md\n"
+        "--- a/contracts/artifact_contract.md\n"
+        "+++ b/contracts/artifact_contract.md\n"
+        "@@ -10,3 +10,5 @@\n"
+        "+POST /api/wiki/pages — новый маршрут, components/schemas обновить\n"
+    )
+    monkeypatch.setattr(pr_validate, "_diff_patch", lambda repo: patch)
+    files = [F("M", "contracts/artifact_contract.md")]
+    errs = pr_validate.check_impact_rules(rules_repo, files)
+    assert len(errs) == 1
+    assert "IR-07" in errs[0] and "contracts/openapi.json" in errs[0]
+
+
+def test_j58_ir07_patch_unreadable_conservative(rules_repo, no_env,
+                                                monkeypatch):
+    """Патч нечитаем — content_when не применяется (консервативный DENY)."""
+    monkeypatch.setattr(pr_validate, "_diff_patch", lambda repo: None)
+    files = [F("M", "contracts/artifact_contract.md")]
+    errs = pr_validate.check_impact_rules(rules_repo, files)
+    assert len(errs) == 1 and "IR-07" in errs[0]
+
+
 # --- TC-J58-003..004: IR-02 новый сервис → deploy.sh + RUNBOOK ---
 
 def test_j58_ir02_positive(rules_repo, no_env):
@@ -182,7 +229,7 @@ def test_j58_chore_with_rule_violation_denies_but_no_map(rules_repo, no_env):
     errs = pr_validate.check_impact_gate(rules_repo, "chore", "chore")
     assert not any("impact-карта" in e for e in errs)
     errs = pr_validate.check_impact_rules(rules_repo, [F("M", "contracts/api.yaml")])
-    assert errs and "IR-01" in errs[0]
+    assert errs and "IR-07" in errs[0]  # вне git — консервативный DENY IR-07
 
 
 # --- TC-J58-013: [docs]/[ops] — карта не требуется, механика работает ---
@@ -283,7 +330,7 @@ def test_j58_factory_rules_valid():
     # АУД-4 (Н20/Н25): +IR-05 (docker build в PR-теле), +IR-06 (URL+sha256
     # контент-ассетов в PR-теле) — декларативные pr_body-правила.
     assert [r["id"] for r in rules] == [
-        "IR-01", "IR-02", "IR-03", "IR-04", "IR-05", "IR-06"]
+        "IR-01", "IR-02", "IR-03", "IR-04", "IR-05", "IR-06", "IR-07"]
     for r in rules:
         assert r.get("title") and r.get("when") and r.get("require")
         for w in r["when"]:
@@ -421,7 +468,7 @@ def test_j58_exists_guard_no_git_enforces(tmp_path, no_env):
         (FACTORY / "scripts" / "impact_rules.json").read_text(encoding="utf-8"),
         encoding="utf-8")
     errs = pr_validate.check_impact_rules(repo, [F("M", "contracts/api.yaml")])
-    assert len(errs) == 1 and "IR-01" in errs[0]
+    assert len(errs) == 1 and "IR-07" in errs[0]
     assert pr_validate._head_files(repo) is None
 
 

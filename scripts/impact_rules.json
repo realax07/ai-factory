@@ -8,18 +8,15 @@
    "when": [
     {
      "path": "^services/[^/]+/openapi"
-    },
-    {
-     "path": "^contracts/"
     }
-   ],
-   "require": [
+    ],
+    "require": [
     {
      "path": "^contracts/openapi\\.json$",
      "label": "contracts/openapi.json",
      "hint": "перегенерируй contracts/openapi.json (урок релиза weather: неперегенерированный контракт = FAIL regress-final, круг зря)"
     }
-   ]
+    ]
   },
   {
    "id": "IR-02",
@@ -120,6 +117,28 @@
      "pr_body": "sha256|[a-f0-9]{64}",
      "label": "строка «URL sha256» на каждый докачиваемый ассет",
      "hint": "зафиксируй в теле PR URL+sha256 каждого докачиваемого бинарника/тарбола (Н25; урок ffmpeg: primary сменил тарбол без смены URL — 3 красных CI-прогона, pre-flight чека не было)"
+    }
+   ]
+  },
+  {
+   "id": "IR-07",
+   "title": "контракты изменились структурно — openapi.json перегенерирован",
+   "when": [
+    {
+     "path": "^contracts/"
+    }
+   ],
+   "content_when": [
+    {
+     "path": "contracts/",
+     "regex": "/api/[A-Za-z0-9_/{}.-]|\\b(GET|POST|PUT|PATCH|DELETE)\\s+/|\"(paths|components|schemas)\"|\\$ref"
+    }
+   ],
+   "require": [
+    {
+     "path": "^contracts/openapi\\.json$",
+     "label": "contracts/openapi.json",
+     "hint": "перегенерируй contracts/openapi.json (урок релиза weather: неперегенерированный контракт = FAIL regress-final, круг зря). Процедурная правка (штампы/доки без /api/, методов, schemas) — не требует"
     }
    ]
   }
