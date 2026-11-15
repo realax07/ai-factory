@@ -5,7 +5,8 @@
 Скилл — единственная инструкция, как подменить модель, исполнителя стадии
 или оркестратора. Тест держит его в синхроне с кодом: новый модуль
 `scripts/executors/` без строки в скилле, битая ссылка на файл или скилл,
-до которого ПМ не дотянется, — красный тест.
+до которого ПМ не дотянется, ссылка на несуществующий связанный скилл —
+красный тест.
 """
 from __future__ import annotations
 
@@ -67,6 +68,18 @@ def test_referenced_paths_exist():
     missing = sorted(p for p in paths
                      if "<" not in p and not (FACTORY / p).exists())
     assert not missing, f"битые пути: {missing}"
+
+
+def test_related_skills_exist():
+    """related_skills во frontmatter ведут на скиллы этой библиотеки."""
+    text = SKILL.read_text(encoding="utf-8")
+    m = re.search(r"related_skills:\s*\[([^\]]*)\]", text)
+    assert m, "нет related_skills"
+    names = [n.strip() for n in m.group(1).split(",") if n.strip()]
+    assert names
+    have = {p.parent.name for p in (FACTORY / "skills").rglob("SKILL.md")}
+    missing = [n for n in names if n not in have]
+    assert not missing, f"нет скиллов: {missing}"
 
 
 def test_skill_and_guide_link_each_other():
