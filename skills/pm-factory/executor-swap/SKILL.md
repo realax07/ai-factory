@@ -113,7 +113,8 @@ flowctl, gate_runner и session_check не правятся. Образцы — 
    - Codex: `codex exec -m <модель> --sandbox workspace-write <бриф>`.
      Сверь с `codex exec --help` установленной версии.
    - Режимы без проверок запрещены (yolo, п.4): `--permission-mode
-     bypassPermissions` и `--dangerously-skip-permissions` у Claude Code,
+     bypassPermissions`, `--dangerously-skip-permissions` и
+     `--allow-dangerously-skip-permissions` у Claude Code,
      `--yolo` и `--dangerously-bypass-approvals-and-sandbox` у Codex.
 3. `list_active()`: `active_by_binary(self.name, "<бинарь>")`, чтобы
    `executor_watchdog` видел ручные запуски этого исполнителя.
@@ -158,8 +159,9 @@ flowctl, gate_runner и session_check не правятся. Образцы — 
 ## Ошибки
 
 - **Подмена в обход раннера.** Исполнителя запустили руками в worktree, без
-  резервации. Ни сверки диффа, ни provenance нет, а `executor_watchdog`
-  поднимает BYPASS `proc:<исполнитель>:<pid>`. Почему важно: ворота висят на
+  резервации. Ни сверки диффа, ни provenance нет. Если крон вотчдога
+  включен, `executor_watchdog` поднимет BYPASS `proc:<исполнитель>:<pid>`,
+  без крона обход никто не заметит. Почему важно: ворота висят на
   раннере, а не на исполнителе.
 - **Ревью сабагентом самого оркестратора.** Claude Code или Codex позвал свой
   Task-сабагент «ревьюером». У такого ревью нет `Reviewer-Delegation` и
