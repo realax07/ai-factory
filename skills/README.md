@@ -17,6 +17,7 @@
 | [test-automation](roles/test-automation/) | Приемочные автотесты по раскладке J66: `tests/api` (requests), `tests/web` (playwright), `tests/integration`; трассировка TC | QA-автоматизатор |
 | [playwright-pro](roles/playwright-pro/) | Playwright: golden rules, локаторы, anti-patterns, flaky-таксономия | QA-автоматизатор |
 | [handoff](pm-factory/handoff/) | Handoff-документ при завершении/обрыве сессии | ПМ |
+| [executor-swap](pm-factory/executor-swap/) | Смена модели роли, исполнителя стадии или оркестратора (Claude Code, Codex) без ослабления ворот | ПМ, внешний оркестратор |
 | [factory-flow](flow/factory-flow/) | Скелет детерминированного флоу: стадии 5 флоу, карта блокеров, правила эскалации | Все роли (входит во все бандлы) |
 
 ## Дизайн-скиллы (зеркало локальной библиотеки, группа `roles-tools/`)
