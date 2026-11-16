@@ -34,7 +34,6 @@ except ImportError:  # автономная копия в проекте без 
 
     fp = _NS(
         factory_home=lambda: _fp_env("AI_FACTORY_HOME", "~/ai-factory"),
-        hermes_home=lambda: _fp_env("HERMES_HOME", "~/.hermes"),
         state_dir=lambda: _fp_env("AF_STATE_DIR", "~/.hermes/state"),
         flowctl_state_path=lambda: _fp_env(
             "AF_STATE_DIR", "~/.hermes/state") / "flowctl_state.json",
@@ -61,7 +60,59 @@ def check_bug(repo: Path, num: str) -> list[str]:
     # На момент PR статус может быть открыт; CLOSED требуется после мержа (проверяет отдельно post-merge job)
     if "Статус" not in text and "CLOSED" not in text:
         missing.append(f"{bugs[0].name}: нет раздела «Статус»")
+    missing.extend(check_bug_review(repo, digits))
     return missing
+
+
+def bug_review_dir(repo: Path, digits: str) -> Path | None:
+    """code-reviews/<bug-id>/ без учета регистра (проекты — BUG-010, фабрика
+    — bug-026); допускается slug после номера (грамматика flow_ids:
+    BUG-042-fix — тот же баг, BUG-042-RECHECK-003 — другой). Строчный
+    каталог фабрики — только без slug (bug-026); точное имя — первым."""
+    root = repo / "code-reviews"
+    if not root.is_dir():
+        return None
+    want = f"BUG-{digits}"
+    hits = sorted((d for d in root.iterdir()
+                   if d.is_dir() and scope_matches(d.name, want)),
+                  key=lambda d: (d.name.upper() != want.upper(), d.name))
+    return hits[0] if hits else None
+
+
+def check_bug_review(repo: Path, digits: str) -> list[str]:
+    """Флоу 2 (решение Заказчика 2026-11-16 «Добавить Флоу 2»): независимое
+    ревью багфикса — стадия code_review графа Флоу 2 (решение
+    2026-10-07-code-review-flow2). Нужен review-файл с последним вердиктом
+    approve и доказательством независимости ревьюера (как во Флоу 1)."""
+    from flow_check import (REVIEW_FILE_REV_FIRST, REVIEW_FILE_TASK_FIRST,
+                            parse_verdict)
+    scope_id = f"BUG-{digits}"
+    rd = bug_review_dir(repo, digits)
+    files = sorted(rd.glob("review-*.md")) if rd else []
+    if not files:
+        return [f"code-reviews/{scope_id}/: нет review-файла ревью багфикса "
+                "(Флоу 2, стадия code_review)"]
+
+    def _rev(p: Path) -> tuple[int, str]:
+        m = PLAIN_REVIEW_RE.match(p.name)
+        if m:
+            return int(m.group(1)), p.name
+        m = REVIEW_FILE_REV_FIRST.match(p.name)
+        if m:
+            return int(m.group(1)), p.name
+        m = REVIEW_FILE_TASK_FIRST.match(p.name)
+        g = m.group(2) if m else ""
+        return (int(g) if g.isdigit() else 0), p.name
+
+    last = max(files, key=_rev)
+    rel = rd.relative_to(repo).as_posix()
+    out = []
+    verdict = parse_verdict(last.read_text(encoding="utf-8", errors="replace"))
+    if verdict != "approve":
+        out.append(f"{rel}/{last.name}: последний вердикт ревью — {verdict!r}, "
+                   "нужен approve (Флоу 2)")
+    out.extend(review_independence_findings(repo, scope_id, rd))
+    return out
 
 
 def check_change(repo: Path, change_id: str, marker: str = "") -> list[str]:
@@ -148,61 +199,13 @@ def check_change(repo: Path, change_id: str, marker: str = "") -> list[str]:
                 f"для задач из дифа PR (J10): " + ", ".join(unreviewed)
             )
 
-    # SELF_REVIEW (решение Заказчика 2026-10-03): approve засчитывается только
-    # если Reviewer-Delegation существует в async_delegations, completed, и это
-    # НЕ dev-делегация задачи. Git-учетка одна — независимость подтверждается
-    # платформенными id (устойчивы к пересозданию main-сессий). Проверка ВНЕ
-    # привязки к pr_tasks: подделка артефакта ловится даже когда задачи не
-    # упомянуты в тексте PR.
-    import sqlite3 as _sq
-    _db = fp.hermes_home() / "state.db"
-    _dev_delegs: set = set()
-    _fstate: dict = {}
-    try:
-        import json as _json
-        _fstate = _json.loads(fp.flowctl_state_path().read_text(encoding="utf-8"))
-        for _r in _fstate.get("runs", {}).values():
-            _sc = _r.get("scope") or {}
-            if _sc.get("change") == change_id and _sc.get("task"):
-                _dd = _r.get("delegation_id")
-                if _dd:
-                    _dev_delegs.add(_dd.replace("-", "_"))
-    except Exception:
-        pass
-    _cr_dir = repo / "code-reviews" / change_id
-    if _cr_dir.is_dir():
-        for _rf in _cr_dir.glob("review-*.md"):
-            _t = _rf.read_text(encoding="utf-8", errors="replace")
-            _m = re.search(r"Reviewer-Delegation[^A-Za-z0-9]{0,6}(deleg[-_][A-Za-z0-9]+)", _t, re.I)
-            if not _m:
-                missing.append(
-                    f"code-reviews/{change_id}/{_rf.name}: нет Reviewer-Delegation (SELF_REVIEW-защита) — ревью не засчитано"
-                )
-                continue
-            _rd = _m.group(1).replace("-", "_")
-            _exists = _ok = False
-            try:
-                _c = _sq.connect(f"file:{_db}?mode=ro", uri=True)
-                _row = _c.execute("SELECT state FROM async_delegations WHERE delegation_id=?", (_rd,)).fetchone()
-                _c.close()
-                _exists = _row is not None
-                _ok = _exists and _row[0] in ("completed",) and _rd not in _dev_delegs
-                if not _exists:
-                    # J65.4b: ревью стадии Pi пакетного раннера — делегации
-                    # нет в реестре Hermes, доказательство — запись цикла
-                    # flowctl раннера (роль code_reviewer, тот же change,
-                    # стадия принята и закоммичена раннером, ≠ автор).
-                    _exists = _ok = runner_review_ok(_rd, change_id, _fstate,
-                                                     _dev_delegs)
-            except _sq.Error:
-                _exists = _ok = True
-            if not _ok:
-                missing.append(
-                    f"code-reviews/{change_id}/{_rf.name}: Reviewer-Delegation '{_rd}' "
-                    + ("не найдена в реестре делегаций" if not _exists else
-                       "совпадает с dev-делегацией задачи (SELF_REVIEW)") +
-                    " — ревью не засчитано"
-                )
+    # SELF_REVIEW (решение Заказчика 2026-10-03): approve засчитывается
+    # только с доказательством независимости ревьюера. Проверка ВНЕ привязки
+    # к pr_tasks: подделка артефакта ловится даже когда задачи не упомянуты
+    # в тексте PR. Источники доказательства и поведение без реестра —
+    # review_independence_findings (J65.6).
+    missing.extend(review_independence_findings(
+        repo, change_id, repo / "code-reviews" / change_id))
 
     # J51.3: ворота merge regress-final — полный сериальный прогон после
     # approve ревью обязателен (артефакт решает regress_runner, не ПМ).
@@ -320,6 +323,33 @@ REGRESS_FINAL_MAX_AGE_DAYS = 7
 RUNNER_REVIEW_STATUSES = ("accepted", "provisional")
 
 
+def scope_matches(run_scope, scope_id: str) -> bool:
+    """scope записи цикла = scope PR. Без учета регистра (каталог фабрики
+    bug-026 против BUG-026); scope Флоу 2 со slug (BUG-042-fix) — тот же
+    баг, что BUG-042 (J65.6)."""
+    a, b = str(run_scope or ""), str(scope_id or "")
+    if not a or not b:
+        return False
+    if a.lower() == b.lower():
+        return True
+    # slug — только у bug-id Флоу 2 по грамматике flow_ids (номер BUG-…NNN,
+    # затем строчный slug): BUG-042-RECHECK-003 и BUG-001-002 — другие баги,
+    # change-id Флоу 1 (bug-tracker-v2) slug не имеет (review-002 m7,
+    # review-003 m11)
+    ba, bb = bug_base(a), bug_base(b)
+    return ba is not None and ba == bb
+
+
+def bug_base(scope: str) -> str | None:
+    """Номер бага без slug (верхний регистр) по грамматике flow_ids;
+    BUG-042-fix → BUG-042; каталог фабрики bug-026 → BUG-026; не bug-id —
+    None. Slug — только строчный (BUG-042-RECHECK-003 — номер целиком)."""
+    m = BUG_ID_PARTS_RE.fullmatch(scope or "")
+    if m is None and scope and scope.lower() == scope:
+        m = BUG_ID_PARTS_RE.fullmatch(scope.upper())   # bug-026 (без slug)
+    return m.group(1) if m else None
+
+
 def runner_review_ok(delegation: str, change_id: str, fstate: dict,
                      dev_delegs: set) -> bool:
     """J65.4b: независимость ревью стадии Pi по реестру циклов flowctl.
@@ -339,10 +369,210 @@ def runner_review_ok(delegation: str, change_id: str, fstate: dict,
         if str(rec.get("delegation_id") or "").replace("-", "_") != norm:
             continue
         return (rec.get("actor_role") == "code_reviewer"
-                and (rec.get("scope") or {}).get("change") == change_id
+                and scope_matches((rec.get("scope") or {}).get("change"), change_id)
                 and rec.get("status") in RUNNER_REVIEW_STATUSES
                 and isinstance(rec.get("package_runner"), dict))
     return False
+
+
+
+# --- J65.6: независимость ревью без знания устройства Hermes -------------
+
+REVIEWER_DELEGATION_RE = re.compile(
+    r"Reviewer-Delegation[^A-Za-z0-9]{0,6}(deleg[-_][A-Za-z0-9]+)", re.I)
+PROVENANCE_SUFFIX = ".provenance.json"
+PROVENANCE_SCHEMA = "review-provenance/1"
+# Внешний агент (п.21 AGENTS.md): id вида <агент>:<id>, например
+# codex:task-17 или claude:review-core-ready-002.
+EXTERNAL_DELEGATION_RE = re.compile(r"^[a-z][a-z0-9-]*:[A-Za-z0-9._-]+$")
+SHA_RE = re.compile(r"^[0-9a-f]{7,40}$")
+REVIEWER_ROLES = ("code_reviewer",)
+# bug-id flow_ids.BUG_ID_PATTERN с группой номера: (BUG-…NNN)(-slug)?
+BUG_ID_PARTS_RE = re.compile(r"(BUG-(?:[A-Z0-9]+-)*\d{3})(?:-[a-z0-9][a-z0-9.-]*)?")
+PLAIN_REVIEW_RE = re.compile(r"^review-(\d+)\.md$", re.I)   # review-002.md
+
+
+# Ревью, независимость которых в этом прогоне не проверяема (CI без реестров):
+# итоговая строка pr_validate показывает их число — п.9, без сглаживания.
+SKIPPED_REVIEW_CHECKS: list[str] = []
+
+
+def in_ci() -> bool:
+    """Прогон в GitHub Actions: GITHUB_ACTIONS=true (Actions ставит его на
+    каждый шаг) или PR-контекст GITHUB_EVENT_PATH. На VPS и у ПМ локально
+    переменных нет — там реестры делегаций есть, и их отсутствие — отказ."""
+    return (os.environ.get("GITHUB_ACTIONS", "").strip().lower() == "true"
+            or bool(os.environ.get("GITHUB_EVENT_PATH", "").strip()))
+
+
+def _norm(ref: str) -> str:
+    return (ref or "").strip().replace("-", "_").lower()
+
+
+def _load_fstate() -> dict:
+    try:
+        return json.loads(fp.flowctl_state_path().read_text(encoding="utf-8"))
+    except Exception:   # нет/битый state раннера — доказательства раннера нет
+        return {}
+
+
+def dev_delegations(fstate: dict, scope_id: str) -> set:
+    """Делегации разработчика этого scope (Флоу 1 — запуски задач tasks.md,
+    Флоу 2 — запуски роли dev): ревью от них — SELF_REVIEW."""
+    out = set()
+    for r in (fstate.get("runs") or {}).values():
+        if not isinstance(r, dict):
+            continue
+        sc = r.get("scope") or {}
+        if not scope_matches(sc.get("change"), scope_id):
+            continue
+        role = r.get("actor_role")
+        # стадия ревью per_task тоже несет scope.task (J64.13) — она не автор
+        if role == "dev" or (sc.get("task") and role not in REVIEWER_ROLES):
+            if r.get("delegation_id"):
+                out.add(_norm(r["delegation_id"]))
+    return out
+
+
+def hermes_delegation(ref: str) -> tuple[bool, str | None]:
+    """(реестр доступен, состояние) — через исполнитель hermes
+    (scripts/executors/hermes.py). Пакета executors нет — реестр
+    недоступен: решение fail-closed/SKIPPED принимает вызывающий."""
+    try:
+        from executors import hermes as _hermes
+    except ImportError:
+        return False, None
+    return _hermes.EXECUTOR.delegation(ref)
+
+
+def _git_commit_known(repo: Path, sha: str) -> bool | None:
+    """True/False — коммит есть/нет; None — проверить нельзя (shallow-клон
+    CI, не git)."""
+    try:
+        shallow = subprocess.run(
+            ["git", "-C", str(repo), "rev-parse", "--is-shallow-repository"],
+            capture_output=True, text=True, timeout=30)
+        if shallow.returncode != 0 or shallow.stdout.strip() == "true":
+            return None
+        r = subprocess.run(["git", "-C", str(repo), "cat-file", "-e",
+                            f"{sha}^{{commit}}"], capture_output=True, timeout=30)
+        return r.returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        return None
+
+
+def delegation_findings(ref: str, scope_id: str, fstate: dict, dev: set,
+                        where: str) -> tuple[list[str], list[str]]:
+    """Платформенный id ревьюера (deleg_…): стадия раннера или делегация
+    Hermes. → (missing, unverified)."""
+    norm = _norm(ref)
+    if norm in dev:
+        return [f"{where}: ревьюер {ref} совпадает с делегацией разработчика "
+                "(SELF_REVIEW) — ревью не засчитано"], []
+    if runner_review_ok(ref, scope_id, fstate, dev):
+        return [], []
+    available, state = hermes_delegation(ref)
+    if not available:
+        if in_ci():
+            return [], [f"{where}: делегация {ref} не проверяема в CI (реестров "
+                        "Hermes и раннера нет) — независимость проверит "
+                        "pre_merge ПМ"]
+        return [f"{where}: реестр делегаций Hermes недоступен и в state раннера "
+                f"нет стадии ревью {ref} — независимость не проверена, ревью не "
+                "засчитано (fail-closed вне CI, J65.6)"], []
+    if state is None:
+        return [f"{where}: делегация {ref} не найдена в реестре делегаций и в "
+                "state раннера — ревью не засчитано"], []
+    if state != "completed":
+        return [f"{where}: делегация {ref} в состоянии {state!r}, не completed — "
+                "ревью не засчитано"], []
+    return [], []
+
+
+def sidecar_findings(repo: Path, review: Path, scope_id: str, fstate: dict,
+                     dev: set, where: str) -> tuple[list[str], list[str]]:
+    """Provenance-sidecar `gate_runner record-review` вместо строки
+    Reviewer-Delegation (решение Заказчика 2026-11-16 «Provenance-файл
+    ревью»). → (missing, unverified)."""
+    from flow_check import parse_verdict
+    side = Path(str(review) + PROVENANCE_SUFFIX)
+    try:
+        data = json.loads(side.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        return [f"{where}: provenance-sidecar нечитаем ({exc}) — ревью не "
+                "засчитано"], []
+    bad = []
+    if data.get("schema_version") != PROVENANCE_SCHEMA:
+        bad.append(f"schema_version {data.get('schema_version')!r} ≠ {PROVENANCE_SCHEMA}")
+    if not scope_matches(data.get("change"), scope_id):
+        bad.append(f"change {data.get('change')!r} ≠ {scope_id}")
+    md_verdict = parse_verdict(review.read_text(encoding="utf-8", errors="replace"))
+    if data.get("verdict") != md_verdict:
+        bad.append(f"verdict {data.get('verdict')!r} ≠ вердикт файла {md_verdict!r}")
+    author = str(data.get("author_delegation") or "")
+    reviewer = str(data.get("reviewer_delegation") or "")
+    if not author or not reviewer:
+        bad.append("нет author_delegation/reviewer_delegation")
+    elif _norm(author) == _norm(reviewer):
+        bad.append(f"автор и ревьюер совпадают ({reviewer}) — SELF_REVIEW")
+    sha = str(data.get("reviewed_commit_sha") or "").lower()
+    if not SHA_RE.fullmatch(sha):
+        bad.append(f"reviewed_commit_sha {sha!r} — не SHA")
+    elif _git_commit_known(repo, sha) is False:
+        bad.append(f"reviewed_commit_sha {sha[:12]} нет в репозитории")
+    if not data.get("diff_digest"):
+        bad.append("нет diff_digest")
+    if bad:
+        return [f"{where}: provenance-sidecar отклонен: " + "; ".join(bad)
+                + " — ревью не засчитано"], []
+    if reviewer.lower().startswith("deleg"):
+        return delegation_findings(reviewer, scope_id, fstate, dev, where)
+    if EXTERNAL_DELEGATION_RE.fullmatch(reviewer):
+        # п.21: внешний агент работает через PR; его ревьюер — отдельный
+        # агент. Реестра id внешних агентов нет — независимость не проверяема,
+        # правило то же, что без реестров («SKIPPED в CI, DENY локально»):
+        # в CI — SKIPPED, приемка Заказчиком при merge; вне CI — отказ.
+        if in_ci():
+            return [], [f"{where}: ревьюер внешнего агента {reviewer} (автор "
+                        f"{author}) — реестра id внешних агентов нет, "
+                        "независимость подтверждает Заказчик при merge"]
+        return [f"{where}: ревьюер внешнего агента {reviewer} — реестра id "
+                "внешних агентов нет, вне CI независимость не проверяема — ревью "
+                "не засчитано (J65.6)"], []
+    return [f"{where}: reviewer_delegation {reviewer!r} — ни deleg_…, ни "
+            "<агент>:<id> внешнего агента — ревью не засчитано"], []
+
+
+def review_independence_findings(repo: Path, scope_id: str,
+                                 review_dir: Path) -> list[str]:
+    """Каждый review-файл scope несет доказательство независимости ревьюера:
+    строку `Reviewer-Delegation: deleg_…` (стадия раннера или делегация
+    Hermes) или provenance-sidecar `<review>.provenance.json`.
+    Реестров нет: в CI — SKIPPED (решение Заказчика 2026-11-16
+    «SKIPPED в CI, DENY локально»), вне CI — отказ."""
+    missing: list[str] = []
+    if not review_dir.is_dir():
+        return missing
+    fstate = _load_fstate()
+    dev = dev_delegations(fstate, scope_id)
+    unverified: list[str] = []
+    rel = review_dir.relative_to(repo) if review_dir.is_relative_to(repo) else review_dir
+    for rf in sorted(review_dir.glob("review-*.md")):
+        where = f"{rel.as_posix()}/{rf.name}"
+        m = REVIEWER_DELEGATION_RE.search(rf.read_text(encoding="utf-8", errors="replace"))
+        if m:
+            miss, unv = delegation_findings(m.group(1), scope_id, fstate, dev, where)
+        elif Path(str(rf) + PROVENANCE_SUFFIX).is_file():
+            miss, unv = sidecar_findings(repo, rf, scope_id, fstate, dev, where)
+        else:
+            miss, unv = [f"{where}: нет Reviewer-Delegation и provenance-sidecar "
+                         "(SELF_REVIEW-защита) — ревью не засчитано"], []
+        missing.extend(miss)
+        unverified.extend(unv)
+    for u in unverified:
+        print(f"pr_validate: SKIPPED (независимость ревью): {u}", file=sys.stderr)
+    SKIPPED_REVIEW_CHECKS.extend(unverified)
+    return missing
 
 
 def check_regress_final(repo: Path, change_id: str) -> list[str]:
@@ -1200,7 +1430,10 @@ def main() -> int:
         for m in missing:
             print(f"  - {m}")
         return 1
-    print(f"PR-VALIDATE OK ({flow_type}:{ident}): обязательные артефакты на месте")
+    tail = (f"; независимость ревью: SKIPPED ({len(SKIPPED_REVIEW_CHECKS)}, "
+            "Reviewer-Delegation проверит pre_merge ПМ с --pr-id; ревьюера "
+            "внешнего агента — Заказчик при merge)" if SKIPPED_REVIEW_CHECKS else "")
+    print(f"PR-VALIDATE OK ({flow_type}:{ident}): обязательные артефакты на месте{tail}")
     return 0
 
 

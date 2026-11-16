@@ -29,7 +29,7 @@ AGENTS.md читает ПМ на Hermes, glm-5.3-flash — правила кор
 | 18 | Решения Заказчика — артефактами | flow_transition: `HUMAN_APPROVAL_REQUIRED` (approval_ref на decision-record) |
 | 19 | Режимы и AGENTS.md — только Заказчик | `flow_mode set … --by customer`; защищенные пути (J3): правка AGENTS.md/openspec/contracts без `[pipeline]` — отказ prepare, `pm_bounds_check` |
 | 20 | Бэклог после цикла | не проверяется |
-| 21 | Внешний агент только через PR | ruleset main; `pr_validate` J10 (approve-ревью с Reviewer-Delegation); provenance — `author_delegation: codex:<id>` |
+| 21 | Внешний агент только через PR | ruleset main; `pr_validate` J10 и Флоу 2 (approve-ревью с Reviewer-Delegation или provenance-sidecar `gate_runner record-review`, ревьюер `<агент>:<id>`, J65.6) |
 
 Разделы «Оркестрация» и «Эскалация»: провенанс ревью — `gate_runner
 record-review` (самоприемка — DENY); приемка сессии — `session_archive.py`

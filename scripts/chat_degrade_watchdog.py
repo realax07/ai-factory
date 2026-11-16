@@ -15,7 +15,9 @@ import time
 from pathlib import Path
 import factory_paths as fp  # noqa: E402  (J64.5: пути машины — только оттуда)
 
-LOG = fp.hermes_home() / "logs" / "errors.log"
+from executors import hermes as _hermes  # noqa: E402  (J65.6: данные Hermes — у адаптера)
+
+LOG = _hermes.EXECUTOR.errors_log()
 STATE = fp.state_dir() / "chat-degrade-watchdog.json"
 # Clean EOF (сервер молча закрыл поток) — транзиторный само-ретраящийся сбой
 # вызовов сабагентов, НЕ деградация чата: не алертим. Настоящий сигнал —

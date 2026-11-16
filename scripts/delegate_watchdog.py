@@ -32,7 +32,12 @@ import time
 from pathlib import Path
 import factory_paths as fp  # noqa: E402  (J64.5: пути машины — только оттуда)
 
-REGISTRY_DB = fp.hermes_home() / "state.db"   # async_delegations — платформенный факт
+try:   # J65.6: устройство данных Hermes знает только исполнитель hermes
+    from executors import hermes as _hermes
+except ImportError:   # копия без пакета executors: реестра нет (см. load_delegations)
+    _hermes = None
+# async_delegations — платформенный факт; путь — у адаптера
+REGISTRY_DB = _hermes.EXECUTOR.registry_db() if _hermes is not None else None
 FLOWCTL_STATE = fp.state_dir() / "flowctl_state.json"
 INCIDENTS = fp.state_dir() / "delegate_bypass_incidents.json"
 PM_NUDGE_STATE = fp.state_dir() / "delegate_watchdog_pm_nudge.json"
@@ -72,37 +77,13 @@ def load(path):
 def load_delegations() -> list[dict] | None:
     """Все делегации из async_delegations (пишется платформой при каждом
     delegate_task — независимо от воли агента). Источник — исполнитель hermes
-    (scripts/executors/hermes.py, J65.5); копия в проекте без пакета
-    исполнителей читает реестр сама (ниже)."""
-    try:
-        from executors import hermes as _hermes
-    except ImportError:
-        _hermes = None
-    if _hermes is not None:
-        return _hermes.EXECUTOR.delegations(REGISTRY_DB)
-    import sqlite3
-    if not REGISTRY_DB.exists():
+    (scripts/executors/hermes.py, J65.5/J65.6); пакета executors нет (копия
+    до J65.5) — реестр недоступен, прогон пропускается с WARN."""
+    if _hermes is None:
+        print("WARN: нет пакета scripts/executors — реестр делегаций недоступен "
+              "(обнови копию ядра: factory_init)", file=sys.stderr)
         return None
-    try:
-        conn = sqlite3.connect(f"file:{REGISTRY_DB}?mode=ro", uri=True)
-        conn.row_factory = sqlite3.Row
-        rows = conn.execute(
-            "SELECT delegation_id, parent_session_id, state, delivery_state,"
-            " dispatched_at, completed_at FROM async_delegations"
-        ).fetchall()
-        conn.close()
-    except sqlite3.Error as e:
-        print(f"WARN: state.db недоступен ({e})", file=sys.stderr)
-        return None
-    out = []
-    for r in rows:
-        out.append({"delegation_id": r["delegation_id"], "state": r["state"],
-                    "delivery_state": r["delivery_state"],
-                    "dispatched_at": r["dispatched_at"],
-                    "completed_at": r["completed_at"],
-                    "parent_session_id": r["parent_session_id"]})
-    return out
-
+    return _hermes.EXECUTOR.delegations(REGISTRY_DB)
 
 def _baseline_path() -> Path:
     return fp.state_dir() / "delegate_gate_baseline.json"

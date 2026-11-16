@@ -473,7 +473,12 @@ Review-файл `code-reviews/<change-id>/review-<задача>-<NNN>.md` —
   старый approve (BUG-AF-RECHECK-003).
 - Мета делегации — строка `Reviewer-Delegation: deleg_<id>`: платформенный
   id вплотную (`deleg_<id>`), первая мета файла; SELF_REVIEW-защита —
-  сверка с async_delegations (не dev-делегация задачи, статус completed).
+  сверка с записью цикла раннера или с реестром делегаций через исполнитель
+  hermes (не dev-делегация задачи, статус completed). Вместо строки —
+  provenance-sidecar `<review>.provenance.json` (`gate_runner
+  record-review`). Реестров нет: в CI — `SKIPPED`, вне CI — отказ
+  (J65.6). Те же требования — у PR `[BUG-…]` (Флоу 2,
+  `code-reviews/<bug-id>/`).
 - Несколько задач на один файл (или историческое имя без числовых id) →
   `review-mapping.json` рядом: `{"review-002.md": ["2.1", "2.2"]}`;
   числовые id в имени файла тоже читаются.

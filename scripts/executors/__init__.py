@@ -16,7 +16,9 @@
   command(launch)   — argv + env процесса (start); запуск с таймаутом и
                       ожидание (wait) — общий spawn раннера;
   list_active()     — активные запуски исполнителя для вотчдога обхода;
-  transcript(ref)   — транскрипт запуска, если исполнитель его хранит.
+  transcript(ref)   — транскрипт запуска, если исполнитель его хранит;
+  finished_runs()   — (ref, путь транскрипта) завершенных запусков для архива
+                      сессий (session_archive, J65.6).
 """
 from __future__ import annotations
 
@@ -99,6 +101,11 @@ class Executor:
 
     def transcript(self, ref: str) -> str | None:
         return None
+
+    def finished_runs(self) -> list[tuple[str, Path]]:
+        """Завершенные запуски с транскриптом на диске (ref, путь). Исполнитель
+        без хранимых транскриптов (pi --no-session) — пусто."""
+        return []
 
 
 def names() -> list[str]:

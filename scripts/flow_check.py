@@ -24,7 +24,6 @@ except ImportError:  # автономная копия в проекте без 
 
     fp = _NS(
         factory_home=lambda: _fp_env("AI_FACTORY_HOME", "~/ai-factory"),
-        hermes_home=lambda: _fp_env("HERMES_HOME", "~/.hermes"),
         state_dir=lambda: _fp_env("AF_STATE_DIR", "~/.hermes/state"),
         flowctl_state_path=lambda: _fp_env(
             "AF_STATE_DIR", "~/.hermes/state") / "flowctl_state.json",
