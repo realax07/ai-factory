@@ -406,6 +406,18 @@ def test_scope_match_not_for_change_ids(tmp_path, env):
     assert not pv.scope_matches("bug-tracker-v2", "bug-tracker")
     assert not pv.scope_matches("bug-tracker", "bug-tracker-v2")
     assert not pv.scope_matches("BUG-0420", "BUG-042")
+    # review-003 m11: другой баг по грамматике и пустой slug
+    for a, b in (("BUG-042-RECHECK-003", "BUG-042"), ("BUG-001-002", "BUG-001"),
+                 ("bug-fix-001-v2", "bug-fix-001"), ("BUG-042-", "BUG-042")):
+        assert not pv.scope_matches(a, b), (a, b)
+        assert not pv.scope_matches(b, a), (b, a)
+    assert pv.scope_matches("BUG-AF-RECHECK-003-x", "BUG-AF-RECHECK-003")
+    assert pv.scope_matches("bug-026", "BUG-026")
+    root = tmp_path / "dirs"
+    (root / "code-reviews" / "BUG-042-RECHECK-003").mkdir(parents=True)
+    assert pv.bug_review_dir(root, "042") is None
+    (root / "code-reviews" / "BUG-042-fix").mkdir()
+    assert pv.bug_review_dir(root, "042").name == "BUG-042-fix"
     repo, _ = sidecar_repo(tmp_path, change="BUG-042-fix",
                            reviewer_delegation=DELEG)
     hermes_db(env["hermes"], [(DELEG, "completed")])

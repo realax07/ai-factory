@@ -66,13 +66,14 @@ def check_bug(repo: Path, num: str) -> list[str]:
 
 def bug_review_dir(repo: Path, digits: str) -> Path | None:
     """code-reviews/<bug-id>/ без учета регистра (проекты — BUG-010, фабрика
-    — bug-026); допускается slug после номера."""
+    — bug-026); допускается slug после номера (грамматика flow_ids:
+    BUG-042-fix — тот же баг, BUG-042-RECHECK-003 — другой)."""
     root = repo / "code-reviews"
     if not root.is_dir():
         return None
-    want = f"bug-{digits}".lower()
-    hits = sorted(d for d in root.iterdir() if d.is_dir() and (
-        d.name.lower() == want or d.name.lower().startswith(want + "-")))
+    want = f"BUG-{digits}"
+    hits = sorted(d for d in root.iterdir()
+                  if d.is_dir() and scope_matches(d.name, want))
     return hits[0] if hits else None
 
 
@@ -324,16 +325,27 @@ def scope_matches(run_scope, scope_id: str) -> bool:
     """scope записи цикла = scope PR. Без учета регистра (каталог фабрики
     bug-026 против BUG-026); scope Флоу 2 со slug (BUG-042-fix) — тот же
     баг, что BUG-042 (J65.6)."""
-    a, b = str(run_scope or "").lower(), str(scope_id or "").lower()
+    a, b = str(run_scope or ""), str(scope_id or "")
     if not a or not b:
         return False
-    if a == b:
+    if a.lower() == b.lower():
         return True
-    # slug — только у bug-id Флоу 2 (BUG-<NNN>); change-id Флоу 1 вида
-    # bug-tracker не совпадает с bug-tracker-v2 (review-002 m7)
-    if BUG_SCOPE_RE.fullmatch(b) and a.startswith(b + "-"):
-        return True
-    return bool(BUG_SCOPE_RE.fullmatch(a)) and b.startswith(a + "-")
+    # slug — только у bug-id Флоу 2 по грамматике flow_ids (номер BUG-…NNN,
+    # затем строчный slug): BUG-042-RECHECK-003 и BUG-001-002 — другие баги,
+    # change-id Флоу 1 (bug-tracker-v2) slug не имеет (review-002 m7,
+    # review-003 m11)
+    ba, bb = bug_base(a), bug_base(b)
+    return ba is not None and ba == bb
+
+
+def bug_base(scope: str) -> str | None:
+    """Номер бага без slug (верхний регистр) по грамматике flow_ids;
+    BUG-042-fix → BUG-042; каталог фабрики bug-026 → BUG-026; не bug-id —
+    None. Slug — только строчный (BUG-042-RECHECK-003 — номер целиком)."""
+    m = BUG_ID_PARTS_RE.fullmatch(scope or "")
+    if m is None and scope and scope.lower() == scope:
+        m = BUG_ID_PARTS_RE.fullmatch(scope.upper())   # bug-026 (без slug)
+    return m.group(1) if m else None
 
 
 def runner_review_ok(delegation: str, change_id: str, fstate: dict,
@@ -373,7 +385,8 @@ PROVENANCE_SCHEMA = "review-provenance/1"
 EXTERNAL_DELEGATION_RE = re.compile(r"^[a-z][a-z0-9-]*:[A-Za-z0-9._-]+$")
 SHA_RE = re.compile(r"^[0-9a-f]{7,40}$")
 REVIEWER_ROLES = ("code_reviewer",)
-BUG_SCOPE_RE = re.compile(r"bug-(?:[a-z0-9]+-)*\d{3}")   # bug-id без slug, lower
+# bug-id flow_ids.BUG_ID_PATTERN с группой номера: (BUG-…NNN)(-slug)?
+BUG_ID_PARTS_RE = re.compile(r"(BUG-(?:[A-Z0-9]+-)*\d{3})(?:-[a-z0-9][a-z0-9.-]*)?")
 PLAIN_REVIEW_RE = re.compile(r"^review-(\d+)\.md$", re.I)   # review-002.md
 
 
