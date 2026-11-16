@@ -176,7 +176,8 @@ def test_autonomous_copy_without_factory_paths(tmp_path, clean_env, script):
 def test_fallback_matches_factory_paths(clean_env, monkeypatch, tmp_path,
                                         script):
     """TC-FP-009: запасные пути автономных копий = factory_paths (те же env
-    и дефолты) — для каждого скрипта с запасным блоком."""
+    и дефолты) — для каждого скрипта с запасным блоком; пути Hermes в
+    запасном блоке нет (J65.6)."""
     src = (FACTORY / "scripts" / script).read_text("utf-8")
     assert "except ImportError" in src and "AF_STATE_DIR" in src
     block = src[src.index("    from types import SimpleNamespace"):
@@ -190,7 +191,9 @@ def test_fallback_matches_factory_paths(clean_env, monkeypatch, tmp_path,
              + "\n".join(l[4:] for l in block.splitlines()), ns)
         alt = ns["fp"]
         assert alt.factory_home() == fp.factory_home()
-        assert alt.hermes_home() == fp.hermes_home()
+        # J65.6: данные Hermes — только у исполнителя hermes; запасной блок
+        # копии ворот путь Hermes не знает
+        assert not hasattr(alt, "hermes_home")
         assert alt.state_dir() == fp.state_dir()
         assert alt.flowctl_state_path() == fp.flowctl_state_path()
 

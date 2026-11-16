@@ -1,0 +1,135 @@
+# CHANGELOG ворот
+
+Журнал версий ядра ворот: какие коды отказа появились, изменились или сняты.
+Версия ядра — git-тег `core-vX.Y` на коммите main (J65.6). Коды — стабильные
+машиночитаемые причины отказа (контракт `contracts/flow_control_contract.md`
+§9). Новый код без строки здесь — красный тест
+`tests/unit/test_j65_gates_changelog.py`.
+
+Правила ведения:
+
+- новый код отказа или смена смысла — строка в разделе следующей версии;
+- снятый код не удаляется из истории: строка «снят» в разделе версии, где
+  его не стало;
+- рост ворот — по правилу «Дисциплина роста ворот» `docs/README-flow-control.md`
+  (у нового гейта — причина-инцидент и срок пересмотра).
+
+## core-v1.0 — 2026-11-17 (J65.6, «ядро готово»)
+
+Первая версия ядра. Критерий (резолюция J65.6 в
+`backlog/J65-ТЗ-единый-источник-правды-2026-11-03.md`):
+
+1. Ворота и проверки в `scripts/` не знают устройства данных Hermes: реестр
+   делегаций, транскрипты и логи читает только исполнитель
+   `scripts/executors/hermes.py`. Исключения: установщики (`factory_init`,
+   `factory_bootstrap`), модуль путей `factory_paths` и утилита платформы
+   Hermes `session_watchdog` (лечит роутинг Telegram-гейтвея). Границу держит
+   `tests/unit/test_j65_core_ready.py`.
+2. Эталонный межагентный прогон Флоу 1 (`tests/fixtures/reference-run/`)
+   проходит на двух исполнителях: `pi` (заглушка бинаря) и `stub`, в CI на
+   каждом PR.
+
+### Изменения в этой версии
+
+- `pr_validate`: независимость ревью проверяется и без Hermes — по state
+  раннера, реестру делегаций через адаптер или provenance-sidecar
+  `gate_runner record-review`. Реестров нет: в CI — пометка `UNVERIFIED` в
+  выводе (PR не валится, проверит pre_merge ПМ), вне CI — отказ. Раньше
+  недоступный `state.db` молча засчитывал любое ревью (fail-open).
+- `pr_validate`, Флоу 2: PR `[BUG-…]` требует `code-reviews/<bug-id>/` с
+  последним вердиктом approve и доказательством независимости ревьюера.
+- `pr_validate`: provenance-sidecar внешнего агента (`<агент>:<id>`, п.21
+  AGENTS.md) засчитывается вместо строки `Reviewer-Delegation` при
+  согласованных полях (scope, вердикт, автор ≠ ревьюер, коммит, digest).
+
+### Коды отказа ядра
+
+Движок переходов (`flow_transition.REASON_CODES`):
+
+| Код | Смысл |
+|---|---|
+| `MISSING_INPUT` | нет обязательного входа этапа (артефакт, поле, ревью) |
+| `INVALID_GATE` | действие не разрешено графом флоу в текущем состоянии |
+| `HUMAN_APPROVAL_REQUIRED` | нужно зафиксированное решение Заказчика (approval_ref) |
+| `WRONG_ROLE` | роль не может выполнять это действие |
+| `ZONE_CONFLICT` | зона записи пересекается с живой сессией |
+| `STALE_EVIDENCE` | доказательство устарело (SHA, дифф, время) |
+| `AMBIGUOUS_STATE` | состояние или формат не распознаны — «на глаз» не интерпретируется |
+| `STALE_SNAPSHOT` | снимок состояния устарел к моменту решения |
+| `EXTERNAL_ENFORCEMENT_UNKNOWN` | внешняя защита (ruleset) не подтверждена |
+| `PLAN_RELEASE_MISSING` | нет плана релиза |
+| `PLAN_FLOW_UNDECLARED` | в плане не объявлен флоу |
+| `ARCH_REVIEW_MISSING` | dev-задача продуктового пакета без architecture-ревью |
+
+Коды контракта §9 без константы в коде (сообщения ворот и аудит):
+
+| Код | Смысл |
+|---|---|
+| `SELF_REVIEW` | ревью собственной работы: ревьюер = автор или делегация разработчика (pr_validate — в тексте отказа) |
+| `OPS_TASK_AS_DEV` | ops-задача проведена как dev (разбор тикета) |
+
+Снимок фактов (`flow_state`):
+
+| Код | Смысл |
+|---|---|
+| `FILE_READ_ERROR` | файл артефакта не читается |
+| `PATH_OUTSIDE_REPO` | путь выходит за пределы репозитория |
+| `GIT_HEAD_ERROR` | не удалось прочитать HEAD |
+| `GIT_STATUS_ERROR` | не удалось прочитать git status |
+| `OPENSPEC_VALIDATE_ERROR` | `openspec validate` не выполнился |
+| `REGISTRY_MISSING` | нет реестра активных сессий |
+| `REGISTRY_INVALID_JSON` | реестр активных сессий — не JSON |
+| `REGISTRY_READ_ERROR` | реестр активных сессий не читается |
+| `FLOW5_RETRO_MISSING` | Флоу 5 без ретроспективных артефактов |
+| `FLOW_ID_INVALID` | номер флоу вне 1–5 |
+
+Резервации и сессии (`session_check`):
+
+| Код | Смысл |
+|---|---|
+| `OUT_OF_ZONE` | запись вне зоны резервации |
+| `DUPLICATE_PAYLOAD` | повтор той же делегации (идемпотентность) |
+| `REGISTRY_ERROR` | реестр сессий поврежден или недоступен для записи |
+| `WRONG_WORKTREE` | работа не в выданном worktree |
+| `WRONG_BRANCH` | работа не в своей ветке |
+| `SESSION_MD_MISSING` | в worktree нет служебного SESSION.md |
+| `NEEDS_ATTENTION` | сессия требует разбора ПМ, зона остается занятой |
+
+CLI оркестратора (`flowctl`):
+
+| Код | Смысл |
+|---|---|
+| `ZONE_OUTSIDE_POLICY` | запрошенная зона вне политики роли |
+| `ZONE_POLICY_MISMATCH` | зона расходится с политикой роли в реестре |
+| `MISSING_REQUIRED_GATES` | при finish не пройдены обязательные ворота |
+| `J3_PROTECTED_PATHS` | изменение защищенных путей (спеки, контракты, AGENTS.md, deploy) без маркера `[pipeline]` |
+| `ACTIVE_SESSIONS` | integrate: есть живые делегации пакета |
+| `INTEGRATION_BRANCH_EXISTS` | integrate: интеграционная ветка уже есть |
+| `CID_REQUIRED` | integrate: не указан correlation-id |
+| `BASE_MISSING` | integrate: нет базовой ветки |
+
+Пакетный раннер и исполнители (`package_runner`, `scripts/executors/`):
+
+| Код | Смысл |
+|---|---|
+| `MODEL_UNRESOLVED` | провайдер/модель роли не заданы ни в roles.json, ни в стадии |
+| `ZONE_GUARD_MISSING` | нет zone-guard для pi — стадия не запускается |
+| `EXECUTOR_UNAVAILABLE` | исполнитель не готов (нет бинаря, команды) |
+
+Ворота PR (`pr_validate`):
+
+| Код | Смысл |
+|---|---|
+| `REGRESS_FINAL_STALE` | финальный регресс старше изменений или tooling |
+| `UNKNOWN_ANCESTRY` | нельзя установить, что коммит прогона — предок HEAD |
+
+Энфорсер делегаций Hermes (`plugins/flow-enforcer/enforcer.py`):
+
+| Код | Смысл |
+|---|---|
+| `MARKERS_MISSING` | делегация без маркеров флоу (режим strict) |
+| `FLOW_MARKER_INVALID` | маркер `flow:` в goal не разбирается |
+| `WORKTREE_MISSING` | вторая активная резервация того же репо без своего worktree (или общий worktree) |
+| `PUSH_POLICY` | push не в свою ветку pipeline/… |
+| `PM_PUSH_POLICY` | push ПМ в продуктовый репо без интеграции (маркер `[integrate]`/`[pipeline]` или влитый HEAD) |
+| `MODEL_ENFORCE` | боевая роль (SA, архитектор, DEV, BA) делегацией Hermes, а не раннером (п.17) |

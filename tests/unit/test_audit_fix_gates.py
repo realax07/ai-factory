@@ -33,6 +33,13 @@ import pr_validate  # noqa: E402
 import role_zone_policy as rzp  # noqa: E402
 
 
+def bug_report_findings_pv(repo: Path, bug: str) -> list[str]:
+    """Находки pr_validate.check_bug по контракту баг-репорта (Н5). Ревью
+    багфикса (J65.6, code-reviews/<bug>/) проверяет test_j65_core_ready."""
+    return [m for m in pr_validate.check_bug(repo, bug)
+            if not m.startswith("code-reviews/")]
+
+
 def git(repo: Path, *args: str) -> str:
     r = subprocess.run(["git", "-C", str(repo), *args],
                        capture_output=True, text=True, check=True)
@@ -107,13 +114,13 @@ class TestBugArtifactContract:
         repo = make_repo(tmp_path)
         write(repo, "test-model/bugs/BUG-042.md",
               "# BUG-042\n\nСтатус: OPEN\n")
-        assert pr_validate.check_bug(repo, "BUG-042") == []
+        assert bug_report_findings_pv(repo, "BUG-042") == []
 
     def test_pr_validate_check_bug_accepts_suffixed_name(self, tmp_path):
         repo = make_repo(tmp_path)
         write(repo, "test-model/bugs/BUG-042-from-cases.md",
               "# BUG-042\n\nСтатус: OPEN\n")
-        assert pr_validate.check_bug(repo, "BUG-042") == []
+        assert bug_report_findings_pv(repo, "BUG-042") == []
 
     def test_pr_validate_check_bug_missing_message_covers_both(self, tmp_path):
         repo = make_repo(tmp_path)
@@ -156,7 +163,7 @@ class TestBugArtifactContract:
             commit_all(repo)
             gates = (
                 flow_check.bug_report_paths(repo, "BUG-042"),
-                pr_validate.check_bug(repo, "BUG-042"),
+                bug_report_findings_pv(repo, "BUG-042"),
             )
             assert bool(gates[0]) == (gates[1] == []), name
 

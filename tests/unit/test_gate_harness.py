@@ -194,7 +194,10 @@ def shallow_clone_ci(origin: Path, dest: Path) -> Path:
 
 def ci_env(home: Path) -> dict[str, str]:
     """Чистый env (подход env -i): минимальный PATH, чистый HOME,
-    никаких GITHUB_*/локальных путей. openspec намеренно НЕ резолвится."""
+    никаких локальных путей. openspec намеренно НЕ резолвится. Из GITHUB_*
+    — только GITHUB_ACTIONS=true: Actions ставит его на каждый шаг, а
+    pr_validate по нему видит CI (J65.6: без реестров делегаций ревью в CI —
+    UNVERIFIED, вне CI — отказ). PR-контекста (GITHUB_EVENT_PATH) нет."""
     dirs: list[str] = []
     for name in ("python3", "python", "git"):
         p = shutil.which(name)
@@ -205,6 +208,7 @@ def ci_env(home: Path) -> dict[str, str]:
         "HOME": str(home),
         "LANG": "C.UTF-8",
         "LC_ALL": "C.UTF-8",
+        "GITHUB_ACTIONS": "true",
     }
 
 
@@ -362,8 +366,8 @@ class TestHarnessFreshAxis:
 
 class TestHarnessSelfCheck:
     def test_ci_env_is_really_clean(self, ci_home):
-        """TC-J52-035: страж имитации — env действительно чистый: нет
-        GITHUB_*, HOME — пустой раннерный каталог (~/ai-factory и
+        """TC-J52-035: страж имитации — env действительно чистый: из
+        GITHUB_* только GITHUB_ACTIONS (как в шаге Actions), HOME — пустой раннерный каталог (~/ai-factory и
         ~/.hermes отсутствуют), openspec не резолвится. Иначе harness
         тихо тестирует ворота в комфортной среде автора — тот самый
         класс, против которого построен."""
@@ -386,7 +390,7 @@ class TestHarnessSelfCheck:
         assert r.returncode == 0, r.stderr
         import json
         fact = json.loads(r.stdout)
-        assert fact["github"] == [], fact["github"]
+        assert fact["github"] == ["GITHUB_ACTIONS"], fact["github"]
         assert Path(fact["home"]) == ci_home
         assert fact["factory"] is False
         assert fact["hermes"] is False

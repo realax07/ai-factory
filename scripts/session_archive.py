@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """session_archive.py — архивация завершенных делегаций (E16, слой Б «фактический»).
 
-Копирует транскрипты завершенных сессий из live-кэша в постоянное хранилище
+Копирует транскрипты завершенных запусков исполнителей (J65.6: список дает
+каждый исполнитель — `finished_runs()` в scripts/executors/; сейчас
+транскрипты хранит только hermes, live-кэш делегаций) в постоянное хранилище
 с метаданными и детерминированным анализом паттернов неуспеха (счетчики,
 повторы, трейсы). Запускается ПМ при приемке делегации (или пакетом).
 
@@ -23,7 +25,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 import factory_paths as fp  # noqa: E402  (J64.5: пути машины — только оттуда)
 
-LIVE_DIR = fp.hermes_home() / "cache" / "delegation" / "live"
 ARCHIVE_DIR = fp.state_dir() / "session-archive"
 
 # Паттерны неуспеха (детерминированный анализ, ярус 2)
@@ -60,14 +61,25 @@ def analyze(log_text: str) -> dict:
     return out
 
 
-def archive_session(sess: Path, dry: bool = False) -> dict:
-    log_file = sess / "task-0.log"
+def finished_runs() -> list[tuple[str, str, Path]]:
+    """(исполнитель, ref, транскрипт) завершенных запусков всех исполнителей."""
+    import executors
+    out = []
+    for name in executors.names():
+        for ref, log in executors.get(name).finished_runs():
+            out.append((name, ref, log))
+    return out
+
+
+def archive_session(ref: str, log_file: Path, dry: bool = False,
+                    executor: str = "hermes") -> dict:
     if not log_file.is_file():
-        return {"id": sess.name, "skipped": "нет task-0.log"}
+        return {"id": ref, "skipped": f"нет транскрипта {log_file.name}"}
     text = log_file.read_text(encoding="utf-8", errors="replace")
     final = re.search(r"status=(\w+)", text)
     meta = {
-        "deleg_id": sess.name,
+        "deleg_id": ref,
+        "executor": executor,
         "archived_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "size_bytes": log_file.stat().st_size,
         "sha256": hashlib.sha256(log_file.read_bytes()).hexdigest()[:16],
@@ -75,24 +87,23 @@ def archive_session(sess: Path, dry: bool = False) -> dict:
     }
     analysis = analyze(text)
     if not dry:
-        dst = ARCHIVE_DIR / sess.name
+        dst = ARCHIVE_DIR / ref
         dst.mkdir(parents=True, exist_ok=True)
         shutil.copy2(log_file, dst / "task-0.log")
         (dst / "meta.json").write_text(json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8")
         (dst / "analysis.json").write_text(json.dumps(analysis, indent=2, ensure_ascii=False), encoding="utf-8")
-    return {"id": sess.name, "status": meta["status"], "verdict": analysis["verdict"],
+    return {"id": ref, "executor": executor, "status": meta["status"], "verdict": analysis["verdict"],
             "patterns": list(analysis["patterns"].keys()), "archived": not dry}
 
 
 def main() -> int:
     dry = "--status" in sys.argv
-    if not LIVE_DIR.is_dir():
-        print(f"Нет live-каталога: {LIVE_DIR}")
+    runs = finished_runs()
+    if not runs:
+        print("Нет завершенных запусков с транскриптом (ни у одного исполнителя)")
         return 0
-    results = []
-    for sess in sorted(LIVE_DIR.iterdir()):
-        if sess.is_dir():
-            results.append(archive_session(sess, dry=dry))
+    results = [archive_session(ref, log, dry=dry, executor=name)
+               for name, ref, log in runs]
     for r in results:
         print(json.dumps(r, ensure_ascii=False))
     n_degraded = sum(1 for r in results if r.get("verdict") == "degraded")

@@ -1,0 +1,78 @@
+# PLAN-core-ready: критерий «ядро готово», ядро без Hermes вне адаптера, core-v1.0 (J65.6)
+
+**Флоу: 4**: обслуживание ядра фабрики. Пакет делает внешний агент (сессия
+Claude Code Заказчика) по п.21, как пакеты J64/J65.
+
+## Решения Заказчика (2026-11-16, дословно ответы на развилки)
+
+- Ревью в CI: «SKIPPED в CI, DENY локально (Рекомендую)».
+- Флоу 2: «Добавить Флоу 2 (Рекомендую)».
+- Граница критерия: «Ворота и проверки (Рекомендую)».
+- CHANGELOG: «Базовый список + тест (Рекомендую)».
+- Ранее (2026-11-15) по J65.10: «Полный флоу для клода и кодекса это дорого»;
+  вторая часть критерия J65.6 («эталон на двух исполнителях») — прогоны
+  `pi` (заглушка бинаря) и `stub` в CI (формулировка вопроса развилки
+  «Граница критерия», принята).
+
+## Цель
+
+Ядро ворот не зависит от Hermes вне `scripts/executors/`: Hermes — один из
+исполнителей. Критерий «ядро готово» записан в J65 резолюцией, его держит
+тест. Первый тег версии ядра `core-v1.0` и CHANGELOG ворот с базовым
+списком кодов отказа.
+
+## Состав
+
+1. `scripts/executors/hermes.py`: всё знание о данных Hermes —
+   `registry_db()`, `delegations()`, `delegation(ref)`, `finished_runs()`
+   (транскрипты завершенных делегаций для архива), `errors_log()`.
+   В базовом `Executor` — `finished_runs()` (по умолчанию пусто).
+2. `scripts/pr_validate.py`:
+   - независимость ревью (`Reviewer-Delegation`) — через исполнитель
+     hermes и state раннера, без своего SQL;
+   - реестр делегаций недоступен (нет `state.db`, битая база, нет пакета
+     executors): в CI (есть `GITHUB_EVENT_PATH`) — явная пометка
+     `UNVERIFIED` в выводе, ревью не валит PR; вне CI — DENY (fail-closed);
+   - Флоу 2: PR `[BUG-…]` требует в `code-reviews/<bug-id>/` ревью с
+     последним вердиктом approve и с той же проверкой независимости.
+3. `scripts/session_archive.py`: транскрипты — из `finished_runs()` всех
+   исполнителей.
+4. `scripts/delegate_watchdog.py`: реестр — только через исполнитель hermes
+   (запасной SQL удален: пакет executors ставится в проект вместе с ядром).
+5. `scripts/chat_degrade_watchdog.py`: путь лога — из исполнителя hermes.
+6. Критерий «ядро готово» — резолюция в
+   `backlog/J65-ТЗ-единый-источник-правды-2026-11-03.md` и тест
+   `tests/unit/test_j65_core_ready.py`: в `scripts/*.py` вне
+   `scripts/executors/`, установщиков (`factory_init.py`,
+   `factory_bootstrap.py`) и `factory_paths.py` нет обращений к данным
+   Hermes (`hermes_home()`, `state.db`, `async_delegations`, кеш делегаций).
+7. `docs/CHANGELOG-gates.md`: `core-v1.0` — базовый список кодов отказа
+   ядра (по файлам). Тест: код отказа в файлах ядра без строки в CHANGELOG —
+   красный.
+8. Доки: `docs/ci-gates.md` (UNVERIFIED в CI, Флоу 2), `docs/guarantees.md`,
+   `docs/rules-enforcement.md` (п.21), гайд внешнего оркестратора и скилл
+   executor-swap (ограничения проверки ревью сняты/уточнены), PLAN.md,
+   backlog/MAP.md.
+9. Тег `core-v1.0` — на merge-коммит в main, после слова Заказчика.
+
+## Этапы и роли
+
+Автор (worktree `../ai-factory-c`) → тесты + ci_local → независимое ревью
+отдельным агентом со статикой диффа, раунды до approve, файлы ревью в
+`code-reviews/core-ready/` → PR. Merge и тег — по слову Заказчика.
+
+## Развилки Заказчика
+
+Закрыты ответами выше.
+
+## Прогоны
+
+- `python3 -m pytest tests/unit -q`
+- `python3 scripts/flow_check.py .`
+- `python3 scripts/ci_local.py`
+
+## Критерий закрытия
+
+Тест критерия и тест CHANGELOG зеленые; pr_validate fail-closed вне CI и
+проверяет Флоу 2; ревью approve; PR влит; тег `core-v1.0` поставлен; J65.6
+закрыт в backlog.

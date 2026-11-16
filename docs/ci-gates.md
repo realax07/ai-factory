@@ -49,6 +49,12 @@
 - **Финальный change-маркерный PR**: + pr_validate полный набор — impact (H5),
   approved-кейсы (контракт 6), review-файлы с
   Reviewer-Delegation и вердиктами approve (J10, SELF_REVIEW-защита).
+  В CI реестров делегаций нет: независимость ревью помечается
+  `pr_validate: UNVERIFIED` (не валит PR), ее проверяет pre_merge ПМ, где
+  без реестра ревью не засчитывается (J65.6).
+- **PR `[BUG-…]` (Флоу 2)**: + `code-reviews/<bug-id>/` с последним
+  вердиктом approve и доказательством независимости — `Reviewer-Delegation`
+  или provenance-sidecar `gate_runner record-review` (J65.6).
   (remove-qa-checklist: чеклист (бывший контракт 4) больше не требуется.)
 
 Правило стадий маркеров (документированное, волна 4 Н27; машина различает
