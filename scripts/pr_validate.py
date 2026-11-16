@@ -67,13 +67,15 @@ def check_bug(repo: Path, num: str) -> list[str]:
 def bug_review_dir(repo: Path, digits: str) -> Path | None:
     """code-reviews/<bug-id>/ без учета регистра (проекты — BUG-010, фабрика
     — bug-026); допускается slug после номера (грамматика flow_ids:
-    BUG-042-fix — тот же баг, BUG-042-RECHECK-003 — другой)."""
+    BUG-042-fix — тот же баг, BUG-042-RECHECK-003 — другой). Строчный
+    каталог фабрики — только без slug (bug-026); точное имя — первым."""
     root = repo / "code-reviews"
     if not root.is_dir():
         return None
     want = f"BUG-{digits}"
-    hits = sorted(d for d in root.iterdir()
-                  if d.is_dir() and scope_matches(d.name, want))
+    hits = sorted((d for d in root.iterdir()
+                   if d.is_dir() and scope_matches(d.name, want)),
+                  key=lambda d: (d.name.upper() != want.upper(), d.name))
     return hits[0] if hits else None
 
 
