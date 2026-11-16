@@ -197,7 +197,7 @@ def ci_env(home: Path) -> dict[str, str]:
     никаких локальных путей. openspec намеренно НЕ резолвится. Из GITHUB_*
     — только GITHUB_ACTIONS=true: Actions ставит его на каждый шаг, а
     pr_validate по нему видит CI (J65.6: без реестров делегаций ревью в CI —
-    UNVERIFIED, вне CI — отказ). PR-контекста (GITHUB_EVENT_PATH) нет."""
+    SKIPPED, вне CI — отказ). PR-контекста (GITHUB_EVENT_PATH) нет."""
     dirs: list[str] = []
     for name in ("python3", "python", "git"):
         p = shutil.which(name)

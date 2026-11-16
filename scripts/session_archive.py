@@ -62,8 +62,14 @@ def analyze(log_text: str) -> dict:
 
 
 def finished_runs() -> list[tuple[str, str, Path]]:
-    """(исполнитель, ref, транскрипт) завершенных запусков всех исполнителей."""
-    import executors
+    """(исполнитель, ref, транскрипт) завершенных запусков всех исполнителей.
+    Копия без пакета executors (до J65.5) — WARN и пусто, не traceback."""
+    try:
+        import executors
+    except ImportError:
+        print("WARN: нет пакета scripts/executors — транскрипты исполнителей "
+              "недоступны (обнови копию ядра: factory_init)", file=sys.stderr)
+        return []
     out = []
     for name in executors.names():
         for ref, log in executors.get(name).finished_runs():

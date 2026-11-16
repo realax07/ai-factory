@@ -91,12 +91,15 @@ def check_bug_review(repo: Path, digits: str) -> list[str]:
                 "(Флоу 2, стадия code_review)"]
 
     def _rev(p: Path) -> tuple[int, str]:
-        m = REVIEW_FILE_REV_FIRST.match(p.name) or REVIEW_FILE_TASK_FIRST.match(p.name)
-        num = 0
+        m = PLAIN_REVIEW_RE.match(p.name)
         if m:
-            g = m.group(1) if m.re is REVIEW_FILE_REV_FIRST else m.group(2)
-            num = int(g) if g.isdigit() else 0
-        return num, p.name
+            return int(m.group(1)), p.name
+        m = REVIEW_FILE_REV_FIRST.match(p.name)
+        if m:
+            return int(m.group(1)), p.name
+        m = REVIEW_FILE_TASK_FIRST.match(p.name)
+        g = m.group(2) if m else ""
+        return (int(g) if g.isdigit() else 0), p.name
 
     last = max(files, key=_rev)
     rel = rd.relative_to(repo).as_posix()
@@ -317,6 +320,20 @@ REGRESS_FINAL_MAX_AGE_DAYS = 7
 RUNNER_REVIEW_STATUSES = ("accepted", "provisional")
 
 
+def scope_matches(run_scope, scope_id: str) -> bool:
+    """scope записи цикла = scope PR. Без учета регистра (каталог фабрики
+    bug-026 против BUG-026); scope Флоу 2 со slug (BUG-042-fix) — тот же
+    баг, что BUG-042 (J65.6)."""
+    a, b = str(run_scope or "").lower(), str(scope_id or "").lower()
+    if not a or not b:
+        return False
+    if a == b:
+        return True
+    if b.startswith("bug-") and a.startswith(b + "-"):
+        return True
+    return a.startswith("bug-") and b.startswith(a + "-")
+
+
 def runner_review_ok(delegation: str, change_id: str, fstate: dict,
                      dev_delegs: set) -> bool:
     """J65.4b: независимость ревью стадии Pi по реестру циклов flowctl.
@@ -336,7 +353,7 @@ def runner_review_ok(delegation: str, change_id: str, fstate: dict,
         if str(rec.get("delegation_id") or "").replace("-", "_") != norm:
             continue
         return (rec.get("actor_role") == "code_reviewer"
-                and (rec.get("scope") or {}).get("change") == change_id
+                and scope_matches((rec.get("scope") or {}).get("change"), change_id)
                 and rec.get("status") in RUNNER_REVIEW_STATUSES
                 and isinstance(rec.get("package_runner"), dict))
     return False
@@ -354,6 +371,12 @@ PROVENANCE_SCHEMA = "review-provenance/1"
 EXTERNAL_DELEGATION_RE = re.compile(r"^[a-z][a-z0-9-]*:[A-Za-z0-9._-]+$")
 SHA_RE = re.compile(r"^[0-9a-f]{7,40}$")
 REVIEWER_ROLES = ("code_reviewer",)
+PLAIN_REVIEW_RE = re.compile(r"^review-(\d+)\.md$", re.I)   # review-002.md
+
+
+# Ревью, независимость которых в этом прогоне не проверяема (CI без реестров):
+# итоговая строка pr_validate показывает их число — п.9, без сглаживания.
+SKIPPED_REVIEW_CHECKS: list[str] = []
 
 
 def in_ci() -> bool:
@@ -383,7 +406,7 @@ def dev_delegations(fstate: dict, scope_id: str) -> set:
         if not isinstance(r, dict):
             continue
         sc = r.get("scope") or {}
-        if str(sc.get("change") or "").lower() != scope_id.lower():
+        if not scope_matches(sc.get("change"), scope_id):
             continue
         role = r.get("actor_role")
         # стадия ревью per_task тоже несет scope.task (J64.13) — она не автор
@@ -396,7 +419,7 @@ def dev_delegations(fstate: dict, scope_id: str) -> set:
 def hermes_delegation(ref: str) -> tuple[bool, str | None]:
     """(реестр доступен, состояние) — через исполнитель hermes
     (scripts/executors/hermes.py). Пакета executors нет — реестр
-    недоступен: решение fail-closed/UNVERIFIED принимает вызывающий."""
+    недоступен: решение fail-closed/SKIPPED принимает вызывающий."""
     try:
         from executors import hermes as _hermes
     except ImportError:
@@ -488,11 +511,16 @@ def sidecar_findings(repo: Path, review: Path, scope_id: str, fstate: dict,
         return delegation_findings(reviewer, scope_id, fstate, dev, where)
     if EXTERNAL_DELEGATION_RE.fullmatch(reviewer):
         # п.21: внешний агент работает через PR; его ревьюер — отдельный
-        # агент. Реестра id внешних агентов нет — доказательство структурное
-        # (sidecar), приемка — Заказчиком при merge.
-        print(f"pr_validate: provenance внешнего агента: {where} — ревьюер "
-              f"{reviewer}, автор {author}", file=sys.stderr)
-        return [], []
+        # агент. Реестра id внешних агентов нет — независимость не проверяема,
+        # правило то же, что без реестров («SKIPPED в CI, DENY локально»):
+        # в CI — SKIPPED, приемка Заказчиком при merge; вне CI — отказ.
+        if in_ci():
+            return [], [f"{where}: ревьюер внешнего агента {reviewer} (автор "
+                        f"{author}) — реестра id внешних агентов нет, "
+                        "независимость подтверждает Заказчик при merge"]
+        return [f"{where}: ревьюер внешнего агента {reviewer} — реестра id "
+                "внешних агентов нет, вне CI независимость не проверяема — ревью "
+                "не засчитано (J65.6)"], []
     return [f"{where}: reviewer_delegation {reviewer!r} — ни deleg_…, ни "
             "<агент>:<id> внешнего агента — ревью не засчитано"], []
 
@@ -502,7 +530,7 @@ def review_independence_findings(repo: Path, scope_id: str,
     """Каждый review-файл scope несет доказательство независимости ревьюера:
     строку `Reviewer-Delegation: deleg_…` (стадия раннера или делегация
     Hermes) или provenance-sidecar `<review>.provenance.json`.
-    Реестров нет: в CI — пометка UNVERIFIED (решение Заказчика 2026-11-16
+    Реестров нет: в CI — SKIPPED (решение Заказчика 2026-11-16
     «SKIPPED в CI, DENY локально»), вне CI — отказ."""
     missing: list[str] = []
     if not review_dir.is_dir():
@@ -524,7 +552,8 @@ def review_independence_findings(repo: Path, scope_id: str,
         missing.extend(miss)
         unverified.extend(unv)
     for u in unverified:
-        print(f"pr_validate: UNVERIFIED: {u}", file=sys.stderr)
+        print(f"pr_validate: SKIPPED (независимость ревью): {u}", file=sys.stderr)
+    SKIPPED_REVIEW_CHECKS.extend(unverified)
     return missing
 
 
@@ -1383,7 +1412,9 @@ def main() -> int:
         for m in missing:
             print(f"  - {m}")
         return 1
-    print(f"PR-VALIDATE OK ({flow_type}:{ident}): обязательные артефакты на месте")
+    tail = (f"; независимость ревью: SKIPPED ({len(SKIPPED_REVIEW_CHECKS)}, "
+            "проверка — pre_merge ПМ с реестрами)" if SKIPPED_REVIEW_CHECKS else "")
+    print(f"PR-VALIDATE OK ({flow_type}:{ident}): обязательные артефакты на месте{tail}")
     return 0
 
 

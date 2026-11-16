@@ -35,7 +35,7 @@
   `docs/guides/external-orchestrator.md`.
 - **2026-11-17:** J65.6 «ядро готово» — ворота знают Hermes только через
   `scripts/executors/hermes.py`; проверка ревью в pr_validate без
-  fail-open (в CI — UNVERIFIED, вне CI — отказ), Флоу 2 проверяется,
+  fail-open (в CI — SKIPPED, вне CI — отказ), Флоу 2 проверяется,
   provenance-sidecar засчитывается; коды отказа — `docs/CHANGELOG-gates.md`;
   тег `core-v1.0`.
 - **Открыто:**

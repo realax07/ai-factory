@@ -476,7 +476,7 @@ Review-файл `code-reviews/<change-id>/review-<задача>-<NNN>.md` —
   сверка с записью цикла раннера или с реестром делегаций через исполнитель
   hermes (не dev-делегация задачи, статус completed). Вместо строки —
   provenance-sidecar `<review>.provenance.json` (`gate_runner
-  record-review`). Реестров нет: в CI — `UNVERIFIED`, вне CI — отказ
+  record-review`). Реестров нет: в CI — `SKIPPED`, вне CI — отказ
   (J65.6). Те же требования — у PR `[BUG-…]` (Флоу 2,
   `code-reviews/<bug-id>/`).
 - Несколько задач на один файл (или историческое имя без числовых id) →

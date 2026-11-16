@@ -50,8 +50,8 @@
   approved-кейсы (контракт 6), review-файлы с
   Reviewer-Delegation и вердиктами approve (J10, SELF_REVIEW-защита).
   В CI реестров делегаций нет: независимость ревью помечается
-  `pr_validate: UNVERIFIED` (не валит PR), ее проверяет pre_merge ПМ, где
-  без реестра ревью не засчитывается (J65.6).
+  `pr_validate: SKIPPED` (не валит PR, число — в итоговой строке), ее
+  проверяет pre_merge ПМ (`gate_runner --pr-id`; без PR-контекста шаг pr_validate — SKIPPED), где без реестра ревью не засчитывается (J65.6).
 - **PR `[BUG-…]` (Флоу 2)**: + `code-reviews/<bug-id>/` с последним
   вердиктом approve и доказательством независимости — `Reviewer-Delegation`
   или provenance-sidecar `gate_runner record-review` (J65.6).

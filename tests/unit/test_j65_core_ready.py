@@ -8,16 +8,20 @@
   TC-J65-CORE-001  граница: в scripts/*.py вне scripts/executors/,
                    установщиков и factory_paths нет обращений к данным Hermes
   TC-J65-CORE-002  независимость ревью без реестров: вне CI — отказ
-                   (fail-closed), в CI — UNVERIFIED, PR не валится
+                   (fail-closed), в CI — SKIPPED, PR не валится, итог
+                   pr_validate показывает число SKIPPED
   TC-J65-CORE-003  реестр Hermes доступен: completed — засчитано, иное
                    состояние или нет делегации — отказ
   TC-J65-CORE-004  стадия ревью раннера per_task (scope.task) не считается
                    делегацией разработчика
   TC-J65-CORE-005  Флоу 2: PR [BUG-…] требует ревью с последним вердиктом
                    approve и доказательством независимости
-  TC-J65-CORE-006  provenance-sidecar внешнего агента: валидный засчитан;
-                   автор = ревьюер, расхождение вердикта, чужой scope,
-                   неизвестный коммит — отказ
+  TC-J65-CORE-006  provenance-sidecar: внешний агент (<агент>:<id>) — как
+                   без реестров: в CI SKIPPED, вне CI отказ; автор = ревьюер,
+                   расхождение вердикта, чужой scope, неизвестный коммит —
+                   отказ всегда; deleg_… в sidecar — по реестрам
+  TC-J65-CORE-008  scope Флоу 2 без учета регистра и со slug; имя
+                   review-NNN.md упорядочивается по номеру
   TC-J65-CORE-007  исполнитель hermes отдает транскрипты, session_archive
                    архивирует через адаптер; delegate_watchdog без пакета
                    executors — реестр недоступен, без своего SQL
@@ -46,11 +50,18 @@ DEV = "deleg_dev0001"
 # Скрипты, которым знание о Hermes положено (граница «Ворота и проверки»):
 # адаптер (scripts/executors/), установщики плагина и кронов Hermes, единый
 # модуль путей и утилита самой платформы Hermes — session_watchdog лечит
-# роутинг Telegram-гейтвея в базе Hermes (sessions, gateway_routing), это не
-# ворота и не проверка работы конвейера.
+# роутинг Telegram-гейтвея в базе Hermes (sessions, gateway_routing) и
+# сигналит о залипших и недоставленных делегациях (async_delegations): это
+# проверка самой платформы, а не работы конвейера (решение Заказчика
+# 2026-11-17 «Исключение: утилита Hermes»).
 ALLOWED = {"factory_init.py", "factory_bootstrap.py", "factory_paths.py",
            "session_watchdog.py"}
-BANNED_SUBSTR = ("state.db", "async_delegations", "HERMES_HOME")
+BANNED_SUBSTR = ("state.db", "async_delegations", "HERMES_HOME", "errors.log",
+                 "/.hermes/")
+# Компоненты путей данных Hermes (кеш делегаций: cache/delegation/live).
+BANNED_EXACT = ("delegation", "live", "cache")
+# Историческое место памяти движка (state_dir по умолчанию) — не данные Hermes.
+STATE_DIR_DEFAULT = "~/.hermes/state"
 
 
 def _docstring_nodes(tree: ast.AST) -> set[int]:
@@ -71,16 +82,19 @@ def hermes_touches(path: Path) -> list[str]:
     docs = _docstring_nodes(tree)
     hits = []
     for node in ast.walk(tree):
-        if isinstance(node, ast.Call):
-            fn = node.func
-            name = fn.attr if isinstance(fn, ast.Attribute) else getattr(fn, "id", "")
-            if name == "hermes_home":
-                hits.append(f"{path.name}:{node.lineno}: hermes_home()")
+        # любая ссылка на hermes_home (вызов, алиас H = fp.hermes_home)
+        if isinstance(node, ast.Attribute) and node.attr == "hermes_home" \
+                or isinstance(node, ast.Name) and node.id == "hermes_home":
+            hits.append(f"{path.name}:{node.lineno}: hermes_home")
         elif isinstance(node, ast.Constant) and isinstance(node.value, str) \
                 and id(node) not in docs:
+            # упоминание памяти движка (~/.hermes/state) — не данные Hermes
+            val = node.value.replace(STATE_DIR_DEFAULT, "")
             for s in BANNED_SUBSTR:
-                if s in node.value:
+                if s in val:
                     hits.append(f"{path.name}:{node.lineno}: {s!r}")
+            if val in BANNED_EXACT:
+                hits.append(f"{path.name}:{node.lineno}: {val!r}")
     return hits
 
 
@@ -101,11 +115,17 @@ def test_boundary_detector_catches_violation(tmp_path):
     bad = tmp_path / "bad.py"
     bad.write_text('"""state.db в докстринге не считается."""\n'
                    'import factory_paths as fp\n'
-                   'DB = fp.hermes_home() / "state.db"\n', encoding="utf-8")
+                   'DB = fp.hermes_home() / "state.db"\n'
+                   'H = fp.hermes_home\n'
+                   'LIVE = H() / "cache" / "delegation" / "live"\n'
+                   'LOG = "~/.hermes/logs/errors.log"\n'
+                   'OK = "~/.hermes/state"\n', encoding="utf-8")
     hits = hermes_touches(bad)
-    assert any("hermes_home()" in h for h in hits)
-    assert any("'state.db'" in h for h in hits)
-    assert len(hits) == 2
+    assert sum("hermes_home" in h for h in hits) == 2, hits
+    for needle in ("'state.db'", "'cache'", "'delegation'", "'live'",
+                   "'errors.log'", "'/.hermes/'"):
+        assert any(needle in h for h in hits), (needle, hits)
+    assert not any(":7:" in h for h in hits), hits   # state_dir — не Hermes
 
 
 # ------------------------------------------------------------- окружение
@@ -150,7 +170,7 @@ def test_no_registry_outside_ci_denies(tmp_path, env, capsys):
     review(rd)
     out = pv.review_independence_findings(tmp_path / "proj", "add-x", rd)
     assert len(out) == 1 and "fail-closed вне CI" in out[0], out
-    assert "UNVERIFIED" not in capsys.readouterr().err
+    assert "SKIPPED" not in capsys.readouterr().err
 
 
 def test_no_registry_in_ci_unverified(tmp_path, env, capsys, monkeypatch):
@@ -160,7 +180,7 @@ def test_no_registry_in_ci_unverified(tmp_path, env, capsys, monkeypatch):
     review(rd)
     assert pv.review_independence_findings(tmp_path / "proj", "add-x", rd) == []
     err = capsys.readouterr().err
-    assert "UNVERIFIED" in err and DELEG in err
+    assert "SKIPPED (независимость ревью)" in err and DELEG in err
 
 
 def test_no_registry_broken_db_outside_ci_denies(tmp_path, env):
@@ -284,11 +304,18 @@ def sidecar_repo(tmp_path: Path, **over) -> tuple[Path, Path]:
     return repo, rf
 
 
-def test_sidecar_external_agent_accepted(tmp_path, env, capsys):
+def test_sidecar_external_agent_skipped_in_ci_denied_outside(tmp_path, env,
+                                                            capsys, monkeypatch):
     """TC-J65-CORE-006."""
     repo, _ = sidecar_repo(tmp_path)
+    out = pv.check_bug(repo, "BUG-042")
+    assert len(out) == 1 and "внешнего агента" in out[0] and "вне CI" in out[0]
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    pv.SKIPPED_REVIEW_CHECKS.clear()
     assert pv.check_bug(repo, "BUG-042") == []
-    assert "provenance внешнего агента" in capsys.readouterr().err
+    assert "SKIPPED (независимость ревью)" in capsys.readouterr().err
+    assert len(pv.SKIPPED_REVIEW_CHECKS) == 1
+    pv.SKIPPED_REVIEW_CHECKS.clear()
 
 
 @pytest.mark.parametrize("over,needle", [
@@ -346,3 +373,23 @@ def test_delegate_watchdog_without_executors(monkeypatch, capsys):
     monkeypatch.setattr(dw, "_hermes", None)
     assert dw.load_delegations() is None
     assert "нет пакета scripts/executors" in capsys.readouterr().err
+
+
+def test_flow2_scope_slug_and_plain_review_order(tmp_path, env):
+    """TC-J65-CORE-008."""
+    env["state"].write_text(json.dumps({"runs": {
+        "r": {**runner_run(DELEG, "code_reviewer"), "scope": {"change": "BUG-042-fix"}},
+    }}), encoding="utf-8")
+    assert pv.scope_matches("BUG-042-fix", "BUG-042")
+    assert pv.scope_matches("bug-042", "BUG-042")
+    assert not pv.scope_matches("BUG-0421", "BUG-042")
+    repo = bug_repo(tmp_path)
+    rd = repo / "code-reviews" / "BUG-042"
+    # review-005.md (без задачи в имени) — итерация 5, позже review-fix-003.md;
+    # до правки m5 простое имя получало номер 0 и решал старый return
+    review(rd, "review-fix-003.md", "return")
+    review(rd, "review-005.md", "approve")
+    assert pv.check_bug(repo, "BUG-042") == []
+    review(rd, "review-fix-006.md", "return")
+    out = pv.check_bug(repo, "BUG-042")
+    assert len(out) == 1 and "review-fix-006.md" in out[0], out

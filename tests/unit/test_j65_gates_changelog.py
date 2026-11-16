@@ -4,9 +4,12 @@
 тест»).
 
 Трассировка:
-  TC-J65-CHG-001  каждый код отказа в файлах ядра описан в CHANGELOG (новый
-                  код без строки — красный тест); не-коды (имена env,
-                  паттернов) — явным списком
+  TC-J65-CHG-001  каждый код отказа и статус ворот в файлах ядра и в
+                  скриптах, копируемых в проект, описан строкой таблицы
+                  CHANGELOG (новый код без строки — красный тест); не-коды
+                  (имена env, паттернов, служебные слова) — явным списком.
+                  Не видит коды, собранные только в f-строке (BYPASS — внесен
+                  вручную)
   TC-J65-CHG-002  набор файлов ядра покрывает все .py из FLOW_CONTROL_FILES
                   установщика (новый модуль ядра попадает в проверку)
   TC-J65-CHG-003  коды flow_transition.REASON_CODES — все в CHANGELOG
@@ -40,8 +43,16 @@ CORE_FILES = (
     "scripts/package_runner.py", "plugins/flow-enforcer/enforcer.py",
 )
 
-# Строки UPPER_SNAKE в ядре, которые не коды отказа: имена env и констант.
+# Скрипты, которые установщик копирует в проект (ворота PR, вотчдоги):
+# их коды тоже видит пользователь ворот. factory_paths — модуль путей.
+COPY_SCRIPTS = tuple(p for p in factory_init.COPY_FILES
+                     if p.endswith(".py") and p != "scripts/factory_paths.py")
+SCANNED = tuple(dict.fromkeys(CORE_FILES + COPY_SCRIPTS))
+
+# Строки КАПСОМ в ядре, которые не коды отказа: имена env и констант,
+# служебные слова.
 NOT_CODES = {
+    "CLOSED", "EXECUTOR", "HEAD", "RANGE", "TODO", "KILL", "PR_BODY",
     "AF_EXECUTOR_STUB_CMD", "AF_PROJECTS_ROOT", "BUG_ID_PATTERN",
     "CHANGE_ID_PATTERN", "SLUG_PATTERN", "SEVERITY_PREFIXES",
     "EKOTOV_WIKI_BASE_URL", "EKOTOV_WIKI_DB_PATH",
@@ -49,18 +60,19 @@ NOT_CODES = {
     "FLOW_ENFORCER_STATE_DIR", "AF_STATE_DIR", "AI_FACTORY_HOME",
 }
 
-TOKEN_RE = re.compile(r"""["']([A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+)["']""")
+TOKEN_RE = re.compile(r"""["']([A-Z][A-Z0-9]*(?:_[A-Z0-9]+)*)["']""")
 ENV_RE = re.compile(r"""(?:environ(?:\.get)?\(?\[?|getenv\(|_fp_env\(|setenv\(|env\[|delenv\(|pop\()\s*["']([A-Z][A-Z0-9_]+)["']""")
-DOC_CODE_RE = re.compile(r"`([A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+)`")
+# Документирован — только строкой таблицы: «| `КОД` | смысл |».
+DOC_CODE_RE = re.compile(r"^\| `([A-Z][A-Z0-9]*(?:_[A-Z0-9]+)*)` \|", re.M)
 
 
 def core_codes() -> dict[str, set[str]]:
     found: dict[str, set[str]] = {}
-    for rel in CORE_FILES:
+    for rel in SCANNED:
         text = (FACTORY / rel).read_text(encoding="utf-8")
         env = set(ENV_RE.findall(text))
         for tok in TOKEN_RE.findall(text):
-            if tok not in env and tok not in NOT_CODES:
+            if len(tok) >= 4 and tok not in env and tok not in NOT_CODES:
                 found.setdefault(tok, set()).add(rel)
     return found
 
@@ -80,7 +92,7 @@ def test_every_core_code_documented():
 
 def test_not_codes_are_still_present():
     """TC-J65-CHG-001: список не-кодов не копит мертвые записи."""
-    texts = "".join((FACTORY / r).read_text(encoding="utf-8") for r in CORE_FILES)
+    texts = "".join((FACTORY / r).read_text(encoding="utf-8") for r in SCANNED)
     stale = sorted(n for n in NOT_CODES if f'"{n}"' not in texts and f"'{n}'" not in texts)
     assert not stale, f"NOT_CODES без вхождений в ядре: {stale}"
 
