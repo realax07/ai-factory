@@ -329,9 +329,11 @@ def scope_matches(run_scope, scope_id: str) -> bool:
         return False
     if a == b:
         return True
-    if b.startswith("bug-") and a.startswith(b + "-"):
+    # slug — только у bug-id Флоу 2 (BUG-<NNN>); change-id Флоу 1 вида
+    # bug-tracker не совпадает с bug-tracker-v2 (review-002 m7)
+    if BUG_SCOPE_RE.fullmatch(b) and a.startswith(b + "-"):
         return True
-    return a.startswith("bug-") and b.startswith(a + "-")
+    return bool(BUG_SCOPE_RE.fullmatch(a)) and b.startswith(a + "-")
 
 
 def runner_review_ok(delegation: str, change_id: str, fstate: dict,
@@ -371,6 +373,7 @@ PROVENANCE_SCHEMA = "review-provenance/1"
 EXTERNAL_DELEGATION_RE = re.compile(r"^[a-z][a-z0-9-]*:[A-Za-z0-9._-]+$")
 SHA_RE = re.compile(r"^[0-9a-f]{7,40}$")
 REVIEWER_ROLES = ("code_reviewer",)
+BUG_SCOPE_RE = re.compile(r"bug-(?:[a-z0-9]+-)*\d{3}")   # bug-id без slug, lower
 PLAIN_REVIEW_RE = re.compile(r"^review-(\d+)\.md$", re.I)   # review-002.md
 
 
@@ -486,7 +489,7 @@ def sidecar_findings(repo: Path, review: Path, scope_id: str, fstate: dict,
     bad = []
     if data.get("schema_version") != PROVENANCE_SCHEMA:
         bad.append(f"schema_version {data.get('schema_version')!r} ≠ {PROVENANCE_SCHEMA}")
-    if str(data.get("change") or "").lower() != scope_id.lower():
+    if not scope_matches(data.get("change"), scope_id):
         bad.append(f"change {data.get('change')!r} ≠ {scope_id}")
     md_verdict = parse_verdict(review.read_text(encoding="utf-8", errors="replace"))
     if data.get("verdict") != md_verdict:
@@ -1413,7 +1416,8 @@ def main() -> int:
             print(f"  - {m}")
         return 1
     tail = (f"; независимость ревью: SKIPPED ({len(SKIPPED_REVIEW_CHECKS)}, "
-            "проверка — pre_merge ПМ с реестрами)" if SKIPPED_REVIEW_CHECKS else "")
+            "Reviewer-Delegation проверит pre_merge ПМ с --pr-id; ревьюера "
+            "внешнего агента — Заказчик при merge)" if SKIPPED_REVIEW_CHECKS else "")
     print(f"PR-VALIDATE OK ({flow_type}:{ident}): обязательные артефакты на месте{tail}")
     return 0
 

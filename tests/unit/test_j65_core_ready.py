@@ -20,15 +20,16 @@
                    без реестров: в CI SKIPPED, вне CI отказ; автор = ревьюер,
                    расхождение вердикта, чужой scope, неизвестный коммит —
                    отказ всегда; deleg_… в sidecar — по реестрам
-  TC-J65-CORE-008  scope Флоу 2 без учета регистра и со slug; имя
-                   review-NNN.md упорядочивается по номеру
   TC-J65-CORE-007  исполнитель hermes отдает транскрипты, session_archive
                    архивирует через адаптер; delegate_watchdog без пакета
                    executors — реестр недоступен, без своего SQL
+  TC-J65-CORE-008  scope Флоу 2 без учета регистра и со slug; имя
+                   review-NNN.md упорядочивается по номеру
 """
 from __future__ import annotations
 
 import ast
+import re
 import json
 import sqlite3
 import subprocess
@@ -58,10 +59,12 @@ ALLOWED = {"factory_init.py", "factory_bootstrap.py", "factory_paths.py",
            "session_watchdog.py"}
 BANNED_SUBSTR = ("state.db", "async_delegations", "HERMES_HOME", "errors.log",
                  "/.hermes/")
-# Компоненты путей данных Hermes (кеш делегаций: cache/delegation/live).
-BANNED_EXACT = ("delegation", "live", "cache")
-# Историческое место памяти движка (state_dir по умолчанию) — не данные Hermes.
-STATE_DIR_DEFAULT = "~/.hermes/state"
+# Компоненты путей данных Hermes (кеш делегаций: cache/delegation/live;
+# Path.home() / ".hermes").
+BANNED_EXACT = ("delegation", "live", "cache", ".hermes")
+# Упоминание памяти движка (~/.hermes/state как каталог) — не данные Hermes;
+# ~/.hermes/state.db и ~/.hermes/statefoo — данные (review-002 m8).
+STATE_DIR_MENTION = re.compile(r"~/\.hermes/state(?=$|[/\s)»,;:])")
 
 
 def _docstring_nodes(tree: ast.AST) -> set[int]:
@@ -88,8 +91,7 @@ def hermes_touches(path: Path) -> list[str]:
             hits.append(f"{path.name}:{node.lineno}: hermes_home")
         elif isinstance(node, ast.Constant) and isinstance(node.value, str) \
                 and id(node) not in docs:
-            # упоминание памяти движка (~/.hermes/state) — не данные Hermes
-            val = node.value.replace(STATE_DIR_DEFAULT, "")
+            val = STATE_DIR_MENTION.sub("", node.value)
             for s in BANNED_SUBSTR:
                 if s in val:
                     hits.append(f"{path.name}:{node.lineno}: {s!r}")
@@ -119,13 +121,17 @@ def test_boundary_detector_catches_violation(tmp_path):
                    'H = fp.hermes_home\n'
                    'LIVE = H() / "cache" / "delegation" / "live"\n'
                    'LOG = "~/.hermes/logs/errors.log"\n'
-                   'OK = "~/.hermes/state"\n', encoding="utf-8")
+                   'OK = "~/.hermes/state"\n'
+                   'DB2 = "~/.hermes/state.db"\n'
+                   'H2 = Path.home() / ".hermes" / "logs"\n', encoding="utf-8")
     hits = hermes_touches(bad)
     assert sum("hermes_home" in h for h in hits) == 2, hits
     for needle in ("'state.db'", "'cache'", "'delegation'", "'live'",
                    "'errors.log'", "'/.hermes/'"):
         assert any(needle in h for h in hits), (needle, hits)
     assert not any(":7:" in h for h in hits), hits   # state_dir — не Hermes
+    assert any(":8:" in h and "state.db" in h for h in hits), hits
+    assert any(":9:" in h and "'.hermes'" in h for h in hits), hits
 
 
 # ------------------------------------------------------------- окружение
@@ -393,3 +399,14 @@ def test_flow2_scope_slug_and_plain_review_order(tmp_path, env):
     review(rd, "review-fix-006.md", "return")
     out = pv.check_bug(repo, "BUG-042")
     assert len(out) == 1 and "review-fix-006.md" in out[0], out
+
+
+def test_scope_match_not_for_change_ids(tmp_path, env):
+    """TC-J65-CORE-008: slug-правило только у bug-id (review-002 m7, m9)."""
+    assert not pv.scope_matches("bug-tracker-v2", "bug-tracker")
+    assert not pv.scope_matches("bug-tracker", "bug-tracker-v2")
+    assert not pv.scope_matches("BUG-0420", "BUG-042")
+    repo, _ = sidecar_repo(tmp_path, change="BUG-042-fix",
+                           reviewer_delegation=DELEG)
+    hermes_db(env["hermes"], [(DELEG, "completed")])
+    assert pv.check_bug(repo, "BUG-042") == []
