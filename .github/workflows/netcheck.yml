@@ -1,0 +1,32 @@
+name: netcheck (external TCP/TLS probe)
+
+on:
+  workflow_dispatch:
+    inputs:
+      host:
+        description: 'target host'
+        required: true
+        default: '194.58.34.122'
+      ports:
+        description: 'space-separated ports'
+        required: true
+        default: '443 10443 2096 22'
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: TCP reachability
+        run: |
+          for p in ${{ inputs.ports }}; do
+            timeout 8 bash -c "cat < /dev/null > /dev/tcp/${{ inputs.host }}/$p" \
+              && echo "PORT $p: OPEN" || echo "PORT $p: CLOSED/FILTERED/TIMEOUT"
+          done
+      - name: TLS handshake trace (10443 + 443)
+        run: |
+          timeout 15 curl -kvs "https://${{ inputs.host }}:10443/" 2>&1 | grep -E "Connected|SSL|TLS|handshake|error|refused|timed" | head -12
+          echo "--- 443:"
+          timeout 15 curl -kvs "https://${{ inputs.host }}:443/" 2>&1 | grep -E "Connected|SSL|TLS|handshake|error|refused|timed" | head -12
+      - name: Ping
+        run: |
+          timeout 10 ping -c 3 ${{ inputs.host }} || true
